@@ -19,7 +19,7 @@ def get_db():
         password=os.getenv("DB_PASSWORD")
     )
 
-# --- Get all components that need enrichment ---
+# --- Get all components ---
 def get_components(cursor):
     cursor.execute("""
         SELECT id, category, family_name, type_name, parameters
@@ -27,19 +27,51 @@ def get_components(cursor):
     """)
     return cursor.fetchall()
 
+# --- Get all existing normalized categories for duplicate checking ---
+def get_existing_components(cursor):
+    cursor.execute("""
+        SELECT id, family_name, type_name, 
+               parameters->'ai_enrichment'->>'normalized_category' as normalized_category,
+               parameters
+        FROM components
+        WHERE parameters->'ai_enrichment' IS NOT NULL
+    """)
+    return cursor.fetchall()
+
 # --- Ask Claude to enrich a component ---
-def enrich_component(component):
+def enrich_component(component, existing_components):
     id, category, family_name, type_name, parameters = component
 
-    prompt = f"""You are a BIM data expert. Given the following building component data, 
-return a JSON object with these fields:
-- normalized_category: a clean simple category name (e.g. "wall", "door", "duct", "pipe", "slab", "roof", "furniture", "column", "beam", "stair", "window")
-- description: a one sentence description of what this component is
-- is_structural: true or false
-- is_mep: true or false (mechanical, electrical, or plumbing)
-- confidence: how confident you are in your answer from 0 to 1
+    # Build context about existing components for duplicate detection
+    existing_summary = []
+    for ec in existing_components:
+        if ec[0] != id:  # don't compare to itself
+            existing_summary.append({
+                "id": ec[0],
+                "family_name": ec[1],
+                "type_name": ec[2],
+                "normalized_category": ec[3]
+            })
 
-Component data:
+    prompt = f"""You are a BIM data expert managing a building component library. 
+Analyze this component and return a JSON object with these fields:
+
+- normalized_category: clean simple category (e.g. "wall", "door", "duct", "pipe", "slab", "roof", "furniture", "column", "beam", "stair", "window")
+- description: one sentence description of what this component is
+- is_structural: true or false
+- is_mep: true or false
+- confidence: 0 to 1
+- dimensions: object with any dimensions you can extract from parameters (width_mm, height_mm, length_mm, area_m2, volume_m3) — only include what you can find
+- quality_score: 0 to 1 rating of how complete and useful this component's data is
+- missing_data: array of important properties that are missing (e.g. ["fire_rating", "material", "dimensions"])
+- duplicate_of: id of duplicate component from the existing list below, or null if unique
+- notes: any other useful observations about this component
+
+Existing components in database for duplicate detection:
+{json.dumps(existing_summary, indent=2)}
+
+Component to analyze:
+- ID: {id}
 - IFC Category: {category}
 - Family Name: {family_name}
 - Type Name: {type_name}
@@ -50,7 +82,7 @@ Return only valid JSON, no explanation, no markdown."""
     try:
         response = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=1024,
+            max_tokens=2048,
             messages=[{"role": "user", "content": prompt}]
         )
         result = response.content[0].text.strip()
@@ -68,6 +100,24 @@ def save_enrichment(cursor, component_id, enriched):
         WHERE id = %s
     """, (json.dumps({"ai_enrichment": enriched}), component_id))
 
+# --- Print a nice summary of what the AI found ---
+def print_summary(enriched):
+    cat = enriched.get('normalized_category', '?')
+    desc = enriched.get('description', '?')
+    quality = enriched.get('quality_score', '?')
+    missing = enriched.get('missing_data', [])
+    duplicate = enriched.get('duplicate_of')
+    dims = enriched.get('dimensions', {})
+
+    print(f"  → [{cat}] {desc}")
+    print(f"  → Quality score: {quality}")
+    if dims:
+        print(f"  → Dimensions: {dims}")
+    if missing:
+        print(f"  → Missing: {', '.join(missing)}")
+    if duplicate:
+        print(f"  → DUPLICATE of component id={duplicate}")
+
 # --- Main ---
 def run():
     conn = get_db()
@@ -79,21 +129,26 @@ def run():
     for component in components:
         id = component[0]
         family_name = component[2] or "unnamed"
-        
+
         print(f"Enriching: {family_name} (id={id})...")
-        
-        enriched = enrich_component(component)
-        
+
+        # Get current state of enriched components for duplicate detection
+        existing = get_existing_components(cursor)
+
+        enriched = enrich_component(component, existing)
+
         if enriched:
             save_enrichment(cursor, id, enriched)
-            print(f"  → {enriched.get('normalized_category')} | {enriched.get('description')}")
+            print_summary(enriched)
         else:
             print(f"  → Failed to enrich")
+
+        print()
 
     conn.commit()
     cursor.close()
     conn.close()
-    print("\nDone!")
+    print("Done!")
 
 if __name__ == "__main__":
     run()
