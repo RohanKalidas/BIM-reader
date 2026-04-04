@@ -42,10 +42,9 @@ def get_existing_components(cursor):
 def enrich_component(component, existing_components):
     id, category, family_name, type_name, parameters = component
 
-    # Build context about existing components for duplicate detection
     existing_summary = []
     for ec in existing_components:
-        if ec[0] != id:  # don't compare to itself
+        if ec[0] != id:
             existing_summary.append({
                 "id": ec[0],
                 "family_name": ec[1],
@@ -61,7 +60,7 @@ Analyze this component and return a JSON object with these fields:
 - is_structural: true or false
 - is_mep: true or false
 - confidence: 0 to 1
-- dimensions: object with any dimensions you can extract from parameters (width_mm, height_mm, length_mm, area_m2, volume_m3) — only include what you can find
+- dimensions: object with any dimensions you can extract from parameters (width_mm, height_mm, length_mm, area_m2, volume_m3, depth_mm) — only include what you can find
 - quality_score: 0 to 1 rating of how complete and useful this component's data is
 - missing_data: array of important properties that are missing (e.g. ["fire_rating", "material", "dimensions"])
 - duplicate_of: id of duplicate component from the existing list below, or null if unique
@@ -91,6 +90,59 @@ Return only valid JSON, no explanation, no markdown."""
     except Exception as e:
         print(f"  → Error: {e}")
         return None
+
+# --- Calculate and estimate missing dimensions ---
+def calculate_dimensions(component, all_components):
+    id, category, family_name, type_name, parameters = component
+
+    enrichment = parameters.get("ai_enrichment", {})
+    dims = enrichment.get("dimensions", {})
+
+    calculated = {}
+
+    width = dims.get("width_mm")
+    length = dims.get("length_mm")
+    area = dims.get("area_m2")
+    volume = dims.get("volume_m3")
+    height = dims.get("height_mm")
+    depth = dims.get("depth_mm")
+
+    # --- Math based calculations (100% confidence) ---
+
+    # Calculate height from area and length
+    if not height and area and length and length > 0:
+        calculated["height_mm"] = round((area * 1000000) / length, 2)
+        calculated["height_source"] = "calculated from area/length"
+        calculated["height_confidence"] = 1.0
+
+    # Calculate depth from volume and area
+    if not depth and volume and area and area > 0:
+        calculated["depth_mm"] = round((volume / area) * 1000, 2)
+        calculated["depth_source"] = "calculated from volume/area"
+        calculated["depth_confidence"] = 1.0
+
+    # Calculate area from width and length
+    if not area and width and length:
+        calculated["area_m2"] = round((width * length) / 1000000, 3)
+        calculated["area_source"] = "calculated from width x length"
+        calculated["area_confidence"] = 1.0
+
+    # --- Context based estimates (lower confidence) ---
+
+    # Estimate wall height from standard residential heights
+    if not height and not calculated.get("height_mm"):
+        if category == "IfcWall":
+            storey = parameters.get("_storey", "")
+            if "ground" in str(storey).lower() or "00" in str(storey):
+                calculated["height_mm"] = 2700
+                calculated["height_source"] = "estimated standard ground floor height"
+                calculated["height_confidence"] = 0.7
+            else:
+                calculated["height_mm"] = 2700
+                calculated["height_source"] = "estimated standard residential height"
+                calculated["height_confidence"] = 0.6
+
+    return calculated if calculated else None
 
 # --- Save enriched data back to database ---
 def save_enrichment(cursor, component_id, enriched):
@@ -132,12 +184,16 @@ def run():
 
         print(f"Enriching: {family_name} (id={id})...")
 
-        # Get current state of enriched components for duplicate detection
         existing = get_existing_components(cursor)
 
         enriched = enrich_component(component, existing)
 
         if enriched:
+            calculated = calculate_dimensions(component, components)
+            if calculated:
+                enriched["calculated_dimensions"] = calculated
+                print(f"  → Calculated: {calculated}")
+
             save_enrichment(cursor, id, enriched)
             print_summary(enriched)
         else:

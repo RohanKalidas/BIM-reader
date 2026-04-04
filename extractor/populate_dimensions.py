@@ -22,25 +22,36 @@ def populate_dimensions():
     cursor.execute("""
         SELECT id, parameters
         FROM components
-        WHERE parameters->'ai_enrichment'->'dimensions' IS NOT NULL
     """)
 
     components = cursor.fetchall()
-    print(f"Found {len(components)} components with dimensions\n")
+    print(f"Found {len(components)} components\n")
 
     updated = 0
 
     for component in components:
         id, parameters = component
-        
-        dims = parameters.get("ai_enrichment", {}).get("dimensions", {})
-        quality = parameters.get("ai_enrichment", {}).get("quality_score")
 
-        width = dims.get("width_mm")
-        height = dims.get("height_mm")
-        length = dims.get("length_mm")
-        area = dims.get("area_m2")
-        volume = dims.get("volume_m3")
+        enrichment = parameters.get("ai_enrichment", {})
+        
+        # Get dimensions from AI
+        dims = enrichment.get("dimensions", {})
+        
+        # Get calculated dimensions and merge them in
+        calculated = enrichment.get("calculated_dimensions", {})
+
+        # Merge calculated into dims — calculated fills gaps
+        width = dims.get("width_mm") or calculated.get("width_mm")
+        height = dims.get("height_mm") or calculated.get("height_mm")
+        length = dims.get("length_mm") or calculated.get("length_mm")
+        area = dims.get("area_m2") or calculated.get("area_m2")
+        volume = dims.get("volume_m3") or calculated.get("volume_m3")
+        depth = dims.get("depth_mm") or calculated.get("depth_mm")
+        quality = enrichment.get("quality_score")
+
+        # Use depth as height if height still missing (for slabs)
+        if not height and depth:
+            height = depth
 
         cursor.execute("""
             UPDATE components
