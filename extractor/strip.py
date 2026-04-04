@@ -1,13 +1,12 @@
 import ifcopenshell
 import ifcopenshell.util.element as util
 import psycopg2
+import psycopg2.extras
 import os
 import sys
-import psycopg2.extras
 from dotenv import load_dotenv
 from datetime import datetime
 from collections import defaultdict
-
 
 load_dotenv()
 
@@ -102,7 +101,7 @@ def extract(filepath):
     counts = defaultdict(int)
 
     for element in model.by_type("IfcElement"):
-        category = element.is_a()          # e.g. IfcWall, IfcDoor, IfcDuctSegment
+        category = element.is_a()
         family_name = element.Name or ""
         type_name = ""
         revit_id = element.GlobalId
@@ -117,6 +116,49 @@ def extract(filepath):
         try:
             for pset_name, pset in util.get_psets(element).items():
                 parameters[pset_name] = pset
+        except:
+            pass
+
+        # --- Dig deeper: extract material name ---
+        try:
+            for rel in element.HasAssociations:
+                if rel.is_a("IfcRelAssociatesMaterial"):
+                    mat = rel.RelatingMaterial
+                    if mat.is_a("IfcMaterial"):
+                        parameters["_material"] = mat.Name
+                    elif mat.is_a("IfcMaterialLayerSetUsage"):
+                        layers = []
+                        for layer in mat.ForLayerSet.MaterialLayers:
+                            layers.append({
+                                "material": layer.Material.Name if layer.Material else "",
+                                "thickness": layer.LayerThickness or 0
+                            })
+                        parameters["_material_layers"] = layers
+        except:
+            pass
+
+        # --- Dig deeper: extract storey/level ---
+        try:
+            for rel in element.ContainedInStructure:
+                if rel.is_a("IfcRelContainedInSpatialStructure"):
+                    storey = rel.RelatingStructure
+                    if storey.is_a("IfcBuildingStorey"):
+                        parameters["_storey"] = storey.Name
+                        parameters["_elevation"] = storey.Elevation
+        except:
+            pass
+
+        # --- Dig deeper: extract wall height from geometry ---
+        try:
+            if element.is_a("IfcWall") or element.is_a("IfcWallStandardCase"):
+                for rep in element.Representation.Representations:
+                    for item in rep.Items:
+                        if item.is_a("IfcExtrudedAreaSolid"):
+                            parameters["_height_mm"] = item.Depth
+                        elif item.is_a("IfcBooleanClippingResult"):
+                            operand = item.FirstOperand
+                            if operand.is_a("IfcExtrudedAreaSolid"):
+                                parameters["_height_mm"] = operand.Depth
         except:
             pass
 
