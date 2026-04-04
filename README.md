@@ -8,6 +8,9 @@ Ingests IFC files (exported from Revit or any BIM software) and extracts all bui
 2. Stores everything in a PostgreSQL database with full parameters
 3. Uses Claude AI to enrich each component with descriptions, quality scores, duplicate detection, and missing data flags
 4. Calculates missing dimensions using math and context-based estimation
+5. Detects duplicate components across buildings
+6. Flags missing data and assigns quality scores to every component
+7. Organizes components into normalized categories for easy querying
 
 ## Stack
 
