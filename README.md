@@ -179,4 +179,4 @@ AND parameters->'Pset_WallCommon'->>'IsExternal' = 'true';
 
 - IFC files are ignored by git (see .gitignore) — don't commit large building files
 - Never commit your .env file — it contains your database password and API key
-- The Anthropic API costs a small amount per run — enriching 15 components costs fractions of a cent
+- The Anthropic API costs a small amount per run — enriching 15 components costs fractions of a cent. However, Anthropic provides you with credits which should last for more than necessary.
