@@ -3,9 +3,11 @@ import ifcopenshell.util.element as util
 import psycopg2
 import os
 import sys
+import psycopg2.extras
 from dotenv import load_dotenv
 from datetime import datetime
 from collections import defaultdict
+
 
 load_dotenv()
 
