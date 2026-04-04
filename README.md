@@ -47,6 +47,44 @@ Open pgAdmin and:
 3. Click on `bim_components` in the sidebar
 4. Open the **Query Tool** (lightning bolt icon)
 5. Paste the contents of `database/schema.sql` and hit play
+-- See all tables
+SELECT table_name FROM information_schema.tables 
+WHERE table_schema = 'public';
+
+-- See all projects processed
+SELECT * FROM projects;
+
+-- See all components
+SELECT * FROM components;
+
+-- See components with dimensions
+SELECT id, family_name, category, width_mm, height_mm, length_mm, area_m2, volume_m3, quality_score
+FROM components
+ORDER BY quality_score DESC;
+
+-- See wall types and their layers
+SELECT c.family_name, w.total_thickness, w.function, w.layers
+FROM wall_types w
+JOIN components c ON c.id = w.component_id;
+
+-- See all materials
+SELECT * FROM materials;
+
+-- Find components by category
+SELECT family_name, category, quality_score
+FROM components
+WHERE category = 'IfcWall';
+
+-- Find high quality components only
+SELECT family_name, category, quality_score
+FROM components
+WHERE quality_score >= 0.8
+ORDER BY quality_score DESC;
+
+-- See AI enrichment for a specific component
+SELECT family_name, parameters->'ai_enrichment'
+FROM components
+WHERE id = 26;
 
 ### 4. Create your .env file
 
