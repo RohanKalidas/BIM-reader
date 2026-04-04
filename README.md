@@ -1,17 +1,123 @@
 # BIM Component Stripper
 
-Ingests Revit (.rvt) files and extracts reusable parametric components
-into a PostgreSQL database — families, wall types, MEP systems, and materials.
+Ingests IFC files (exported from Revit or any BIM software) and extracts all building components into a PostgreSQL database. Uses AI to enrich, clean, and analyze the extracted data.
 
-Part of a larger generative architecture pipeline.
+## What it does
+
+1. Parses an IFC file and extracts all building components (walls, slabs, roofs, MEP systems, materials, etc.)
+2. Stores everything in a PostgreSQL database with full parameters
+3. Uses Claude AI to enrich each component with descriptions, quality scores, duplicate detection, and missing data flags
+4. Calculates missing dimensions using math and context-based estimation
 
 ## Stack
-- Python
+
+- Python 3
 - ifcopenshell (IFC parsing)
-- PostgreSQL
+- PostgreSQL (database)
+- Claude AI via Anthropic API (enrichment)
+
+## Prerequisites
+
+Before you start make sure you have:
+
+- Python 3 installed — [python.org](https://python.org)
+- PostgreSQL installed — [postgresql.org/download](https://postgresql.org/download)
+- pgAdmin installed — comes with PostgreSQL or [pgadmin.org](https://pgadmin.org)
+- An Anthropic API key — [console.anthropic.com](https://console.anthropic.com)
+- An IFC file to test with — export from Revit or download a sample from [buildingSMART](https://github.com/buildingSMART/Sample-Test-Files)
 
 ## Setup
-1. Install PostgreSQL and create a database called `bim_components`
-2. Run `psql -d bim_components -f database/schema.sql`
-3. Install dependencies: `pip install -r requirements.txt`
-4. Run the extractor: `python extractor/strip.py path/to/file.rvt`
+
+### 1. Clone the repo
+```bash
+git clone https://github.com/yourusername/your-repo-name.git
+cd your-repo-name
+```
+
+### 2. Install Python dependencies
+```bash
+pip3 install -r requirements.txt
+```
+
+### 3. Set up the database
+
+Open pgAdmin and:
+1. Right click **Databases** → **Create** → **Database**
+2. Name it `bim_components`
+3. Click on `bim_components` in the sidebar
+4. Open the **Query Tool** (lightning bolt icon)
+5. Paste the contents of `database/schema.sql` and hit play
+
+### 4. Create your .env file
+
+Create a file called `.env` in the root of the project:
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=bim_components
+DB_USER=postgres
+DB_PASSWORD=your_postgres_password
+ANTHROPIC_API_KEY=your_anthropic_api_key
+### 5. Run the pipeline
+
+**Step 1 — Extract components from an IFC file:**
+```bash
+python3 extractor/strip.py path/to/your/file.ifc
+```
+
+**Step 2 — Enrich components with AI:**
+```bash
+python3 extractor/enricher.py
+```
+
+**Step 3 — Populate dimension columns:**
+```bash
+python3 extractor/populate_dimensions.py
+```
+
+## Project Structure
+bim-component-stripper/
+├── README.md
+├── requirements.txt
+├── .env.example
+├── database/
+│   ├── schema.sql
+│   └── db.py
+└── extractor/
+├── strip.py
+├── enricher.py
+└── populate_dimensions.py
+## Database Schema
+
+| Table | Description |
+|---|---|
+| `projects` | Tracks every IFC file processed |
+| `components` | Every building element extracted |
+| `wall_types` | Detailed wall layer data |
+| `mep_systems` | MEP connector and flow data |
+| `materials` | All materials referenced in the building |
+
+## Example Queries
+```sql
+-- Find all walls longer than 3 meters
+SELECT family_name, length_mm, width_mm
+FROM components
+WHERE category = 'IfcWall' AND length_mm > 3000;
+
+-- Find high quality components
+SELECT family_name, quality_score
+FROM components
+WHERE quality_score >= 0.8
+ORDER BY quality_score DESC;
+
+-- Find all exterior walls
+SELECT family_name, width_mm, length_mm, height_mm
+FROM components
+WHERE category = 'IfcWall'
+AND parameters->'Pset_WallCommon'->>'IsExternal' = 'true';
+```
+
+## Notes
+
+- IFC files are ignored by git (see .gitignore) — don't commit large building files
+- Never commit your .env file — it contains your database password and API key
+- The Anthropic API costs a small amount per run — enriching 15 components costs fractions of a cent
