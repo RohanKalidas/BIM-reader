@@ -7,7 +7,7 @@ Part of a larger generative architecture pipeline.
 
 ## Stack
 - Python
-- Revit API / pyRevit
+- ifcopenshell (IFC parsing)
 - PostgreSQL
 
 ## Setup
