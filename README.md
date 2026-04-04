@@ -47,10 +47,63 @@ Open pgAdmin and:
 3. Click on `bim_components` in the sidebar
 4. Open the **Query Tool** (lightning bolt icon)
 5. Paste the contents of `database/schema.sql` and hit play
--- See all tables
-SELECT table_name FROM information_schema.tables 
-WHERE table_schema = 'public';
 
+### 4. Create your .env file
+
+Create a file called `.env` in the root of the project:
+```
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=bim_components
+DB_USER=postgres
+DB_PASSWORD=your_postgres_password
+ANTHROPIC_API_KEY=your_anthropic_api_key
+```
+
+### 5. Run the pipeline
+
+**Step 1 — Extract components from an IFC file:**
+```bash
+python3 extractor/strip.py path/to/your/file.ifc
+```
+
+**Step 2 — Enrich components with AI:**
+```bash
+python3 extractor/enricher.py
+```
+
+**Step 3 — Populate dimension columns:**
+```bash
+python3 extractor/populate_dimensions.py
+```
+
+## Project Structure
+```
+bim-component-stripper/
+├── README.md
+├── requirements.txt
+├── .env.example
+├── database/
+│   ├── schema.sql
+│   └── db.py
+└── extractor/
+    ├── strip.py
+    ├── enricher.py
+    └── populate_dimensions.py
+```
+
+## Database Schema
+
+| Table | Description |
+|---|---|
+| `projects` | Tracks every IFC file processed |
+| `components` | Every building element extracted |
+| `wall_types` | Detailed wall layer data |
+| `mep_systems` | MEP connector and flow data |
+| `materials` | All materials referenced in the building |
+
+## Useful pgAdmin Queries
+```sql
 -- See all projects processed
 SELECT * FROM projects;
 
@@ -85,54 +138,7 @@ ORDER BY quality_score DESC;
 SELECT family_name, parameters->'ai_enrichment'
 FROM components
 WHERE id = 26;
-
-### 4. Create your .env file
-
-Create a file called `.env` in the root of the project:
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=bim_components
-DB_USER=postgres
-DB_PASSWORD=your_postgres_password
-ANTHROPIC_API_KEY=your_anthropic_api_key
-### 5. Run the pipeline
-
-**Step 1 — Extract components from an IFC file:**
-```bash
-python3 extractor/strip.py path/to/your/file.ifc
 ```
-
-**Step 2 — Enrich components with AI:**
-```bash
-python3 extractor/enricher.py
-```
-
-**Step 3 — Populate dimension columns:**
-```bash
-python3 extractor/populate_dimensions.py
-```
-
-## Project Structure
-bim-component-stripper/
-├── README.md
-├── requirements.txt
-├── .env.example
-├── database/
-│   ├── schema.sql
-│   └── db.py
-└── extractor/
-├── strip.py
-├── enricher.py
-└── populate_dimensions.py
-## Database Schema
-
-| Table | Description |
-|---|---|
-| `projects` | Tracks every IFC file processed |
-| `components` | Every building element extracted |
-| `wall_types` | Detailed wall layer data |
-| `mep_systems` | MEP connector and flow data |
-| `materials` | All materials referenced in the building |
 
 ## Example Queries
 ```sql
