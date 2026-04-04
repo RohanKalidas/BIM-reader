@@ -29,6 +29,18 @@ Before you start make sure you have:
 - An Anthropic API key — [console.anthropic.com](https://console.anthropic.com)
 - An IFC file to test with — export from Revit or download a sample from [buildingSMART](https://github.com/buildingSMART/Sample-Test-Files)
 
+## OS Notes
+
+**Mac/Linux:** Use `python3` and `pip3` for all commands
+
+**Windows:** Replace `python3` with `python` and `pip3` with `pip` in all commands. 
+File paths use backslashes e.g. `extractor\strip.py`
+
+**Linux:** Install PostgreSQL via your package manager:
+```bash
+sudo apt install postgresql postgresql-contrib
+```
+
 ## Setup
 
 ### 1. Clone the repo
