@@ -4,6 +4,7 @@ import psycopg2
 import psycopg2.extras
 import os
 import sys
+import numpy as np
 from dotenv import load_dotenv
 from datetime import datetime
 from collections import defaultdict
@@ -55,6 +56,16 @@ def save_component(cursor, project_id, category, family_name, type_name, revit_i
     )
     return cursor.fetchone()[0]
 
+# --- Save spatial data ---
+def save_spatial_data(cursor, component_id, pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, bounding_box, level, elevation):
+    cursor.execute(
+        """
+        INSERT INTO spatial_data (component_id, pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, bounding_box, level, elevation)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        (component_id, pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, psycopg2.extras.Json(bounding_box), level, elevation)
+    )
+
 # --- Save a wall type ---
 def save_wall_type(cursor, component_id, thickness, function, layers):
     cursor.execute(
@@ -85,6 +96,64 @@ def save_material(cursor, project_id, name, category, properties):
         """,
         (project_id, name, category, psycopg2.extras.Json(properties))
     )
+
+# --- Extract position and rotation from IFC placement ---
+def extract_placement(element):
+    try:
+        placement = element.ObjectPlacement
+        if not placement:
+            return None, None, None, None, None, None
+
+        loc = placement.RelativePlacement
+        if not loc:
+            return None, None, None, None, None, None
+
+        # Position
+        origin = loc.Location
+        pos_x = origin.Coordinates[0] if origin else None
+        pos_y = origin.Coordinates[1] if origin else None
+        pos_z = origin.Coordinates[2] if origin and len(origin.Coordinates) > 2 else 0.0
+
+        # Rotation — extract from axis and ref direction
+        rot_x, rot_y, rot_z = 0.0, 0.0, 0.0
+        if hasattr(loc, 'Axis') and loc.Axis and hasattr(loc, 'RefDirection') and loc.RefDirection:
+            axis = np.array(loc.Axis.DirectionRatios)
+            ref = np.array(loc.RefDirection.DirectionRatios)
+            # Calculate rotation Z angle from ref direction
+            rot_z = float(np.degrees(np.arctan2(ref[1], ref[0])))
+
+        return pos_x, pos_y, pos_z, rot_x, rot_y, rot_z
+    except:
+        return None, None, None, None, None, None
+
+# --- Extract bounding box from element geometry ---
+def extract_bounding_box(element):
+    try:
+        if not element.Representation:
+            return {}
+
+        all_points = []
+        for rep in element.Representation.Representations:
+            for item in rep.Items:
+                if item.is_a("IfcBoundingBox"):
+                    corner = item.Corner
+                    x, y, z = corner.Coordinates
+                    all_points.append((x, y, z))
+                    all_points.append((x + item.XDim, y + item.YDim, z + item.ZDim))
+
+        if not all_points:
+            return {}
+
+        xs = [p[0] for p in all_points]
+        ys = [p[1] for p in all_points]
+        zs = [p[2] for p in all_points]
+
+        return {
+            "min_x": min(xs), "min_y": min(ys), "min_z": min(zs),
+            "max_x": max(xs), "max_y": max(ys), "max_z": max(zs)
+        }
+    except:
+        return {}
 
 # --- Extract all components from the IFC file ---
 def extract(filepath):
@@ -119,7 +188,7 @@ def extract(filepath):
         except:
             pass
 
-        # --- Dig deeper: extract material name ---
+        # --- Extract material name ---
         try:
             for rel in element.HasAssociations:
                 if rel.is_a("IfcRelAssociatesMaterial"):
@@ -137,18 +206,22 @@ def extract(filepath):
         except:
             pass
 
-        # --- Dig deeper: extract storey/level ---
+        # --- Extract storey/level ---
+        level = None
+        elevation = None
         try:
             for rel in element.ContainedInStructure:
                 if rel.is_a("IfcRelContainedInSpatialStructure"):
                     storey = rel.RelatingStructure
                     if storey.is_a("IfcBuildingStorey"):
-                        parameters["_storey"] = storey.Name
-                        parameters["_elevation"] = storey.Elevation
+                        level = storey.Name
+                        elevation = storey.Elevation
+                        parameters["_storey"] = level
+                        parameters["_elevation"] = elevation
         except:
             pass
 
-        # --- Dig deeper: extract wall height from geometry ---
+        # --- Extract wall height from geometry ---
         try:
             if element.is_a("IfcWall") or element.is_a("IfcWallStandardCase"):
                 for rep in element.Representation.Representations:
@@ -162,11 +235,28 @@ def extract(filepath):
         except:
             pass
 
+        # --- Extract MEP flow direction and system ---
+        try:
+            if element.is_a("IfcFlowSegment") or element.is_a("IfcFlowFitting") or element.is_a("IfcFlowTerminal"):
+                for rel in element.HasAssignments:
+                    if rel.is_a("IfcRelAssignsToGroup"):
+                        group = rel.RelatingGroup
+                        if group.is_a("IfcSystem"):
+                            parameters["_system_name"] = group.Name
+                            parameters["_system_type"] = group.is_a()
+        except:
+            pass
+
         # Save the base component
         component_id = save_component(
             cursor, project_id, category,
             family_name, type_name, revit_id, parameters
         )
+
+        # --- Extract and save spatial data ---
+        pos_x, pos_y, pos_z, rot_x, rot_y, rot_z = extract_placement(element)
+        bounding_box = extract_bounding_box(element)
+        save_spatial_data(cursor, component_id, pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, bounding_box, level, elevation)
 
         # --- Walls get extra treatment ---
         if element.is_a("IfcWall") or element.is_a("IfcWallStandardCase"):
@@ -191,7 +281,7 @@ def extract(filepath):
 
         # --- MEP elements get extra treatment ---
         elif element.is_a("IfcFlowSegment") or element.is_a("IfcFlowFitting") or element.is_a("IfcFlowTerminal"):
-            system_type = category
+            system_type = parameters.get("_system_type", category)
             flow_rate = None
             pressure_drop = None
             connectors = []
