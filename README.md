@@ -1,18 +1,17 @@
 # BIM Component Stripper
 
-Ingests IFC files (exported from Revit or any BIM software) and extracts all building components into a PostgreSQL database and Neo4j graph database. Uses AI to enrich, clean, and analyze the extracted data, and captures spatial relationships between components for 3D reconstruction.
+Ingests IFC files (exported from Revit or any BIM software), extracts all building components into a PostgreSQL database, builds a spatial relationship graph in Neo4j, and uses AI to enrich and organize the data. The goal is to strip a building into reusable lego blocks and store enough information to reconstruct it identically.
 
 ## What it does
 
 1. Parses an IFC file and extracts all building components (walls, slabs, roofs, MEP systems, materials, etc.)
-2. Stores everything in a PostgreSQL database with full parameters
-3. Captures spatial data — position, rotation, bounding box, and floor level for every component
-4. Builds a Neo4j graph of spatial relationships — how components connect, their angles, and flow connections for MEP systems
-5. Uses Claude AI to enrich each component with descriptions, quality scores, duplicate detection, and missing data flags
-6. Calculates missing dimensions using math and context-based estimation
-7. Detects duplicate components across buildings
-8. Flags missing data and assigns quality scores to every component
-9. Organizes components into normalized categories for easy querying
+2. Captures spatial data — position, rotation, bounding box, and floor level for every component
+3. Extracts explicit relationships directly from the IFC file (connections, fills, flow networks, space boundaries)
+4. Stores everything in PostgreSQL with full parameters
+5. Builds a Neo4j graph of nodes and relationships for spatial reasoning and reconstruction
+6. Uses Claude AI to enrich each component with descriptions, quality scores, duplicate detection, and missing data flags
+7. Calculates missing dimensions using math and context-based estimation
+8. Runs a spatial analyzer to calculate additional relationships from geometry
 
 ## Stack
 
@@ -64,21 +63,25 @@ pip3 install -r requirements.txt
 Open pgAdmin and:
 1. Right click **Databases** → **Create** → **Database**
 2. Name it `bim_components`
-3. Click on `bim_components` in the sidebar
-4. Open the **Query Tool** (lightning bolt icon)
-5. Paste the contents of `database/schema.sql` and hit play
+3. Click on `bim_components` in the left sidebar to select it
+4. Open the **Query Tool** (lightning bolt icon at the top)
+5. Make sure the top of the query tool says `bim_components` not `postgres`
+6. Paste the entire contents of `database/schema.sql` and hit play
+7. You should see `CREATE INDEX` and `Query returned successfully`
 
 ### 4. Set up Neo4j
 
-Open Neo4j Desktop and:
-1. Click **Create instance**
-2. Name it `bim-graph`
-3. Set a password and write it down
-4. Click **Create** then **Start**
+1. Open Neo4j Desktop
+2. Click **Create instance**
+3. Give it a name like `bim-graph`
+4. Set a password — write it down, you'll need it
+5. Click **Create**
+6. Click **Start** and wait until it says **Running**
+7. You can view your graph at `http://localhost:7474` in any browser
 
 ### 5. Create your .env file
 
-Create a file called `.env` in the root of the project:
+Create a file called `.env` in the root of the project. This file is never pushed to GitHub — you must create it manually on every machine:
 ```
 DB_HOST=localhost
 DB_PORT=5432
@@ -91,26 +94,52 @@ NEO4J_USER=neo4j
 NEO4J_PASSWORD=your_neo4j_password
 ```
 
+Replace `your_postgres_password`, `your_anthropic_api_key`, and `your_neo4j_password` with your actual credentials. Do not add spaces around the `=` sign.
+
 ### 6. Run the pipeline
+
+Make sure Neo4j is running before starting. Then run these in order:
 
 **Step 1 — Extract components and spatial data from an IFC file:**
 ```bash
 python3 extractor/strip.py path/to/your/file.ifc
 ```
+You should see a summary of extracted components and relationships at the end.
 
-**Step 2 — Build the spatial relationship graph in Neo4j:**
+**Step 2 — Build the Neo4j graph:**
 ```bash
 python3 extractor/graph_builder.py
 ```
+You should see component nodes, space nodes, and relationship edges being created.
 
 **Step 3 — Enrich components with AI:**
 ```bash
 python3 extractor/enricher.py
 ```
+You should see each component being enriched with a category, description, quality score, and missing data flags.
 
 **Step 4 — Populate dimension columns:**
 ```bash
 python3 extractor/populate_dimensions.py
+```
+You should see dimensions populated for each component.
+
+**Step 5 — Run spatial analysis:**
+```bash
+python3 extractor/spatial_analyzer.py
+```
+You should see wall connections, MEP flow networks, and penetrations being calculated.
+
+### 7. Verify in Neo4j browser
+
+Open `http://localhost:7474` in your browser and log in with `neo4j` and your password. Run this query to see your full graph:
+```cypher
+MATCH (n) RETURN n
+```
+
+To see all relationships:
+```cypher
+MATCH (a)-[r]->(b) RETURN a, r, b
 ```
 
 ## Project Structure
@@ -126,9 +155,9 @@ bim-component-stripper/
 └── extractor/
     ├── strip.py
     ├── graph_builder.py
-    ├── spatial_analyzer.py
     ├── enricher.py
-    └── populate_dimensions.py
+    ├── populate_dimensions.py
+    └── spatial_analyzer.py
 ```
 
 ## Database Schema
@@ -140,6 +169,8 @@ bim-component-stripper/
 | `projects` | Tracks every IFC file processed |
 | `components` | Every building element extracted |
 | `spatial_data` | Position, rotation, and bounding box for every component |
+| `relationships` | Explicit relationships extracted directly from IFC |
+| `spaces` | Rooms and spaces from the building |
 | `wall_types` | Detailed wall layer data |
 | `mep_systems` | MEP connector and flow data |
 | `materials` | All materials referenced in the building |
@@ -149,19 +180,28 @@ bim-component-stripper/
 | Node | Description |
 |---|---|
 | `Component` | Every building element as a graph node |
-| `Room` | Spaces and zones |
+| `Space` | Rooms and zones |
 | `Floor` | Building levels |
 | `Building` | Top level container |
+| `System` | MEP systems |
 
 | Relationship | Description |
 |---|---|
 | `CONNECTS_TO` | Physical connection between components |
-| `EMBEDDED_IN` | Door/window inside a wall |
-| `SITS_ON` | Slab or roof on walls |
-| `BELONGS_TO` | Component in a room |
-| `FLOWS_INTO` | MEP flow connections |
-| `PENETRATES` | MEP element through a wall or slab |
-| `SUPPORTED_BY` | Structural load relationships |
+| `FILLS` | Door/window inside a wall opening |
+| `VOIDS` | Opening cut into a wall or slab |
+| `BOUNDS` | Component bounds a space |
+| `CONTAINS` | Space contains a component |
+| `FLOWS_INTO` | MEP flow connection |
+| `PART_OF` | Component is part of a compound element |
+| `ASSIGNED_TO` | Component assigned to an MEP system |
+| `COVERED_BY` | Element has a covering |
+| `ON_FLOOR` | Component is on a floor level |
+| `SITS_ON` | Slab or roof sits on walls |
+| `SUPPORTED_BY` | Structural load relationship |
+| `ADJACENT_TO` | Components near each other |
+| `PENETRATES` | MEP element goes through a wall or slab |
+| `RUNS_ALONG` | MEP element runs alongside a wall |
 
 ## Useful pgAdmin Queries
 ```sql
@@ -177,14 +217,23 @@ FROM components
 ORDER BY quality_score DESC;
 
 -- See spatial data for all components
-SELECT c.family_name, s.pos_x, s.pos_y, s.pos_z, s.level
+SELECT c.family_name, s.pos_x, s.pos_y, s.pos_z, s.rot_z, s.level
 FROM spatial_data s
 JOIN components c ON c.id = s.component_id;
+
+-- See all explicit relationships
+SELECT c1.family_name as from_component, r.relationship_type, c2.family_name as to_component, r.properties
+FROM relationships r
+JOIN components c1 ON c1.id = r.component_a_id
+JOIN components c2 ON c2.id = r.component_b_id;
 
 -- See wall types and their layers
 SELECT c.family_name, w.total_thickness, w.function, w.layers
 FROM wall_types w
 JOIN components c ON c.id = w.component_id;
+
+-- See all spaces
+SELECT * FROM spaces;
 
 -- See all materials
 SELECT * FROM materials;
@@ -203,7 +252,36 @@ ORDER BY quality_score DESC;
 -- See AI enrichment for a specific component
 SELECT family_name, parameters->'ai_enrichment'
 FROM components
-WHERE id = 26;
+WHERE id = 1;
+```
+
+## Useful Neo4j Queries
+```cypher
+-- See all nodes
+MATCH (n) RETURN n
+
+-- See all relationships
+MATCH (a)-[r]->(b) RETURN a, r, b
+
+-- See all walls and what they connect to
+MATCH (w:Component {normalized_category: 'wall'})-[r]->(b)
+RETURN w.family_name, type(r), b.family_name
+
+-- See the full building structure
+MATCH (b:Building)--(f:Floor)--(c:Component)
+RETURN b, f, c
+
+-- See MEP flow network
+MATCH (a:Component)-[:FLOWS_INTO]->(b:Component)
+RETURN a.family_name, b.family_name
+
+-- Find all components on a specific floor
+MATCH (c:Component)-[:ON_FLOOR]->(f:Floor {name: '00 groundfloor'})
+RETURN c.family_name, c.category
+
+-- Find what a wall connects to
+MATCH (w:Component {family_name: 'house - outer wall - house left'})-[r]->(b)
+RETURN w.family_name, type(r), b.family_name
 ```
 
 ## Example Queries
@@ -228,7 +306,10 @@ AND parameters->'Pset_WallCommon'->>'IsExternal' = 'true';
 
 ## Notes
 
-- IFC files are ignored by git (see .gitignore) — don't commit large building files
-- Never commit your .env file — it contains your database password and API key
-- The Anthropic API costs a small amount per run — enriching 15 components costs fractions of a cent. However, Anthropic provides you with credits which should last for more than necessary
-- Neo4j Desktop must be running before executing graph_builder.py or any graph queries
+- IFC files are ignored by git — don't commit large building files
+- Never commit your `.env` file — it contains your database password and API key
+- The `.env` file must be created manually on every machine — it is never pushed to GitHub
+- Neo4j Desktop must be running before executing `graph_builder.py` or `spatial_analyzer.py`
+- The Anthropic API costs a small amount per run — Anthropic provides free credits on signup which should last a long time at this scale
+- Running the pipeline on a new IFC file creates a new project — old data is never overwritten
+- To wipe and restart: delete the project from pgAdmin and re-run the pipeline
