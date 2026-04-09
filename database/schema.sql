@@ -23,10 +23,34 @@ CREATE TABLE components (
     revit_id        TEXT,            -- original element ID inside the .rvt file
     
     -- All parameters as flexible JSON
-    -- e.g. {"width": 36, "height": 84, "fire_rating": "1hr", "material": "oak"}
     parameters      JSONB DEFAULT '{}',
     
+    -- Extracted dimension columns
+    width_mm        FLOAT,
+    height_mm       FLOAT,
+    length_mm       FLOAT,
+    area_m2         FLOAT,
+    volume_m3       FLOAT,
+    quality_score   FLOAT,
+
     created_at      TIMESTAMP DEFAULT NOW()
+);
+
+-- Spatial data for every component — position, rotation, bounding box
+CREATE TABLE spatial_data (
+    id              SERIAL PRIMARY KEY,
+    component_id    INTEGER REFERENCES components(id) ON DELETE CASCADE,
+    pos_x           FLOAT,
+    pos_y           FLOAT,
+    pos_z           FLOAT,
+    rot_x           FLOAT,
+    rot_y           FLOAT,
+    rot_z           FLOAT,
+    bounding_box    JSONB DEFAULT '{}',
+    -- bounding_box example:
+    -- {"min_x": 0, "min_y": 0, "min_z": 0, "max_x": 6000, "max_y": 200, "max_z": 3000}
+    level           TEXT,            -- which floor/storey this component is on
+    elevation       FLOAT            -- elevation in mm from ground
 );
 
 -- Wall types get their own table since they have a specific layered structure
@@ -80,3 +104,4 @@ CREATE INDEX idx_components_category   ON components(category);
 CREATE INDEX idx_components_family     ON components(family_name);
 CREATE INDEX idx_components_parameters ON components USING GIN(parameters);
 CREATE INDEX idx_materials_project     ON materials(project_id);
+CREATE INDEX idx_spatial_component     ON spatial_data(component_id);
