@@ -15,14 +15,21 @@ def get_db():
         password=os.getenv("DB_PASSWORD")
     )
 
-def populate_dimensions():
+def populate_dimensions(project_id=None):
     conn = get_db()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT id, parameters
-        FROM components
-    """)
+    if project_id:
+        cursor.execute("""
+            SELECT id, parameters
+            FROM components
+            WHERE project_id = %s
+        """, (project_id,))
+    else:
+        cursor.execute("""
+            SELECT id, parameters
+            FROM components
+        """)
 
     components = cursor.fetchall()
     print(f"Found {len(components)} components\n")
