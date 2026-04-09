@@ -33,10 +33,10 @@ def populate_dimensions():
         id, parameters = component
 
         enrichment = parameters.get("ai_enrichment", {})
-        
+
         # Get dimensions from AI
         dims = enrichment.get("dimensions", {})
-        
+
         # Get calculated dimensions and merge them in
         calculated = enrichment.get("calculated_dimensions", {})
 
@@ -55,7 +55,7 @@ def populate_dimensions():
 
         cursor.execute("""
             UPDATE components
-            SET 
+            SET
                 width_mm = %s,
                 height_mm = %s,
                 length_mm = %s,
