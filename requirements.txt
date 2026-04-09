@@ -4,3 +4,5 @@ python-dotenv
 anthropic
 neo4j
 numpy
+flask
+flask-cors
