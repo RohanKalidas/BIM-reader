@@ -532,7 +532,9 @@ def extract(filepath):
     print(f"\nDone! Extracted from {filename}:")
     for category, count in sorted(counts.items()):
         print(f"  {category}: {count}")
-
+        
+    return project_id
+    
 # --- Entry point ---
 if __name__ == "__main__":
     if len(sys.argv) < 2:
