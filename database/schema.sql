@@ -1,42 +1,35 @@
 -- BIM Component Stripper
 -- PostgreSQL Schema
 
--- Every .rvt file that gets uploaded and processed
+-- Every IFC file that gets uploaded and processed
 CREATE TABLE projects (
     id              SERIAL PRIMARY KEY,
     name            TEXT NOT NULL,
     filename        TEXT NOT NULL,
     uploaded_at     TIMESTAMP DEFAULT NOW(),
     processed_at    TIMESTAMP,
-    status          TEXT DEFAULT 'pending'  -- pending | processing | done | failed
+    status          TEXT DEFAULT 'pending'
 );
 
 -- The core table. Every extracted component from every project lives here.
 CREATE TABLE components (
     id              SERIAL PRIMARY KEY,
     project_id      INTEGER REFERENCES projects(id) ON DELETE CASCADE,
-    
-    -- What kind of thing is this?
-    category        TEXT NOT NULL,   -- 'wall' | 'door' | 'window' | 'duct' | 'pipe' | 'floor' | etc.
-    family_name     TEXT,            -- Revit family name e.g. "Basic Wall"
-    type_name       TEXT,            -- Revit type name e.g. "Exterior - Brick on CMU"
-    revit_id        TEXT,            -- original element ID inside the .rvt file
-    
-    -- All parameters as flexible JSON
+    category        TEXT NOT NULL,
+    family_name     TEXT,
+    type_name       TEXT,
+    revit_id        TEXT,
     parameters      JSONB DEFAULT '{}',
-    
-    -- Extracted dimension columns
     width_mm        FLOAT,
     height_mm       FLOAT,
     length_mm       FLOAT,
     area_m2         FLOAT,
     volume_m3       FLOAT,
     quality_score   FLOAT,
-
     created_at      TIMESTAMP DEFAULT NOW()
 );
 
--- Spatial data for every component — position, rotation, bounding box
+-- Spatial data for every component
 CREATE TABLE spatial_data (
     id              SERIAL PRIMARY KEY,
     component_id    INTEGER REFERENCES components(id) ON DELETE CASCADE,
@@ -47,61 +40,93 @@ CREATE TABLE spatial_data (
     rot_y           FLOAT,
     rot_z           FLOAT,
     bounding_box    JSONB DEFAULT '{}',
-    -- bounding_box example:
-    -- {"min_x": 0, "min_y": 0, "min_z": 0, "max_x": 6000, "max_y": 200, "max_z": 3000}
-    level           TEXT,            -- which floor/storey this component is on
-    elevation       FLOAT            -- elevation in mm from ground
+    level           TEXT,
+    elevation       FLOAT
 );
 
--- Wall types get their own table since they have a specific layered structure
+-- Explicit relationships between components extracted directly from IFC
+CREATE TABLE relationships (
+    id                  SERIAL PRIMARY KEY,
+    project_id          INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    component_a_id      INTEGER REFERENCES components(id) ON DELETE CASCADE,
+    component_b_id      INTEGER REFERENCES components(id) ON DELETE CASCADE,
+    relationship_type   TEXT NOT NULL,
+    -- Types:
+    -- CONNECTS_TO       — physical connection between elements
+    -- FILLS             — door/window fills a wall opening
+    -- VOIDS             — opening cuts through a wall/slab
+    -- BOUNDS            — element bounds a space/room
+    -- CONTAINS          — space contains an element
+    -- FLOWS_INTO        — MEP flow connection
+    -- PART_OF           — element is part of a compound element
+    -- COVERED_BY        — element has a covering
+    -- ASSIGNED_TO       — element assigned to a system
+    properties          JSONB DEFAULT '{}',
+    -- properties example:
+    -- {
+    --   "angle": 90,
+    --   "distance": 0,
+    --   "flow_direction": "supply",
+    --   "connection_point": {"x": 0, "y": 0, "z": 0}
+    -- }
+    source              TEXT DEFAULT 'explicit',
+    -- explicit = read directly from IFC
+    -- calculated = derived from geometry
+    created_at          TIMESTAMP DEFAULT NOW()
+);
+
+-- Spaces and rooms
+CREATE TABLE spaces (
+    id              SERIAL PRIMARY KEY,
+    project_id      INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    revit_id        TEXT,
+    name            TEXT,
+    long_name       TEXT,
+    level           TEXT,
+    elevation       FLOAT,
+    area_m2         FLOAT,
+    volume_m3       FLOAT,
+    parameters      JSONB DEFAULT '{}'
+);
+
+-- Wall types
 CREATE TABLE wall_types (
     id              SERIAL PRIMARY KEY,
     component_id    INTEGER REFERENCES components(id) ON DELETE CASCADE,
-    total_thickness FLOAT,           -- in millimeters
-    function        TEXT,            -- 'exterior' | 'interior' | 'retaining' | etc.
+    total_thickness FLOAT,
+    function        TEXT,
     layers          JSONB DEFAULT '[]'
-    -- layers example:
-    -- [
-    --   {"name": "Brick", "material": "Masonry - Brick", "thickness": 92},
-    --   {"name": "Insulation", "material": "Insulation - Rigid", "thickness": 50},
-    --   {"name": "Concrete Block", "material": "Concrete - CMU", "thickness": 190}
-    -- ]
 );
 
--- MEP systems (mechanical, electrical, plumbing) have connector info
+-- MEP systems
 CREATE TABLE mep_systems (
     id              SERIAL PRIMARY KEY,
     component_id    INTEGER REFERENCES components(id) ON DELETE CASCADE,
-    system_type     TEXT,            -- 'supply air' | 'return air' | 'domestic hot water' | etc.
+    system_type     TEXT,
+    system_name     TEXT,
     flow_rate       FLOAT,
     pressure_drop   FLOAT,
     connectors      JSONB DEFAULT '[]'
-    -- connectors example:
-    -- [
-    --   {"type": "supply", "size": 12, "shape": "round"},
-    --   {"type": "return", "size": 10, "shape": "round"}
-    -- ]
 );
 
--- Materials referenced by components
+-- Materials
 CREATE TABLE materials (
     id              SERIAL PRIMARY KEY,
     project_id      INTEGER REFERENCES projects(id) ON DELETE CASCADE,
     name            TEXT NOT NULL,
-    category        TEXT,            -- 'concrete' | 'masonry' | 'wood' | 'metal' | etc.
+    category        TEXT,
     properties      JSONB DEFAULT '{}'
-    -- properties example:
-    -- {
-    --   "thermal_conductivity": 0.72,
-    --   "density": 2400,
-    --   "color": "#C8B89A"
-    -- }
 );
 
--- Indexes for the queries you'll run most often
-CREATE INDEX idx_components_project    ON components(project_id);
-CREATE INDEX idx_components_category   ON components(category);
-CREATE INDEX idx_components_family     ON components(family_name);
-CREATE INDEX idx_components_parameters ON components USING GIN(parameters);
-CREATE INDEX idx_materials_project     ON materials(project_id);
-CREATE INDEX idx_spatial_component     ON spatial_data(component_id);
+-- Indexes
+CREATE INDEX idx_components_project     ON components(project_id);
+CREATE INDEX idx_components_category    ON components(category);
+CREATE INDEX idx_components_family      ON components(family_name);
+CREATE INDEX idx_components_parameters  ON components USING GIN(parameters);
+CREATE INDEX idx_spatial_component      ON spatial_data(component_id);
+CREATE INDEX idx_relationships_project  ON relationships(project_id);
+CREATE INDEX idx_relationships_a        ON relationships(component_a_id);
+CREATE INDEX idx_relationships_b        ON relationships(component_b_id);
+CREATE INDEX idx_relationships_type     ON relationships(relationship_type);
+CREATE INDEX idx_spaces_project         ON spaces(project_id);
+CREATE INDEX idx_materials_project      ON materials(project_id);
