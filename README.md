@@ -9,9 +9,9 @@ Ingests IFC files (exported from Revit or any BIM software), extracts all buildi
 3. Extracts explicit relationships directly from the IFC file (connections, fills, flow networks, space boundaries)
 4. Stores everything in PostgreSQL with full parameters
 5. Builds a Neo4j graph of nodes and relationships for spatial reasoning and reconstruction
-6. Uses Claude AI to enrich each component with descriptions, quality scores, duplicate detection, and missing data flags
-7. Calculates missing dimensions using math and context-based estimation
-8. Runs a spatial analyzer to calculate additional relationships from geometry
+6. Calculates missing dimensions using math and context-based estimation
+7. Runs a spatial analyzer to calculate additional relationships from geometry
+8. Optional AI enrichment for ambiguous components
 
 ## Stack
 
@@ -19,7 +19,7 @@ Ingests IFC files (exported from Revit or any BIM software), extracts all buildi
 - ifcopenshell (IFC parsing)
 - PostgreSQL (component metadata and parameters)
 - Neo4j (spatial relationships and graph data)
-- Claude AI via Anthropic API (enrichment)
+- Claude AI via Anthropic API (optional enrichment)
 - numpy (spatial math)
 
 ## Prerequisites
@@ -30,8 +30,8 @@ Before you start make sure you have:
 - PostgreSQL installed — [postgresql.org/download](https://postgresql.org/download)
 - pgAdmin installed — comes with PostgreSQL or [pgadmin.org](https://pgadmin.org)
 - Neo4j Desktop installed — [neo4j.com/download](https://neo4j.com/download)
-- An Anthropic API key — [console.anthropic.com](https://console.anthropic.com)
-- An IFC file to test with — export from Revit or download a sample from [buildingSMART](https://github.com/buildingSMART/Sample-Test-Files)
+- An IFC file to test with — export from Revit or download a sample from [buildingSMART](https://github.com/youshengCode/IfcSampleFiles)
+- An Anthropic API key (optional, only needed for enricher) — [console.anthropic.com](https://console.anthropic.com)
 
 ## OS Notes
 
@@ -94,43 +94,39 @@ NEO4J_USER=neo4j
 NEO4J_PASSWORD=your_neo4j_password
 ```
 
-Replace `your_postgres_password`, `your_anthropic_api_key`, and `your_neo4j_password` with your actual credentials. Do not add spaces around the `=` sign.
+Replace `your_postgres_password`, `your_anthropic_api_key`, and `your_neo4j_password` with your actual credentials. Do not add spaces around the `=` sign. `ANTHROPIC_API_KEY` is only needed if you plan to run the optional enricher.
 
 ### 6. Run the pipeline
 
-Make sure Neo4j is running before starting. Then run these in order:
-
-**Step 1 — Extract components and spatial data from an IFC file:**
+Make sure Neo4j is running before starting. Then run:
 ```bash
-python3 extractor/strip.py path/to/your/file.ifc
+python3 run.py path/to/your/file.ifc
 ```
-You should see a summary of extracted components and relationships at the end.
 
-**Step 2 — Build the Neo4j graph:**
+That's it. The pipeline runs all steps automatically in order.
+
+**If something fails midway**, you can resume from a specific step without re-running everything:
 ```bash
-python3 extractor/graph_builder.py
-```
-You should see component nodes, space nodes, and relationship edges being created.
+# Resume from graph builder (step 2)
+python3 run.py --from 2
 
-**Step 3 — Enrich components with AI:**
+# Resume from dimension population (step 3)
+python3 run.py --from 3
+
+# Resume from spatial analysis (step 4)
+python3 run.py --from 4
+```
+
+### 7. Optional — AI enrichment
+
+The enricher is optional and only runs on ambiguous components that IFC doesn't clearly identify. Run it separately after the main pipeline:
 ```bash
 python3 extractor/enricher.py
 ```
-You should see each component being enriched with a category, description, quality score, and missing data flags.
 
-**Step 4 — Populate dimension columns:**
-```bash
-python3 extractor/populate_dimensions.py
-```
-You should see dimensions populated for each component.
+This requires an Anthropic API key in your `.env` file.
 
-**Step 5 — Run spatial analysis:**
-```bash
-python3 extractor/spatial_analyzer.py
-```
-You should see wall connections, MEP flow networks, and penetrations being calculated.
-
-### 7. Verify in Neo4j browser
+### 8. Verify in Neo4j browser
 
 Open `http://localhost:7474` in your browser and log in with `neo4j` and your password. Run this query to see your full graph:
 ```cypher
@@ -147,6 +143,7 @@ MATCH (a)-[r]->(b) RETURN a, r, b
 bim-component-stripper/
 ├── README.md
 ├── requirements.txt
+├── run.py                      ← run this to process an IFC file
 ├── .env.example
 ├── database/
 │   ├── schema.sql
@@ -155,9 +152,9 @@ bim-component-stripper/
 └── extractor/
     ├── strip.py
     ├── graph_builder.py
-    ├── enricher.py
     ├── populate_dimensions.py
-    └── spatial_analyzer.py
+    ├── spatial_analyzer.py
+    └── enricher.py             ← optional, run separately
 ```
 
 ## Database Schema
@@ -264,7 +261,8 @@ MATCH (n) RETURN n
 MATCH (a)-[r]->(b) RETURN a, r, b
 
 -- See all walls and what they connect to
-MATCH (w:Component {normalized_category: 'wall'})-[r]->(b)
+MATCH (w:Component)-[r]->(b)
+WHERE w.category IN ['IfcWall', 'IfcWallStandardCase']
 RETURN w.family_name, type(r), b.family_name
 
 -- See the full building structure
@@ -276,11 +274,12 @@ MATCH (a:Component)-[:FLOWS_INTO]->(b:Component)
 RETURN a.family_name, b.family_name
 
 -- Find all components on a specific floor
-MATCH (c:Component)-[:ON_FLOOR]->(f:Floor {name: '00 groundfloor'})
-RETURN c.family_name, c.category
+MATCH (c:Component)-[:ON_FLOOR]->(f:Floor)
+RETURN c.family_name, c.category, f.name
 
 -- Find what a wall connects to
-MATCH (w:Component {family_name: 'house - outer wall - house left'})-[r]->(b)
+MATCH (w:Component)-[r]->(b)
+WHERE w.category IN ['IfcWall', 'IfcWallStandardCase']
 RETURN w.family_name, type(r), b.family_name
 ```
 
@@ -309,7 +308,6 @@ AND parameters->'Pset_WallCommon'->>'IsExternal' = 'true';
 - IFC files are ignored by git — don't commit large building files
 - Never commit your `.env` file — it contains your database password and API key
 - The `.env` file must be created manually on every machine — it is never pushed to GitHub
-- Neo4j Desktop must be running before executing `graph_builder.py` or `spatial_analyzer.py`
-- The Anthropic API costs a small amount per run — Anthropic provides free credits on signup which should last a long time at this scale
+- Neo4j Desktop must be running before executing `run.py`
 - Running the pipeline on a new IFC file creates a new project — old data is never overwritten
 - To wipe and restart: delete the project from pgAdmin and re-run the pipeline
