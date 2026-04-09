@@ -13,32 +13,34 @@ STEPS = {
     4: "Analyzing spatial relationships"
 }
 
-def run_pipeline(filepath, start_from=1):
+def run_pipeline(filepath, start_from=1, project_id=None):
     print("=" * 50)
     print("BIM COMPONENT STRIPPER")
     print("=" * 50)
 
-    if start_from > 1:
+    if start_from > 1 and project_id:
         print(f"\nResuming from step {start_from}: {STEPS[start_from]}")
+        print(f"Project id: {project_id}")
 
     if start_from <= 1:
         print(f"\n[1/4] {STEPS[1]}...")
-        extract(filepath)
+        project_id = extract(filepath)
+        print(f"  Project id: {project_id}")
 
     if start_from <= 2:
         print(f"\n[2/4] {STEPS[2]}...")
-        build_graph()
+        build_graph(project_id=project_id)
 
     if start_from <= 3:
         print(f"\n[3/4] {STEPS[3]}...")
-        populate_dimensions()
+        populate_dimensions(project_id=project_id)
 
     if start_from <= 4:
         print(f"\n[4/4] {STEPS[4]}...")
-        analyze()
+        analyze(project_id=project_id)
 
     print("\n" + "=" * 50)
-    print("Pipeline complete.")
+    print(f"Pipeline complete. Project id: {project_id}")
     print("=" * 50)
 
 if __name__ == "__main__":
@@ -52,19 +54,28 @@ if __name__ == "__main__":
         default=1,
         help="Step to resume from (1=strip, 2=graph, 3=dimensions, 4=spatial)"
     )
+    parser.add_argument(
+        "--project",
+        dest="project_id",
+        type=int,
+        help="Project id to resume from (required when using --from 2, 3, or 4)"
+    )
 
     args = parser.parse_args()
 
-    # If resuming from step 2+ filepath is optional
     if args.start_from == 1 and not args.filepath:
         print("Error: filepath is required when starting from step 1")
         print("Usage: python3 run.py path/to/file.ifc")
-        print("       python3 run.py path/to/file.ifc --from 2")
-        print("       python3 run.py --from 3")
+        print("       python3 run.py path/to/file.ifc --from 2 --project 3")
+        sys.exit(1)
+
+    if args.start_from > 1 and not args.project_id:
+        print(f"Error: --project is required when resuming from step {args.start_from}")
+        print(f"Usage: python3 run.py --from {args.start_from} --project YOUR_PROJECT_ID")
         sys.exit(1)
 
     if args.filepath and not os.path.exists(args.filepath):
         print(f"Error: File not found: {args.filepath}")
         sys.exit(1)
 
-    run_pipeline(args.filepath, start_from=args.start_from)
+    run_pipeline(args.filepath, start_from=args.start_from, project_id=args.project_id)
