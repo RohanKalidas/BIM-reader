@@ -30,7 +30,7 @@ def get_components(cursor):
 # --- Get all existing normalized categories for duplicate checking ---
 def get_existing_components(cursor):
     cursor.execute("""
-        SELECT id, family_name, type_name, 
+        SELECT id, family_name, type_name,
                parameters->'ai_enrichment'->>'normalized_category' as normalized_category,
                parameters
         FROM components
@@ -52,19 +52,43 @@ def enrich_component(component, existing_components):
                 "normalized_category": ec[3]
             })
 
-    prompt = f"""You are a BIM data expert managing a building component library. 
+    # Determine component system type for better enrichment
+    is_mep = category in [
+        "IfcFlowSegment", "IfcFlowFitting", "IfcFlowTerminal",
+        "IfcFlowController", "IfcFlowMovingDevice", "IfcFlowStorageDevice",
+        "IfcDistributionFlowElement", "IfcEnergyConversionDevice",
+        "IfcDuctSegment", "IfcDuctFitting", "IfcPipeSegment", "IfcPipeFitting",
+        "IfcAirTerminal", "IfcValve", "IfcPump", "IfcFan",
+        "IfcElectricAppliance", "IfcLightFixture", "IfcOutlet",
+        "IfcElectricDistributionBoard"
+    ]
+
+    is_structural = category in [
+        "IfcBeam", "IfcColumn", "IfcMember", "IfcPlate",
+        "IfcFooting", "IfcPile", "IfcReinforcingBar"
+    ]
+
+    system_context = ""
+    if is_mep:
+        system_context = f"\nThis is an MEP component. Pay special attention to: system_name={parameters.get('_system_name')}, system_type={parameters.get('_system_type')}, connectors and flow direction."
+    elif is_structural:
+        system_context = "\nThis is a structural component. Pay special attention to: load bearing capacity, material strength, connection points."
+
+    prompt = f"""You are a BIM data expert managing a building component library.
 Analyze this component and return a JSON object with these fields:
 
-- normalized_category: clean simple category (e.g. "wall", "door", "duct", "pipe", "slab", "roof", "furniture", "column", "beam", "stair", "window")
+- normalized_category: clean simple category (e.g. "wall", "door", "duct", "pipe", "slab", "roof", "furniture", "column", "beam", "stair", "window", "valve", "diffuser", "pump", "light_fixture", "outlet")
 - description: one sentence description of what this component is
 - is_structural: true or false
 - is_mep: true or false
+- mep_system_type: if is_mep is true, one of "hvac" | "plumbing" | "electrical" | "fire_protection" | null
 - confidence: 0 to 1
 - dimensions: object with any dimensions you can extract from parameters (width_mm, height_mm, length_mm, area_m2, volume_m3, depth_mm) — only include what you can find
 - quality_score: 0 to 1 rating of how complete and useful this component's data is
-- missing_data: array of important properties that are missing (e.g. ["fire_rating", "material", "dimensions"])
+- missing_data: array of important properties that are missing
 - duplicate_of: id of duplicate component from the existing list below, or null if unique
 - notes: any other useful observations about this component
+{system_context}
 
 Existing components in database for duplicate detection:
 {json.dumps(existing_summary, indent=2)}
@@ -160,9 +184,12 @@ def print_summary(enriched):
     missing = enriched.get('missing_data', [])
     duplicate = enriched.get('duplicate_of')
     dims = enriched.get('dimensions', {})
+    mep_type = enriched.get('mep_system_type')
 
     print(f"  → [{cat}] {desc}")
     print(f"  → Quality score: {quality}")
+    if mep_type:
+        print(f"  → MEP system: {mep_type}")
     if dims:
         print(f"  → Dimensions: {dims}")
     if missing:
