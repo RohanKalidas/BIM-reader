@@ -9,7 +9,6 @@ load_dotenv()
 
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-# Categories we already know — no AI needed
 SKIP_CATEGORIES = {
     "IfcWall", "IfcWallStandardCase", "IfcWallElementedCase",
     "IfcSlab", "IfcRoof", "IfcDoor", "IfcWindow",
@@ -35,18 +34,26 @@ def get_db():
         password=os.getenv("DB_PASSWORD")
     )
 
-# --- Get only components that need enrichment ---
-def get_unenriched_components(cursor):
-    cursor.execute("""
-        SELECT id, category, family_name, type_name, parameters
-        FROM components
-        WHERE parameters->'ai_enrichment' IS NULL
-        AND category NOT IN %s
-        ORDER BY id
-    """, (tuple(SKIP_CATEGORIES),))
+def get_unenriched_components(cursor, project_id=None):
+    if project_id:
+        cursor.execute("""
+            SELECT id, category, family_name, type_name, parameters
+            FROM components
+            WHERE project_id = %s
+            AND parameters->'ai_enrichment' IS NULL
+            AND category NOT IN %s
+            ORDER BY id
+        """, (project_id, tuple(SKIP_CATEGORIES)))
+    else:
+        cursor.execute("""
+            SELECT id, category, family_name, type_name, parameters
+            FROM components
+            WHERE parameters->'ai_enrichment' IS NULL
+            AND category NOT IN %s
+            ORDER BY id
+        """, (tuple(SKIP_CATEGORIES),))
     return cursor.fetchall()
 
-# --- Enrich a batch of components in one API call ---
 def enrich_batch(batch):
     components_json = []
     for id, category, family_name, type_name, parameters in batch:
@@ -87,7 +94,6 @@ Return only a valid JSON array, no explanation, no markdown."""
         print(f"  → Batch error: {e}")
         return []
 
-# --- Save enrichment back to database ---
 def save_enrichment(cursor, component_id, enriched):
     cursor.execute("""
         UPDATE components
@@ -95,12 +101,16 @@ def save_enrichment(cursor, component_id, enriched):
         WHERE id = %s
     """, (json.dumps({"ai_enrichment": enriched}), component_id))
 
-# --- Main ---
-def run():
+def run(project_id=None):
     conn = get_db()
     cursor = conn.cursor()
 
-    components = get_unenriched_components(cursor)
+    if project_id:
+        print(f"Enriching components for project_id={project_id}\n")
+    else:
+        print("Enriching components for ALL projects\n")
+
+    components = get_unenriched_components(cursor, project_id)
 
     if not components:
         print("Nothing to enrich — all components are either already enriched or have known categories.")
@@ -108,7 +118,6 @@ def run():
 
     print(f"Found {len(components)} components needing enrichment\n")
 
-    # Split into batches
     batches = [components[i:i+BATCH_SIZE] for i in range(0, len(components), BATCH_SIZE)]
     print(f"Processing {len(batches)} batch(es) of up to {BATCH_SIZE} components each\n")
 
@@ -137,4 +146,6 @@ def run():
     print(f"Done! Enriched {total_enriched} components.")
 
 if __name__ == "__main__":
-    run()
+    import sys
+    pid = int(sys.argv[1]) if len(sys.argv) > 1 else None
+    run(project_id=pid)
