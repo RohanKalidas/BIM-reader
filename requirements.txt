@@ -2,3 +2,5 @@ ifcopenshell
 psycopg2-binary
 python-dotenv
 anthropic
+neo4j
+numpy
