@@ -1,23 +1,27 @@
 # BIM Component Stripper
 
-Ingests IFC files (exported from Revit or any BIM software) and extracts all building components into a PostgreSQL database. Uses AI to enrich, clean, and analyze the extracted data.
+Ingests IFC files (exported from Revit or any BIM software) and extracts all building components into a PostgreSQL database and Neo4j graph database. Uses AI to enrich, clean, and analyze the extracted data, and captures spatial relationships between components for 3D reconstruction.
 
 ## What it does
 
 1. Parses an IFC file and extracts all building components (walls, slabs, roofs, MEP systems, materials, etc.)
 2. Stores everything in a PostgreSQL database with full parameters
-3. Uses Claude AI to enrich each component with descriptions, quality scores, duplicate detection, and missing data flags
-4. Calculates missing dimensions using math and context-based estimation
-5. Detects duplicate components across buildings
-6. Flags missing data and assigns quality scores to every component
-7. Organizes components into normalized categories for easy querying
+3. Captures spatial data — position, rotation, bounding box, and floor level for every component
+4. Builds a Neo4j graph of spatial relationships — how components connect, their angles, and flow connections for MEP systems
+5. Uses Claude AI to enrich each component with descriptions, quality scores, duplicate detection, and missing data flags
+6. Calculates missing dimensions using math and context-based estimation
+7. Detects duplicate components across buildings
+8. Flags missing data and assigns quality scores to every component
+9. Organizes components into normalized categories for easy querying
 
 ## Stack
 
 - Python 3
 - ifcopenshell (IFC parsing)
-- PostgreSQL (database)
+- PostgreSQL (component metadata and parameters)
+- Neo4j (spatial relationships and graph data)
 - Claude AI via Anthropic API (enrichment)
+- numpy (spatial math)
 
 ## Prerequisites
 
@@ -26,6 +30,7 @@ Before you start make sure you have:
 - Python 3 installed — [python.org](https://python.org)
 - PostgreSQL installed — [postgresql.org/download](https://postgresql.org/download)
 - pgAdmin installed — comes with PostgreSQL or [pgadmin.org](https://pgadmin.org)
+- Neo4j Desktop installed — [neo4j.com/download](https://neo4j.com/download)
 - An Anthropic API key — [console.anthropic.com](https://console.anthropic.com)
 - An IFC file to test with — export from Revit or download a sample from [buildingSMART](https://github.com/buildingSMART/Sample-Test-Files)
 
@@ -33,7 +38,7 @@ Before you start make sure you have:
 
 **Mac/Linux:** Use `python3` and `pip3` for all commands
 
-**Windows:** Replace `python3` with `python` and `pip3` with `pip` in all commands. 
+**Windows:** Replace `python3` with `python` and `pip3` with `pip` in all commands.
 File paths use backslashes e.g. `extractor\strip.py`
 
 **Linux:** Install PostgreSQL via your package manager:
@@ -54,7 +59,7 @@ cd your-repo-name
 pip3 install -r requirements.txt
 ```
 
-### 3. Set up the database
+### 3. Set up PostgreSQL
 
 Open pgAdmin and:
 1. Right click **Databases** → **Create** → **Database**
@@ -63,7 +68,15 @@ Open pgAdmin and:
 4. Open the **Query Tool** (lightning bolt icon)
 5. Paste the contents of `database/schema.sql` and hit play
 
-### 4. Create your .env file
+### 4. Set up Neo4j
+
+Open Neo4j Desktop and:
+1. Click **Create instance**
+2. Name it `bim-graph`
+3. Set a password and write it down
+4. Click **Create** then **Start**
+
+### 5. Create your .env file
 
 Create a file called `.env` in the root of the project:
 ```
@@ -73,21 +86,29 @@ DB_NAME=bim_components
 DB_USER=postgres
 DB_PASSWORD=your_postgres_password
 ANTHROPIC_API_KEY=your_anthropic_api_key
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your_neo4j_password
 ```
 
-### 5. Run the pipeline
+### 6. Run the pipeline
 
-**Step 1 — Extract components from an IFC file:**
+**Step 1 — Extract components and spatial data from an IFC file:**
 ```bash
 python3 extractor/strip.py path/to/your/file.ifc
 ```
 
-**Step 2 — Enrich components with AI:**
+**Step 2 — Build the spatial relationship graph in Neo4j:**
+```bash
+python3 extractor/graph_builder.py
+```
+
+**Step 3 — Enrich components with AI:**
 ```bash
 python3 extractor/enricher.py
 ```
 
-**Step 3 — Populate dimension columns:**
+**Step 4 — Populate dimension columns:**
 ```bash
 python3 extractor/populate_dimensions.py
 ```
@@ -100,22 +121,47 @@ bim-component-stripper/
 ├── .env.example
 ├── database/
 │   ├── schema.sql
-│   └── db.py
+│   ├── db.py
+│   └── graph_queries.py
 └── extractor/
     ├── strip.py
+    ├── graph_builder.py
+    ├── spatial_analyzer.py
     ├── enricher.py
     └── populate_dimensions.py
 ```
 
 ## Database Schema
 
+### PostgreSQL
+
 | Table | Description |
 |---|---|
 | `projects` | Tracks every IFC file processed |
 | `components` | Every building element extracted |
+| `spatial_data` | Position, rotation, and bounding box for every component |
 | `wall_types` | Detailed wall layer data |
 | `mep_systems` | MEP connector and flow data |
 | `materials` | All materials referenced in the building |
+
+### Neo4j
+
+| Node | Description |
+|---|---|
+| `Component` | Every building element as a graph node |
+| `Room` | Spaces and zones |
+| `Floor` | Building levels |
+| `Building` | Top level container |
+
+| Relationship | Description |
+|---|---|
+| `CONNECTS_TO` | Physical connection between components |
+| `EMBEDDED_IN` | Door/window inside a wall |
+| `SITS_ON` | Slab or roof on walls |
+| `BELONGS_TO` | Component in a room |
+| `FLOWS_INTO` | MEP flow connections |
+| `PENETRATES` | MEP element through a wall or slab |
+| `SUPPORTED_BY` | Structural load relationships |
 
 ## Useful pgAdmin Queries
 ```sql
@@ -129,6 +175,11 @@ SELECT * FROM components;
 SELECT id, family_name, category, width_mm, height_mm, length_mm, area_m2, volume_m3, quality_score
 FROM components
 ORDER BY quality_score DESC;
+
+-- See spatial data for all components
+SELECT c.family_name, s.pos_x, s.pos_y, s.pos_z, s.level
+FROM spatial_data s
+JOIN components c ON c.id = s.component_id;
 
 -- See wall types and their layers
 SELECT c.family_name, w.total_thickness, w.function, w.layers
@@ -179,4 +230,5 @@ AND parameters->'Pset_WallCommon'->>'IsExternal' = 'true';
 
 - IFC files are ignored by git (see .gitignore) — don't commit large building files
 - Never commit your .env file — it contains your database password and API key
-- The Anthropic API costs a small amount per run — enriching 15 components costs fractions of a cent. However, Anthropic provides you with credits which should last for more than necessary.
+- The Anthropic API costs a small amount per run — enriching 15 components costs fractions of a cent. However, Anthropic provides you with credits which should last for more than necessary
+- Neo4j Desktop must be running before executing graph_builder.py or any graph queries
