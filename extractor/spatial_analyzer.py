@@ -177,13 +177,10 @@ def analyze_walls(session, walls):
 
             ang = angle_between(wall_a, wall_b)
 
-            # Direct connection — very close
             if dist < 300:
                 if not explicit_relationship_exists(session, wall_a["component_id"], wall_b["component_id"]):
                     create_connects_to(session, wall_a["component_id"], wall_b["component_id"], ang, dist)
                     connections += 1
-
-            # Adjacent — nearby but not touching
             elif dist < 2000:
                 create_adjacent_to(session, wall_a["component_id"], wall_b["component_id"], dist)
                 adjacencies += 1
@@ -200,7 +197,6 @@ def analyze_slabs_and_roofs(session, slabs, roofs, walls, columns):
         if slab.get("pos_x") is None:
             continue
 
-        # Sits on walls
         for wall in walls:
             if wall.get("pos_x") is None:
                 continue
@@ -208,7 +204,6 @@ def analyze_slabs_and_roofs(session, slabs, roofs, walls, columns):
                 create_sits_on(session, slab["component_id"], wall["component_id"])
                 sits_on += 1
 
-        # Supported by columns
         for col in columns:
             if col.get("pos_x") is None:
                 continue
@@ -243,7 +238,6 @@ def analyze_mep(session, mep_components, walls, slabs):
     penetrations = 0
     runs_along = 0
 
-    # Group MEP by system type
     by_system = {}
     for comp in mep_components:
         sys_type = comp.get("mep_system_type") or "unknown"
@@ -251,7 +245,6 @@ def analyze_mep(session, mep_components, walls, slabs):
             by_system[sys_type] = []
         by_system[sys_type].append(comp)
 
-    # Flow connections within same system type
     for sys_type, comps in by_system.items():
         for i, mep_a in enumerate(comps):
             for mep_b in comps[i+1:]:
@@ -267,7 +260,6 @@ def analyze_mep(session, mep_components, walls, slabs):
                     create_flows_into(session, mep_a["component_id"], mep_b["component_id"], dist)
                     flows += 1
 
-    # MEP penetrating walls and slabs
     for mep in mep_components:
         if mep.get("pos_x") is None:
             continue
@@ -281,7 +273,6 @@ def analyze_mep(session, mep_components, walls, slabs):
                 create_penetrates(session, mep["component_id"], wall["component_id"])
                 penetrations += 1
 
-        # MEP running along walls
         for wall in walls:
             if wall.get("pos_x") is None:
                 continue
@@ -319,13 +310,28 @@ def analyze(project_id=None):
             components = get_components(session, pid)
             print(f"  Found {len(components)} nodes in graph\n")
 
-            # Sort components by type
-            walls = [c for c in components if c.get("normalized_category") == "wall"]
-            slabs = [c for c in components if c.get("normalized_category") in ["slab", "floor"]]
-            roofs = [c for c in components if c.get("normalized_category") == "roof"]
-            columns = [c for c in components if c.get("normalized_category") == "column"]
-            beams = [c for c in components if c.get("normalized_category") == "beam"]
-            mep = [c for c in components if c.get("is_mep")]
+            # Sort components by official IFC category names
+            walls = [c for c in components if c.get("category") in [
+                "IfcWall", "IfcWallStandardCase", "IfcWallElementedCase"
+            ]]
+            slabs = [c for c in components if c.get("category") in [
+                "IfcSlab", "IfcPlate"
+            ]]
+            roofs = [c for c in components if c.get("category") == "IfcRoof"]
+            columns = [c for c in components if c.get("category") in [
+                "IfcColumn", "IfcColumnStandardCase"
+            ]]
+            beams = [c for c in components if c.get("category") in [
+                "IfcBeam", "IfcBeamStandardCase"
+            ]]
+            mep = [c for c in components if c.get("category") in [
+                "IfcDuctSegment", "IfcDuctFitting", "IfcPipeSegment", "IfcPipeFitting",
+                "IfcAirTerminal", "IfcValve", "IfcPump", "IfcFan",
+                "IfcFlowSegment", "IfcFlowFitting", "IfcFlowTerminal",
+                "IfcFlowController", "IfcFlowMovingDevice", "IfcFlowStorageDevice",
+                "IfcElectricAppliance", "IfcLightFixture", "IfcOutlet",
+                "IfcElectricDistributionBoard", "IfcDistributionFlowElement"
+            ]]
 
             print("  Architectural:")
             analyze_walls(session, walls)
