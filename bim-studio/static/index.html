@@ -205,6 +205,20 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 .spec-ready-badge:hover{background:rgba(42,184,122,0.08);}
 .typing-dot{display:inline-block;width:4px;height:4px;background:var(--muted);margin:0 2px;animation:blink 1.2s ease-in-out infinite;}
 .typing-dot:nth-child(2){animation-delay:0.2s;}.typing-dot:nth-child(3){animation-delay:0.4s;}
+#gen-steps-card{background:rgba(255,255,255,0.03);border:1px solid var(--rule2);border-left:2px solid var(--green);padding:12px 16px;margin:4px 0 0;display:none;flex-direction:column;gap:6px;max-width:680px;align-self:flex-start;}
+#gen-steps-card.active{display:flex;}
+.gen-step{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:9px;letter-spacing:0.06em;}
+.gen-step-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;background:var(--rule2);}
+.gen-step.done .gen-step-dot{background:var(--green);}
+.gen-step.active .gen-step-dot{background:var(--gold);animation:pulse 1s ease-in-out infinite;}
+.gen-step.error .gen-step-dot{background:var(--accent);}
+.gen-step-label{color:rgba(255,255,255,0.4);}
+.gen-step.done .gen-step-label{color:rgba(255,255,255,0.6);}
+.gen-step.active .gen-step-label{color:rgba(255,255,255,0.9);}
+.gen-step-detail{font-size:8px;color:rgba(255,255,255,0.2);margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px;}
+.gen-step.active .gen-step-detail{color:var(--gold);}
+.gen-step.done .gen-step-detail{color:rgba(42,184,122,0.6);}
+@keyframes pulse{0%,100%{opacity:0.4}50%{opacity:1}}
 @keyframes blink{0%,80%,100%{opacity:0.2}40%{opacity:1}}
 #gen-suggestions{padding:0 28px 12px;display:flex;gap:8px;flex-wrap:wrap;}
 .gen-suggestion{background:none;border:1px solid var(--rule2);color:rgba(255,255,255,0.3);font-family:var(--mono);font-size:9px;padding:6px 12px;cursor:pointer;transition:all 0.12s;}
@@ -947,11 +961,51 @@ function addGenMessage(role,content,isHtml){
   else{msg.innerHTML='<span class="gen-msg-role">'+label+'</span><div class="gen-msg-bubble"></div>';msg.querySelector('.gen-msg-bubble').textContent=content;}
   area.appendChild(msg);area.scrollTop=area.scrollHeight;return msg;
 }
-function addGenTyping(){
+// Steps tracked during generation
+var genSteps=[];
+var genStepsEl=null;
+
+var FIXED_STEPS=[
+  {id:'think',    label:'Understanding your brief'},
+  {id:'library',  label:'Searching component library'},
+  {id:'brief',    label:'Writing consultation'},
+  {id:'spec',     label:'Generating building spec'},
+  {id:'ifc',      label:'Creating IFC file'},
+];
+
+function createStepsCard(){
   var area=document.getElementById('gen-chat-area');
-  var msg=document.createElement('div');msg.className='gen-msg assistant';msg.id='gen-typing';
-  msg.innerHTML='<span class="gen-msg-role">AI Architect</span><div class="gen-msg-bubble"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>';
-  area.appendChild(msg);area.scrollTop=area.scrollHeight;
+  // Remove old one if exists
+  var old=document.getElementById('gen-steps-card');if(old)old.remove();
+  var card=document.createElement('div');card.id='gen-steps-card';card.className='active';
+  FIXED_STEPS.forEach(function(s){
+    var row=document.createElement('div');row.className='gen-step';row.id='gen-step-'+s.id;
+    row.innerHTML='<div class="gen-step-dot"></div><div class="gen-step-label">'+s.label+'</div><div class="gen-step-detail"></div>';
+    card.appendChild(row);
+  });
+  area.appendChild(card);
+  area.scrollTop=area.scrollHeight;
+  genStepsEl=card;
+  setStep('think','active');
+  return card;
+}
+
+function setStep(id, state, detail){
+  if(!genStepsEl)return;
+  var row=genStepsEl.querySelector('#gen-step-'+id);
+  if(!row)return;
+  row.className='gen-step '+state;
+  if(detail!==undefined){
+    var d=row.querySelector('.gen-step-detail');
+    if(d)d.textContent=detail||'';
+  }
+  var area=document.getElementById('gen-chat-area');
+  if(area)area.scrollTop=area.scrollHeight;
+}
+
+function addGenTyping(){
+  // Steps card replaces the typing indicator
+  createStepsCard();
 }
 function formatSpecText(t){return t.replace(/<building_spec>[\s\S]*?<\/building_spec>/g,'').replace(/\n/g,'<br>').trim();}
 
@@ -1008,27 +1062,35 @@ async function sendGenMessage(){
         try{
           var data=JSON.parse(line.slice(5));
           if(data.type==='text'){
-            fullText+=data.text;var ti=document.getElementById('gen-typing');if(ti)ti.remove();
-            if(!aiMsg)aiMsg=addGenMessage('assistant','',true);
+            // First text means AI is writing the consultation
+            if(!aiMsg){
+              setStep('think','done');
+              setStep('library','done','Done');
+              setStep('brief','active','Writing...');
+              aiMsg=addGenMessage('assistant','',true);
+            }
+            fullText+=data.text;
             aiMsg.querySelector('.gen-msg-bubble').innerHTML=formatSpecText(fullText);
             document.getElementById('gen-chat-area').scrollTop=9999;
           }else if(data.type==='tool'){
-            // AI is searching the library — show a subtle indicator
-            var ti=document.getElementById('gen-typing');if(ti)ti.remove();
-            if(!aiMsg)aiMsg=addGenMessage('assistant','',true);
-            var toolLabel=data.tool==='get_library_categories'?'Browsing component library\u2026':'Searching library for \u201c'+(data.input&&data.input.query?data.input.query:(data.input&&data.input.category?data.input.category:'components'))+'\u201d\u2026';
-            var existing=aiMsg.querySelector('.gen-tool-indicator');
-            if(!existing){var ind=document.createElement('div');ind.className='gen-tool-indicator';ind.style.cssText='font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.3);letter-spacing:0.1em;padding:4px 0;border-top:1px solid var(--rule);margin-top:8px;';aiMsg.querySelector('.gen-msg-bubble').appendChild(ind);existing=ind;}
-            existing.textContent='\u26ef '+toolLabel;
+            // AI is searching the library
+            setStep('think','done');
+            setStep('library','active');
+            var detail=data.tool==='get_library_categories'?'Browsing categories':(data.input&&data.input.query?data.input.query:(data.input&&data.input.category?data.input.category:'searching'));
+            setStep('library','active',detail);
           }else if(data.type==='spec'&&data.spec){
+            setStep('brief','done');
+            setStep('spec','active','Generating...');
             genSpec=data.spec;updatePlanSidebar(genSpec);
+            setStep('spec','done',(genSpec.floors||[]).length+" floors");
+            setStep('ifc','active','Building...');
             if(aiMsg){var badge=document.createElement('div');badge.className='spec-ready-badge';badge.innerHTML='\u2713 &nbsp;Building plan ready \u2014 <strong>click to view in 3D</strong>';badge.onclick=function(){switchToView();};aiMsg.querySelector('.gen-msg-bubble').appendChild(badge);}
             autoGenerateAndView();
           }else if(data.type==='done'){genHistory.push({role:'assistant',content:fullText});}
         }catch(e){}
       }
     }
-  }catch(err){var ti=document.getElementById('gen-typing');if(ti)ti.remove();addGenMessage('assistant','Connection error.',false);}
+  }catch(err){var card=document.getElementById('gen-steps-card');if(card)card.remove();addGenMessage('assistant','Connection error.',false);}
   genStreaming=false;document.getElementById('gen-send').disabled=false;
 }
 
@@ -1040,6 +1102,8 @@ async function autoGenerateAndView(){
     var data=await res.json();
     if(data.status==='done'&&data.aps){
       await initGenViewer(data.aps.urn);
+      setStep('ifc','done','Ready');
+      setTimeout(function(){var card=document.getElementById('gen-steps-card');if(card)card.style.display='none';},2000);
       var badges=document.querySelectorAll('.spec-ready-badge');
       if(badges.length>0)badges[badges.length-1].innerHTML='\u2713 &nbsp;3D model ready \u2014 <strong>click to open viewer</strong>';
       toast('3D model ready');
