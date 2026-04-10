@@ -25,7 +25,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);height:100vh
 .nav-tab:hover{color:var(--text);}
 .nav-tab.active{color:var(--accent);border-color:rgba(0,255,157,0.25);background:rgba(0,255,157,0.06);}
 .nav-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
-#project-select{background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:11px;padding:5px 10px;border-radius:4px;cursor:pointer;outline:none;}
 .nav-stat{font-family:var(--mono);font-size:10px;color:var(--muted);}
 
 /* PAGES */
@@ -35,11 +34,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);height:100vh
 /* ══ DISASSEMBLE ══ */
 #page-disassemble{flex-direction:row;}
 
-#dis-left{width:200px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;}
-.panel-head{padding:10px 12px 8px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:0.1em;}
-
 /* Library sidebar */
 #lib-sidebar{width:200px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;}
+.panel-head{padding:10px 12px 8px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:0.1em;}
 #lib-list{flex:1;overflow-y:auto;padding:6px;}
 #lib-list::-webkit-scrollbar{width:3px;}
 #lib-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
@@ -52,27 +49,42 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);height:100vh
 .lib-remove{position:absolute;top:4px;right:6px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:10px;}
 .lib-remove:hover{color:var(--accent3);}
 .lib-actions{padding:8px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px;}
-.lib-btn{background:none;border:1px solid var(--border2);color:var(--muted);font-family:var(--mono);font-size:10px;padding:6px;border-radius:4px;cursor:pointer;transition:all 0.12s;letter-spacing:0.05em;}
+.lib-btn{background:none;border:1px solid var(--border2);color:var(--muted);font-family:var(--mono);font-size:10px;padding:6px;border-radius:4px;cursor:pointer;transition:all 0.12s;letter-spacing:0.05em;width:100%;}
 .lib-btn:hover{border-color:var(--accent);color:var(--accent);}
 .lib-btn.primary{border-color:rgba(0,255,157,0.3);color:var(--accent);}
 .lib-btn.primary:hover{background:rgba(0,255,157,0.1);}
 .lib-btn.danger{border-color:rgba(255,107,107,0.3);color:var(--accent3);}
 .lib-btn.danger:hover{background:rgba(255,107,107,0.1);}
 
-/* Speckle viewer area */
-#speckle-wrap{flex:1;position:relative;overflow:hidden;display:flex;flex-direction:column;}
-#speckle-iframe{flex:1;border:none;width:100%;height:100%;}
+/* Viewer area */
+#viewer-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;}
 
-/* HUD over speckle */
-#dis-hud{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:10px 20px;display:flex;align-items:center;gap:14px;z-index:10;}
-.hud-label{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:0.08em;}
-.hud-sep{width:1px;height:16px;background:var(--border2);}
-.hud-btn{background:none;border:1px solid var(--border2);color:var(--muted);font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:4px;cursor:pointer;transition:all 0.12s;letter-spacing:0.05em;}
+/* Upload bar */
+#upload-bar{padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0;}
+.upload-label{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:0.1em;}
+.hud-btn{background:none;border:1px solid var(--border2);color:var(--muted);font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:4px;cursor:pointer;transition:all 0.12s;letter-spacing:0.05em;white-space:nowrap;}
 .hud-btn:hover{border-color:var(--accent);color:var(--accent);}
 .hud-btn.accent{border-color:rgba(0,255,157,0.3);color:var(--accent);}
 .hud-btn.accent:hover{background:rgba(0,255,157,0.1);}
+.hud-btn:disabled{opacity:0.4;cursor:not-allowed;}
+#upload-filename{font-family:var(--mono);font-size:10px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#upload-status{font-family:var(--mono);font-size:10px;color:var(--accent);}
 
-/* Inspector panel */
+/* Speckle iframe */
+#speckle-iframe{flex:1;border:none;width:100%;height:100%;}
+
+/* Empty state */
+#viewer-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;}
+.empty-icon{font-size:48px;opacity:0.2;}
+.empty-title{font-family:var(--mono);font-size:14px;color:var(--muted);letter-spacing:0.08em;}
+.empty-sub{font-size:12px;color:var(--muted);text-align:center;line-height:1.6;}
+
+/* HUD */
+#dis-hud{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:10px 20px;display:flex;align-items:center;gap:14px;z-index:10;}
+.hud-label{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:0.08em;}
+.hud-sep{width:1px;height:16px;background:var(--border2);}
+
+/* Inspector */
 #dis-inspector{width:280px;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transform:translateX(100%);transition:transform 0.2s;}
 #dis-inspector.open{transform:translateX(0);}
 #insp-head{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
@@ -97,7 +109,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);height:100vh
 
 /* ══ COMPOSE ══ */
 #page-compose{flex-direction:row;}
-#compose-lib{width:200px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;}
+#compose-lib{width:200px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;}
+#compose-lib-list{flex:1;overflow-y:auto;padding:6px;}
 #compose-main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
 #chat-area{flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:16px;}
 #chat-area::-webkit-scrollbar{width:4px;}
@@ -148,7 +161,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);height:100vh
   <button class="nav-tab active" data-page="disassemble">DISASSEMBLE</button>
   <button class="nav-tab" data-page="compose">AI COMPOSE</button>
   <div class="nav-right">
-    <select id="project-select"><option value="">— project —</option></select>
     <span class="nav-stat" id="nav-stat">—</span>
   </div>
 </div>
@@ -156,11 +168,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);height:100vh
 <!-- ══ DISASSEMBLE ══ -->
 <div class="page active" id="page-disassemble">
 
-  <!-- Left: saved library -->
+  <!-- Library sidebar -->
   <div id="lib-sidebar">
     <div class="panel-head">SAVED LIBRARY</div>
     <div id="lib-list">
-      <div id="lib-empty">Click a component<br>in the viewer then<br>click SAVE</div>
+      <div id="lib-empty">Upload an IFC file<br>then click components<br>to save them here</div>
     </div>
     <div class="lib-actions">
       <button class="lib-btn primary" id="btn-reconstruct">⟳ RECONSTRUCT</button>
@@ -168,13 +180,32 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);height:100vh
     </div>
   </div>
 
-  <!-- Speckle viewer -->
-  <div id="speckle-wrap">
-    <iframe id="speckle-iframe" allow="fullscreen"></iframe>
+  <!-- Viewer + upload bar -->
+  <div id="viewer-wrap">
 
-    <!-- HUD -->
-    <div id="dis-hud">
-      <span class="hud-label">SELECT A COMPONENT IN THE VIEWER</span>
+    <!-- Upload bar -->
+    <div id="upload-bar">
+      <span class="upload-label">IFC FILE</span>
+      <input type="file" id="ifc-file-input" accept=".ifc" style="display:none">
+      <button class="hud-btn accent" onclick="document.getElementById('ifc-file-input').click()">CHOOSE FILE</button>
+      <span id="upload-filename">No file selected</span>
+      <button class="hud-btn accent" id="btn-upload" disabled>PROCESS & UPLOAD</button>
+      <span id="upload-status"></span>
+    </div>
+
+    <!-- Speckle iframe (hidden until file uploaded) -->
+    <iframe id="speckle-iframe" style="display:none;flex:1;border:none;width:100%;height:100%;" allow="fullscreen"></iframe>
+
+    <!-- Empty state -->
+    <div id="viewer-empty" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;">
+      <div class="empty-icon">▣</div>
+      <div class="empty-title">NO MODEL LOADED</div>
+      <div class="empty-sub">Upload an IFC file above to extract<br>components and view the 3D model</div>
+    </div>
+
+    <!-- HUD (shown after load) -->
+    <div id="dis-hud" style="display:none;">
+      <span class="hud-label">CLICK A COMPONENT TO INSPECT</span>
       <div class="hud-sep"></div>
       <button class="hud-btn accent" id="btn-save-selected" disabled>SAVE TO LIBRARY</button>
     </div>
@@ -230,73 +261,38 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);height:100vh
 // ─────────────────────────────────────────────────────────────────
 // STATE
 // ─────────────────────────────────────────────────────────────────
-let currentProjectId = null;
-let selectedComponent = null;   // component object from Postgres
-let library = [];               // [{id, category, family_name, ...}]
-let chatHistory = [];
-let isStreaming = false;
-let speckleConfig = null;
-
-// ─────────────────────────────────────────────────────────────────
-// INIT
-// ─────────────────────────────────────────────────────────────────
-async function init() {
-  // Load Speckle config
-  speckleConfig = await fetch('/api/speckle/config').then(r => r.json());
-
-  // Load projects
-  const projects = await fetch('/api/projects').then(r => r.json());
-  const sel = document.getElementById('project-select');
-  projects.forEach(p => {
-    const o = document.createElement('option');
-    o.value = p.id;
-    o.textContent = `${p.name} (${p.id})`;
-    sel.appendChild(o);
-  });
-
-  // Load existing library from DB
-  await refreshLibrary();
-
-  // Load Speckle viewer
-  loadSpeckleViewer();
-
-  document.getElementById('loading').style.display = 'none';
-
-  if (projects.length === 1) {
-    sel.value = projects[0].id;
-    currentProjectId = projects[0].id;
-    loadProjectStats(projects[0].id);
-  }
-}
+let currentProjectId  = null;
+let selectedComponent = null;
+let library           = [];
+let chatHistory       = [];
+let isStreaming       = false;
 
 // ─────────────────────────────────────────────────────────────────
 // SPECKLE VIEWER
 // ─────────────────────────────────────────────────────────────────
 function loadSpeckleViewer(projectId, modelId) {
   const iframe = document.getElementById('speckle-iframe');
-  const server = 'https://app.speckle.systems';
-  iframe.src = `${server}/projects/${projectId}/models/${modelId}`;
+  const empty  = document.getElementById('viewer-empty');
+  const hud    = document.getElementById('dis-hud');
+
+  iframe.src = `https://app.speckle.systems/projects/${projectId}/models/${modelId}`;
+  iframe.style.display = 'block';
+  empty.style.display  = 'none';
+  hud.style.display    = 'flex';
 }
 
-// Listen for messages from the Speckle iframe
+// Listen for selection events from Speckle iframe
 window.addEventListener('message', async (event) => {
   if (!event.data || typeof event.data !== 'object') return;
-
-  // Speckle posts selection events
-  if (event.data.eventName === 'selection-change' || event.data.type === 'selection') {
-    const objects = event.data.objects || event.data.data || [];
-    if (objects.length > 0) {
-      const obj = objects[0];
-      const applicationId = obj.applicationId || obj.id;
-      if (applicationId) {
-        await handleSpeckleSelection(applicationId, obj);
-      }
-    }
+  const objects = event.data.objects || event.data.data || [];
+  if ((event.data.eventName === 'selection-change' || event.data.type === 'selection') && objects.length > 0) {
+    const obj = objects[0];
+    const applicationId = obj.applicationId || obj.id;
+    if (applicationId) await handleSpeckleSelection(applicationId, obj);
   }
 });
 
 async function handleSpeckleSelection(applicationId, speckleObj) {
-  // Look up in Postgres by revit_id (= IFC GlobalId = Speckle applicationId)
   try {
     const res = await fetch(`/api/component/by-revit-id/${applicationId}`);
     if (res.ok) {
@@ -305,38 +301,65 @@ async function handleSpeckleSelection(applicationId, speckleObj) {
       showInspector(comp);
       document.getElementById('btn-save-selected').disabled = false;
     } else {
-      // Component not in Postgres — show raw Speckle data
       showRawInspector(speckleObj);
     }
-  } catch (e) {
+  } catch(e) {
     console.error('Lookup failed:', e);
   }
 }
 
-function showRawInspector(obj) {
-  const body = document.getElementById('insp-body');
-  body.innerHTML = `
-    <div class="insp-cat">${obj.speckle_type || 'Unknown'}</div>
-    <div class="insp-name">${obj.name || obj.id || '—'}</div>
-    <div class="insp-sec">
-      <div class="insp-sec-head">SPECKLE DATA</div>
-      <div class="insp-row"><span class="insp-k">ID</span><span class="insp-v hi">${obj.id || '—'}</span></div>
-      <div class="insp-row"><span class="insp-k">App ID</span><span class="insp-v">${obj.applicationId || '—'}</span></div>
-      <div class="insp-row"><span class="insp-k">Type</span><span class="insp-v">${obj.ifcType || obj.speckle_type || '—'}</span></div>
-    </div>
-    <div style="padding:10px 0;font-size:11px;color:var(--muted);">This component was not found in the Postgres database. Re-run the pipeline on this IFC file to extract it.</div>
-  `;
-  document.getElementById('dis-inspector').classList.add('open');
-}
+// ─────────────────────────────────────────────────────────────────
+// FILE UPLOAD
+// ─────────────────────────────────────────────────────────────────
+document.getElementById('ifc-file-input').onchange = function() {
+  if (this.files[0]) {
+    document.getElementById('upload-filename').textContent = this.files[0].name;
+    document.getElementById('btn-upload').disabled = false;
+  }
+};
+
+document.getElementById('btn-upload').onclick = async function() {
+  const file = document.getElementById('ifc-file-input').files[0];
+  if (!file) return;
+
+  const status = document.getElementById('upload-status');
+  const btn    = document.getElementById('btn-upload');
+  btn.disabled = true;
+  status.textContent = '⟳ Running pipeline...';
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const res  = await fetch('/api/upload', {method: 'POST', body: formData});
+    const data = await res.json();
+
+    if (data.status === 'done') {
+      currentProjectId = data.project_id;
+      status.textContent = `✓ ${data.stats.components} components extracted`;
+      loadSpeckleViewer(data.speckle.project_id, data.speckle.model_id);
+      await refreshLibrary();
+      document.getElementById('nav-stat').textContent =
+        `${data.stats.components} components · ${data.stats.relationships} relationships`;
+      toast(`Loaded: ${file.name}`);
+    } else {
+      status.textContent = '✕ Error: ' + (data.error || 'Unknown error');
+    }
+  } catch(e) {
+    status.textContent = '✕ Upload failed';
+    console.error(e);
+  }
+
+  btn.disabled = false;
+};
 
 // ─────────────────────────────────────────────────────────────────
 // INSPECTOR
 // ─────────────────────────────────────────────────────────────────
 function showInspector(comp) {
-  const body = document.getElementById('insp-body');
-  const q = comp.quality_score;
-  const f = v => v != null ? Number(v).toFixed(1) : '—';
-  const fp = v => v != null ? Number(v).toFixed(2) : '—';
+  const body  = document.getElementById('insp-body');
+  const q     = comp.quality_score;
+  const f     = v => v != null ? Number(v).toFixed(1) : '—';
   const inLib = library.some(l => l.id === comp.id);
 
   body.innerHTML = `
@@ -353,8 +376,8 @@ function showInspector(comp) {
       <div class="insp-row"><span class="insp-k">Width</span><span class="insp-v">${f(comp.width_mm)} mm</span></div>
       <div class="insp-row"><span class="insp-k">Height</span><span class="insp-v">${f(comp.height_mm)} mm</span></div>
       <div class="insp-row"><span class="insp-k">Length</span><span class="insp-v">${f(comp.length_mm)} mm</span></div>
-      <div class="insp-row"><span class="insp-k">Area</span><span class="insp-v">${comp.area_m2 != null ? Number(comp.area_m2).toFixed(2) + ' m²' : '—'}</span></div>
-      <div class="insp-row"><span class="insp-k">Volume</span><span class="insp-v">${comp.volume_m3 != null ? Number(comp.volume_m3).toFixed(3) + ' m³' : '—'}</span></div>
+      <div class="insp-row"><span class="insp-k">Area</span><span class="insp-v">${comp.area_m2 != null ? Number(comp.area_m2).toFixed(2)+' m²' : '—'}</span></div>
+      <div class="insp-row"><span class="insp-k">Volume</span><span class="insp-v">${comp.volume_m3 != null ? Number(comp.volume_m3).toFixed(3)+' m³' : '—'}</span></div>
     </div>
     <div class="insp-sec">
       <div class="insp-sec-head">QUALITY</div>
@@ -369,6 +392,22 @@ function showInspector(comp) {
   document.getElementById('dis-inspector').classList.add('open');
 }
 
+function showRawInspector(obj) {
+  const body = document.getElementById('insp-body');
+  body.innerHTML = `
+    <div class="insp-cat">${obj.speckle_type || 'Unknown'}</div>
+    <div class="insp-name">${obj.name || obj.id || '—'}</div>
+    <div class="insp-sec">
+      <div class="insp-sec-head">SPECKLE DATA</div>
+      <div class="insp-row"><span class="insp-k">ID</span><span class="insp-v hi">${obj.id || '—'}</span></div>
+      <div class="insp-row"><span class="insp-k">App ID</span><span class="insp-v">${obj.applicationId || '—'}</span></div>
+      <div class="insp-row"><span class="insp-k">Type</span><span class="insp-v">${obj.ifcType || obj.speckle_type || '—'}</span></div>
+    </div>
+    <div style="padding:10px 0;font-size:11px;color:var(--muted);">Not found in database. Re-run the pipeline on this file.</div>
+  `;
+  document.getElementById('dis-inspector').classList.add('open');
+}
+
 function closeInspector() {
   document.getElementById('dis-inspector').classList.remove('open');
   selectedComponent = null;
@@ -380,13 +419,13 @@ function closeInspector() {
 // ─────────────────────────────────────────────────────────────────
 async function refreshLibrary() {
   const res = await fetch('/api/library');
-  library = await res.json();
+  library   = await res.json();
   renderLibrary();
 }
 
 async function saveComponent(comp) {
   if (!comp) return;
-  const res = await fetch('/api/library/save', {
+  const res  = await fetch('/api/library/save', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({component_id: comp.id})
@@ -395,9 +434,7 @@ async function saveComponent(comp) {
   if (data.status === 'saved' || data.status === 'already_saved') {
     await refreshLibrary();
     toast(`Saved: ${comp.family_name || comp.category}`);
-    if (selectedComponent && selectedComponent.id === comp.id) {
-      showInspector(comp); // refresh inspector to show saved state
-    }
+    if (selectedComponent && selectedComponent.id === comp.id) showInspector(comp);
   }
 }
 
@@ -418,12 +455,12 @@ async function clearLibrary() {
 }
 
 function renderLibrary() {
-  const list = document.getElementById('lib-list');
+  const list  = document.getElementById('lib-list');
   const empty = document.getElementById('lib-empty');
 
   if (library.length === 0) {
-    empty.style.display = 'block';
     list.innerHTML = '';
+    empty.style.display = 'block';
     list.appendChild(empty);
     return;
   }
@@ -438,18 +475,19 @@ function renderLibrary() {
       <div class="lib-name">${comp.family_name || comp.type_name || '—'}</div>
       <button class="lib-remove" title="Remove">✕</button>
     `;
-    item.querySelector('.lib-remove').onclick = (e) => {
-      e.stopPropagation();
-      removeFromLibrary(comp.id);
-    };
+    item.querySelector('.lib-remove').onclick = e => { e.stopPropagation(); removeFromLibrary(comp.id); };
     item.onclick = () => showInspector(comp);
     list.appendChild(item);
   });
 
-  // Also update compose tab library
+  // Sync compose tab
   const composeList = document.getElementById('compose-lib-list');
   if (composeList) {
     composeList.innerHTML = '';
+    if (library.length === 0) {
+      composeList.innerHTML = '<div style="padding:20px 12px;font-size:12px;color:var(--muted);text-align:center;line-height:1.6;">Save components from<br>Disassemble view</div>';
+      return;
+    }
     library.forEach(comp => {
       const item = document.createElement('div');
       item.className = 'lib-item saved';
@@ -467,7 +505,7 @@ function renderLibrary() {
 // RECONSTRUCT
 // ─────────────────────────────────────────────────────────────────
 async function reconstruct() {
-  if (!currentProjectId) { toast('Select a project first'); return; }
+  if (!currentProjectId) { toast('Upload a file first'); return; }
   if (library.length === 0) { toast('Save some components first'); return; }
 
   const btn = document.getElementById('btn-reconstruct');
@@ -475,7 +513,7 @@ async function reconstruct() {
   btn.disabled = true;
 
   try {
-    const res = await fetch('/api/reconstruct', {
+    const res  = await fetch('/api/reconstruct', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({project_id: currentProjectId})
@@ -487,7 +525,7 @@ async function reconstruct() {
       toast('Reconstruction failed');
       console.error(data.error);
     }
-  } catch (e) {
+  } catch(e) {
     toast('Reconstruction error');
   }
 
@@ -496,20 +534,11 @@ async function reconstruct() {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// PROJECT STATS
-// ─────────────────────────────────────────────────────────────────
-async function loadProjectStats(pid) {
-  const stats = await fetch(`/api/projects/${pid}/stats`).then(r => r.json());
-  document.getElementById('nav-stat').textContent =
-    `${stats.total} components · ${stats.relationships} relationships`;
-}
-
-// ─────────────────────────────────────────────────────────────────
 // AI COMPOSE
 // ─────────────────────────────────────────────────────────────────
 function parseMessage(text) {
   return text
-    .replace(/\[COMPONENT:(\d+):([^:]+):([^\]]+)\]/g, (match, id, cat, name) =>
+    .replace(/\[COMPONENT:(\d+):([^:]+):([^\]]+)\]/g, (m, id, cat, name) =>
       `<span class="comp-ref" data-id="${id}">${name}</span>`)
     .replace(/<selected_components>[\s\S]*?<\/selected_components>/g, '')
     .replace(/\n/g, '<br>');
@@ -589,10 +618,10 @@ async function sendMessage() {
           } else if (data.type === 'done') {
             chatHistory.push({role: 'assistant', content: fullText});
           }
-        } catch (e) {}
+        } catch(e) {}
       }
     }
-  } catch (err) {
+  } catch(err) {
     document.getElementById('typing-indicator')?.remove();
     addMessage('assistant', 'Connection error. Make sure the server is running.');
   }
@@ -613,23 +642,12 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
   };
 });
 
-document.getElementById('project-select').onchange = e => {
-  if (e.target.value) {
-    currentProjectId = e.target.value;
-    loadProjectStats(e.target.value);
-  }
-};
+document.getElementById('insp-close').onclick    = closeInspector;
+document.getElementById('btn-save-selected').onclick = () => { if (selectedComponent) saveComponent(selectedComponent); };
+document.getElementById('btn-reconstruct').onclick   = reconstruct;
+document.getElementById('btn-clear-lib').onclick     = clearLibrary;
+document.getElementById('chat-send').onclick         = sendMessage;
 
-document.getElementById('insp-close').onclick = closeInspector;
-
-document.getElementById('btn-save-selected').onclick = () => {
-  if (selectedComponent) saveComponent(selectedComponent);
-};
-
-document.getElementById('btn-reconstruct').onclick = reconstruct;
-document.getElementById('btn-clear-lib').onclick = clearLibrary;
-
-document.getElementById('chat-send').onclick = sendMessage;
 document.getElementById('chat-input').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
@@ -652,8 +670,13 @@ function toast(msg) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// START
+// INIT
 // ─────────────────────────────────────────────────────────────────
+async function init() {
+  await refreshLibrary();
+  document.getElementById('loading').style.display = 'none';
+}
+
 init();
 </script>
 </body>
