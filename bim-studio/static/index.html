@@ -1012,6 +1012,14 @@ async function sendGenMessage(){
             if(!aiMsg)aiMsg=addGenMessage('assistant','',true);
             aiMsg.querySelector('.gen-msg-bubble').innerHTML=formatSpecText(fullText);
             document.getElementById('gen-chat-area').scrollTop=9999;
+          }else if(data.type==='tool'){
+            // AI is searching the library — show a subtle indicator
+            var ti=document.getElementById('gen-typing');if(ti)ti.remove();
+            if(!aiMsg)aiMsg=addGenMessage('assistant','',true);
+            var toolLabel=data.tool==='get_library_categories'?'Browsing component library\u2026':'Searching library for \u201c'+(data.input&&data.input.query?data.input.query:(data.input&&data.input.category?data.input.category:'components'))+'\u201d\u2026';
+            var existing=aiMsg.querySelector('.gen-tool-indicator');
+            if(!existing){var ind=document.createElement('div');ind.className='gen-tool-indicator';ind.style.cssText='font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.3);letter-spacing:0.1em;padding:4px 0;border-top:1px solid var(--rule);margin-top:8px;';aiMsg.querySelector('.gen-msg-bubble').appendChild(ind);existing=ind;}
+            existing.textContent='\u26ef '+toolLabel;
           }else if(data.type==='spec'&&data.spec){
             genSpec=data.spec;updatePlanSidebar(genSpec);
             if(aiMsg){var badge=document.createElement('div');badge.className='spec-ready-badge';badge.innerHTML='\u2713 &nbsp;Building plan ready \u2014 <strong>click to view in 3D</strong>';badge.onclick=function(){switchToView();};aiMsg.querySelector('.gen-msg-bubble').appendChild(badge);}
