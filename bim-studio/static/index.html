@@ -297,8 +297,9 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
       <button class="btn btn-ghost" onclick="document.getElementById('ifc-bulk-input').click()">Choose Multiple</button>
       <span id="upload-filename">No file selected</span>
       <button class="btn btn-primary" id="btn-upload" disabled>Process &amp; Upload</button>
-      <button class="btn btn-ghost" id="btn-pause" style="display:none">⏸ Pause</button>
-      <button class="btn btn-ghost" id="btn-stop" style="display:none">⏹ Stop</button>
+      <button class="btn btn-ghost" id="btn-browse-uploads" style="display:none">&#9783; Browse Uploads</button>
+      <button class="btn btn-ghost" id="btn-pause" style="display:none">&#9208; Pause</button>
+      <button class="btn btn-ghost" id="btn-stop" style="display:none">&#9209; Stop</button>
       <span id="upload-status"></span>
     </div>
 
@@ -665,13 +666,19 @@ async function doBulkUpload(files){
 function showSingleMode(){
   document.getElementById('single-mode').style.display='flex';
   document.getElementById('bulk-mode').classList.remove('active');
+  // Show browse button if bulk data exists
+  var hasBulk=Object.keys(bulkProjects).length>0;
+  document.getElementById('btn-browse-uploads').style.display=hasBulk?'inline-flex':'none';
 }
 function showBulkMode(){
   document.getElementById('single-mode').style.display='none';
   document.getElementById('bulk-mode').classList.add('active');
+  document.getElementById('btn-browse-uploads').style.display='none';
   var empty=document.getElementById('bulk-empty');
   empty.classList.toggle('active',Object.keys(bulkProjects).length===0);
 }
+
+document.getElementById('btn-browse-uploads').onclick=function(){showBulkMode();};
 
 document.getElementById('bulk-done-btn').onclick=function(){
   showSingleMode();
