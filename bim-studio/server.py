@@ -25,6 +25,22 @@ def safe_float(v):
 
 def run_pipeline(filepath):
     """Run pipeline on a single IFC file. Returns (project_id, stats) or raises."""
+    filename = os.path.basename(filepath)
+
+    # Check if this exact filename was already successfully processed
+    conn = get_db(); cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT id FROM projects WHERE filename = %s AND status = 'done' LIMIT 1", (filename,))
+    existing = cur.fetchone()
+    if existing:
+        project_id = existing["id"]
+        cur.execute("SELECT COUNT(*) as total FROM components WHERE project_id = %s", (project_id,))
+        total = cur.fetchone()["total"]
+        cur.execute("SELECT COUNT(*) as total FROM relationships WHERE project_id = %s", (project_id,))
+        rels = cur.fetchone()["total"]
+        cur.close(); conn.close()
+        print(f"Already processed: {filename} (project_id={project_id})")
+        return project_id, {"components": total, "relationships": rels}, True  # True = was cached
+    cur.close(); conn.close()
     result = subprocess.run(
         ["python3", "run.py", filepath],
         capture_output=True, text=True, timeout=300, cwd=REPO_DIR)
@@ -50,7 +66,7 @@ def run_pipeline(filepath):
     cur.execute("SELECT COUNT(*) as total FROM relationships WHERE project_id=%s", (project_id,))
     rels = cur.fetchone()["total"]
     cur.close(); conn.close()
-    return project_id, {"components": total, "relationships": rels}
+    return project_id, {"components": total, "relationships": rels}, False  # False = freshly processed
 
 # ── Static ──────────────────────────────────────────────────────────────────
 @app.route("/")
@@ -72,8 +88,18 @@ def upload_ifc():
     f.save(filepath)
     print(f"Saved IFC to {filepath}")
     try:
-        project_id, stats = run_pipeline(filepath)
-        print(f"Pipeline done. project_id={project_id}")
+        project_id, stats, cached = run_pipeline(filepath)
+        print(f"Pipeline done. project_id={project_id} cached={cached}")
+
+        # If cached, reuse existing APS URN — no need to re-upload
+        if cached:
+            conn = get_db(); cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute("SELECT aps_urn FROM projects WHERE id=%s", (project_id,))
+            row = cur.fetchone(); cur.close(); conn.close()
+            if row and row["aps_urn"]:
+                return jsonify({"status": "done", "cached": True, "project_id": project_id,
+                                "aps": {"urn": row["aps_urn"]}, "stats": stats})
+
         aps_result = upload_to_aps(filepath)
         conn = get_db(); cur = conn.cursor()
         cur.execute("UPDATE projects SET aps_urn=%s WHERE id=%s", (aps_result["urn"], project_id))
@@ -118,18 +144,25 @@ def upload_bulk():
             yield f"data: {json.dumps({'type':'start','file':filename,'index':idx,'total':total})}\n\n"
             try:
                 yield f"data: {json.dumps({'type':'step','file':filename,'step':'pipeline','message':'Running pipeline…'})}\n\n"
-                project_id, stats = run_pipeline(filepath)
+                project_id, stats, cached = run_pipeline(filepath)
                 total_components += stats["components"]
 
-                yield f"data: {json.dumps({'type':'step','file':filename,'step':'aps','message':'Uploading to APS…'})}\n\n"
-                aps_result = upload_to_aps(filepath)
-
-                conn = get_db(); cur = conn.cursor()
-                cur.execute("UPDATE projects SET aps_urn=%s WHERE id=%s", (aps_result["urn"], project_id))
-                conn.commit(); cur.close(); conn.close()
-
-                processed += 1
-                yield f"data: {json.dumps({'type':'done','file':filename,'project_id':project_id,'stats':stats,'aps':aps_result})}\n\n"
+                if cached:
+                    # Already processed — reuse existing APS URN
+                    conn = get_db(); cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                    cur.execute("SELECT aps_urn FROM projects WHERE id=%s", (project_id,))
+                    row = cur.fetchone(); cur.close(); conn.close()
+                    aps_result = {"urn": row["aps_urn"]} if row and row["aps_urn"] else {}
+                    processed += 1
+                    yield f"data: {json.dumps({'type':'done','file':filename,'project_id':project_id,'stats':stats,'aps':aps_result,'cached':True})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'type':'step','file':filename,'step':'aps','message':'Uploading to APS…'})}\n\n"
+                    aps_result = upload_to_aps(filepath)
+                    conn = get_db(); cur = conn.cursor()
+                    cur.execute("UPDATE projects SET aps_urn=%s WHERE id=%s", (aps_result["urn"], project_id))
+                    conn.commit(); cur.close(); conn.close()
+                    processed += 1
+                    yield f"data: {json.dumps({'type':'done','file':filename,'project_id':project_id,'stats':stats,'aps':aps_result})}\n\n"
 
             except Exception as e:
                 import traceback; print(traceback.format_exc())
