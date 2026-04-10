@@ -408,42 +408,61 @@ function buildDynamicFilters(){
 
 // ── COMPONENT PANEL ───────────────────────────────────────────────
 function renderCompPanel(){
-  const list=document.getElementById('comp-list'),empty=document.getElementById('comp-empty-msg');
+  const list=document.getElementById('comp-list');
+  const empty=document.getElementById('comp-empty-msg');
+  if(!list)return;
   const filtered=activeFilter==='all'?allComponents:allComponents.filter(c=>groupOf(c.category)===activeFilter);
-  if(filtered.length===0){list.innerHTML='';empty.style.display='block';list.appendChild(empty);return;}
-  empty.style.display='none';list.innerHTML='';
+  if(filtered.length===0){
+    list.innerHTML='';
+    if(empty){empty.style.display='block';list.appendChild(empty);}
+    return;
+  }
+  empty.style.display='none';
+  list.innerHTML='';
   filtered.forEach(comp=>{
     const inLib=library.some(l=>l.id===comp.id);
     const f=v=>v!=null?Number(v).toFixed(1):'—';
     const item=document.createElement('div');
-    item.className='comp-item'+(inLib?' in-library':'');item.dataset.id=comp.id;
-    item.innerHTML=
-      '<div class="comp-item-header">'+
-        '<div class="comp-dot '+dotClass(comp.category)+'"></div>'+
-        '<div class="comp-item-info">'+
-          '<div class="comp-item-cat">'+comp.category.replace('Ifc','')+'</div>'+
-          '<div class="comp-item-name">'+(comp.family_name||comp.type_name||'—')+'</div>'+
-        '</div>'+
-        '<button class="comp-item-save'+(inLib?' saved':'')+'>'+(inLib?'✓':'Save')+'</button>'+
-        '<span class="comp-chevron">›</span>'+
-      '</div>'+
-      '<div class="comp-item-body">'+
-        '<div class="comp-stat-row"><span class="comp-stat-k">DB id</span><span class="comp-stat-v hi">'+comp.id+'</span></div>'+
-        '<div class="comp-stat-row"><span class="comp-stat-k">Level</span><span class="comp-stat-v">'+(comp.level||'—')+'</span></div>'+
-        '<div class="comp-stat-row"><span class="comp-stat-k">Width</span><span class="comp-stat-v">'+f(comp.width_mm)+' mm</span></div>'+
-        '<div class="comp-stat-row"><span class="comp-stat-k">Height</span><span class="comp-stat-v">'+f(comp.height_mm)+' mm</span></div>'+
-        '<div class="comp-stat-row"><span class="comp-stat-k">Length</span><span class="comp-stat-v">'+f(comp.length_mm)+' mm</span></div>'+
-        '<div class="comp-stat-row"><span class="comp-stat-k">Area</span><span class="comp-stat-v">'+(comp.area_m2!=null?Number(comp.area_m2).toFixed(2)+' m²':'—')+'</span></div>'+
+    item.className='comp-item'+(inLib?' in-library':'');
+    item.dataset.id=comp.id;
+    const header=document.createElement('div');
+    header.className='comp-item-header';
+    header.innerHTML=
+      '<div class="comp-dot '+dotClass(comp.category)+'"></div>'+
+      '<div class="comp-item-info">'+
+        '<div class="comp-item-cat">'+comp.category.replace('Ifc','')+'</div>'+
+        '<div class="comp-item-name">'+(comp.family_name||comp.type_name||'—')+'</div>'+
       '</div>';
-    item.querySelector('.comp-item-header').onclick=()=>item.classList.toggle('open');
-    item.querySelector('.comp-item-save').onclick=async e=>{e.stopPropagation();await saveComponentById(comp.id);};
+    const saveBtn=document.createElement('button');
+    saveBtn.className='comp-item-save'+(inLib?' saved':'');
+    saveBtn.textContent=inLib?'✓':'Save';
+    saveBtn.onclick=async e=>{e.stopPropagation();await saveComponentById(comp.id);};
+    const chevron=document.createElement('span');
+    chevron.className='comp-chevron';chevron.textContent='›';
+    header.appendChild(saveBtn);header.appendChild(chevron);
+    header.onclick=()=>item.classList.toggle('open');
+    const body=document.createElement('div');
+    body.className='comp-item-body';
+    body.innerHTML=
+      '<div class="comp-stat-row"><span class="comp-stat-k">DB id</span><span class="comp-stat-v hi">'+comp.id+'</span></div>'+
+      '<div class="comp-stat-row"><span class="comp-stat-k">Level</span><span class="comp-stat-v">'+(comp.level||'—')+'</span></div>'+
+      '<div class="comp-stat-row"><span class="comp-stat-k">Width</span><span class="comp-stat-v">'+f(comp.width_mm)+' mm</span></div>'+
+      '<div class="comp-stat-row"><span class="comp-stat-k">Height</span><span class="comp-stat-v">'+f(comp.height_mm)+' mm</span></div>'+
+      '<div class="comp-stat-row"><span class="comp-stat-k">Length</span><span class="comp-stat-v">'+f(comp.length_mm)+' mm</span></div>'+
+      '<div class="comp-stat-row"><span class="comp-stat-k">Area</span><span class="comp-stat-v">'+(comp.area_m2!=null?Number(comp.area_m2).toFixed(2)+' m²':'—')+'</span></div>';
+    item.appendChild(header);item.appendChild(body);
     list.appendChild(item);
   });
 }
 
 // ── LIBRARY ───────────────────────────────────────────────────────
-async function refreshLibrary(){const res=await fetch('/api/library');library=await res.json();renderLibrary();renderCompPanel();}
-
+async function refreshLibrary(){
+  const res=await fetch('/api/library');
+  library=await res.json();
+  renderLibrary();
+  // only re-render comp panel if we have components loaded
+  if(allComponents.length>0)renderCompPanel();
+}
 async function saveComponentById(id){
   const res=await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:id})});
   const data=await res.json();
