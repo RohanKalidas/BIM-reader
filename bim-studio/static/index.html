@@ -53,9 +53,11 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 .sidebar-btn.reconstruct{border-color:rgba(200,80,42,0.35);color:var(--accent);}
 .sidebar-btn.reconstruct:hover{background:rgba(200,80,42,0.1);}
 .sidebar-btn.clear:hover{color:rgba(255,255,255,0.6);}
-#viewer-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;}
 
-/* Upload bar — single and bulk modes */
+/* Main content area (viewer mode OR bulk browser mode) */
+#disassemble-main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+
+/* Upload bar */
 #upload-bar{display:flex;align-items:center;gap:10px;padding:0 14px;height:42px;background:var(--ink-light);border-bottom:1px solid var(--rule2);flex-shrink:0;}
 .upload-eyebrow{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.2);letter-spacing:0.2em;text-transform:uppercase;white-space:nowrap;}
 .upload-divider{width:1px;height:14px;background:var(--rule2);flex-shrink:0;}
@@ -71,26 +73,8 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 #upload-filename{font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
 #upload-status{font-family:var(--mono);font-size:9px;color:var(--accent);letter-spacing:0.06em;white-space:nowrap;}
 
-/* Bulk progress panel */
-#bulk-progress{display:none;flex-direction:column;background:var(--ink-light);border-bottom:1px solid var(--rule2);flex-shrink:0;max-height:180px;overflow-y:auto;}
-#bulk-progress::-webkit-scrollbar{width:2px;}
-#bulk-progress::-webkit-scrollbar-thumb{background:var(--rule2);}
-#bulk-summary{display:flex;align-items:center;gap:12px;padding:8px 14px;border-bottom:1px solid var(--rule);flex-shrink:0;}
-#bulk-summary-text{font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.4);letter-spacing:0.06em;flex:1;}
-#bulk-close{background:none;border:none;color:rgba(255,255,255,0.2);cursor:pointer;font-size:11px;padding:2px 6px;}
-#bulk-close:hover{color:rgba(255,255,255,0.6);}
-#bulk-file-list{padding:6px 14px;}
-.bulk-file-row{display:flex;align-items:center;gap:10px;padding:4px 0;border-bottom:1px solid var(--rule);}
-.bulk-file-row:last-child{border-bottom:none;}
-.bulk-file-name{font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.5);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.bulk-file-status{font-family:var(--mono);font-size:8px;white-space:nowrap;}
-.bulk-file-status.pending{color:rgba(255,255,255,0.2);}
-.bulk-file-status.running{color:var(--gold);}
-.bulk-file-status.done{color:var(--green);}
-.bulk-file-status.error{color:var(--accent);}
-.bulk-file-bar{width:60px;height:2px;background:var(--rule2);flex-shrink:0;}
-.bulk-file-bar-fill{height:100%;background:var(--green);transition:width 0.3s;}
-
+/* ══ SINGLE FILE MODE ══ */
+#single-mode{flex:1;display:flex;overflow:hidden;}
 #aps-viewer{flex:1;position:relative;background:#111;}
 #viewer-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:none;}
 .empty-headline{font-family:var(--display);font-size:26px;font-style:italic;color:rgba(255,255,255,0.1);text-align:center;}
@@ -133,6 +117,65 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 .comp-stat-v.hi{color:var(--accent);}
 .dot-arch{background:#8ecae6;}.dot-struct{background:#80b918;}.dot-mep{background:#ff6b6b;}.dot-other{background:#666;}
 
+/* ══ BULK BROWSER MODE ══ */
+#bulk-mode{flex:1;display:none;flex-direction:column;overflow:hidden;}
+#bulk-mode.active{display:flex;}
+
+/* Bulk top bar */
+#bulk-topbar{display:flex;align-items:center;gap:10px;padding:0 16px;height:46px;background:var(--ink-light);border-bottom:1px solid var(--rule2);flex-shrink:0;}
+#bulk-file-select{background:var(--ink-mid);border:1px solid var(--rule2);color:var(--text);font-family:var(--mono);font-size:10px;padding:6px 10px;outline:none;flex:1;max-width:340px;cursor:pointer;}
+#bulk-file-select option{background:var(--ink-mid);}
+#bulk-search{background:rgba(255,255,255,0.04);border:1px solid var(--rule2);border-left:2px solid var(--ink-mid);color:var(--text);font-family:var(--mono);font-size:10px;padding:6px 10px;outline:none;flex:1;max-width:260px;transition:border-color 0.15s;}
+#bulk-search:focus{border-left-color:var(--accent);}
+#bulk-search::placeholder{color:rgba(255,255,255,0.2);}
+#bulk-filter-select{background:var(--ink-mid);border:1px solid var(--rule2);color:rgba(255,255,255,0.5);font-family:var(--mono);font-size:9px;padding:6px 8px;outline:none;cursor:pointer;}
+#bulk-filter-select option{background:var(--ink-mid);}
+.bulk-topbar-divider{width:1px;height:18px;background:var(--rule2);flex-shrink:0;}
+#bulk-save-all-btn{background:var(--accent);border:none;color:#fff;font-family:var(--mono);font-size:9px;padding:7px 14px;cursor:pointer;letter-spacing:0.1em;text-transform:uppercase;transition:background 0.12s;white-space:nowrap;}
+#bulk-save-all-btn:hover{background:#b84424;}
+#bulk-save-selected-btn{background:none;border:1px solid rgba(200,80,42,0.4);color:var(--accent);font-family:var(--mono);font-size:9px;padding:7px 14px;cursor:pointer;letter-spacing:0.1em;text-transform:uppercase;transition:all 0.12s;white-space:nowrap;}
+#bulk-save-selected-btn:hover{background:rgba(200,80,42,0.1);}
+#bulk-count{font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.25);white-space:nowrap;margin-left:auto;}
+#bulk-done-btn{background:none;border:1px solid var(--rule2);color:rgba(255,255,255,0.4);font-family:var(--mono);font-size:9px;padding:7px 12px;cursor:pointer;transition:all 0.12s;letter-spacing:0.08em;text-transform:uppercase;}
+#bulk-done-btn:hover{color:rgba(255,255,255,0.7);}
+
+/* Bulk progress strip */
+#bulk-progress-strip{display:none;flex-direction:column;background:var(--ink-light);border-bottom:1px solid var(--rule2);flex-shrink:0;max-height:140px;overflow-y:auto;}
+#bulk-progress-strip.active{display:flex;}
+#bulk-progress-strip::-webkit-scrollbar{width:2px;}
+#bulk-progress-summary{display:flex;align-items:center;gap:12px;padding:6px 16px;border-bottom:1px solid var(--rule);flex-shrink:0;}
+#bulk-progress-text{font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.35);flex:1;}
+#bulk-file-rows{padding:4px 16px;}
+.bulk-file-row{display:flex;align-items:center;gap:10px;padding:3px 0;border-bottom:1px solid var(--rule);}
+.bulk-file-row:last-child{border-bottom:none;}
+.bulk-file-name{font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.4);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.bulk-file-bar{width:60px;height:2px;background:var(--rule2);flex-shrink:0;}
+.bulk-file-bar-fill{height:100%;background:var(--green);transition:width 0.3s;}
+.bulk-file-status{font-family:var(--mono);font-size:8px;white-space:nowrap;}
+.bulk-file-status.pending{color:rgba(255,255,255,0.2);}
+.bulk-file-status.running{color:var(--gold);}
+.bulk-file-status.done{color:var(--green);}
+.bulk-file-status.error{color:var(--accent);}
+
+/* Bulk component grid */
+#bulk-comp-area{flex:1;overflow-y:auto;padding:12px 16px;}
+#bulk-comp-area::-webkit-scrollbar{width:2px;}
+#bulk-comp-area::-webkit-scrollbar-thumb{background:var(--rule2);}
+#bulk-comp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;}
+.bulk-comp-card{border:1px solid var(--rule);padding:8px 10px;cursor:pointer;transition:all 0.12s;position:relative;}
+.bulk-comp-card:hover{background:rgba(255,255,255,0.04);}
+.bulk-comp-card.selected{border-color:var(--accent);background:rgba(200,80,42,0.06);}
+.bulk-comp-card.in-library{border-left:2px solid var(--gold);}
+.bulk-comp-card-cat{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.25);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:2px;}
+.bulk-comp-card-name{font-size:11px;color:var(--text);font-weight:300;line-height:1.4;margin-bottom:4px;}
+.bulk-comp-card-dims{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.25);}
+.bulk-comp-card-dot{position:absolute;top:8px;right:8px;width:6px;height:6px;border-radius:50%;}
+.bulk-comp-card .bulk-comp-save{position:absolute;bottom:6px;right:6px;background:none;border:1px solid var(--rule2);color:rgba(255,255,255,0.3);font-family:var(--mono);font-size:7px;padding:3px 6px;cursor:pointer;transition:all 0.12s;}
+.bulk-comp-card .bulk-comp-save:hover{border-color:var(--accent);color:var(--accent);}
+.bulk-comp-card .bulk-comp-save.saved{border-color:var(--gold);color:var(--gold);}
+#bulk-empty{padding:40px;text-align:center;font-family:var(--display);font-size:14px;font-style:italic;color:rgba(255,255,255,0.12);line-height:1.8;display:none;}
+#bulk-empty.active{display:block;}
+
 /* ══ GENERATE ══ */
 #page-generate{flex-direction:row;}
 #gen-main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--ink-light);}
@@ -172,7 +215,6 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 .plan-section{margin-bottom:16px;}
 .plan-section-label{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.25);letter-spacing:0.18em;text-transform:uppercase;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid var(--rule);}
 .plan-val{color:var(--text);font-family:var(--mono);font-size:10px;line-height:1.6;}
-.plan-val.green{color:var(--green);}
 .plan-val.big{font-family:var(--display);font-size:16px;font-style:italic;color:#fff;}
 .plan-row{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--rule);font-size:11px;}
 .plan-row-k{color:rgba(255,255,255,0.35);font-weight:300;}
@@ -187,10 +229,10 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 #view-viewer-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;}
 #view-bar{display:flex;align-items:center;gap:12px;padding:0 18px;height:42px;background:var(--ink-light);border-bottom:1px solid var(--rule2);flex-shrink:0;}
 .view-bar-title{font-family:var(--display);font-size:14px;font-style:italic;color:#fff;flex:1;}
-#view-status{font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.3);letter-spacing:0.06em;}
+#view-status{font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.3);}
 #gen-aps-viewer{flex:1;position:relative;background:#0d0d0d;}
 #gen-viewer-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:none;}
-.gen-empty-headline{font-family:var(--display);font-size:22px;font-style:italic;color:rgba(255,255,255,0.08);text-align:center;}
+.gen-empty-headline{font-family:var(--display);font-size:22px;font-style:italic;color:rgba(255,255,255,0.08);}
 .gen-empty-sub{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.1);letter-spacing:0.15em;text-transform:uppercase;}
 
 /* LOADING / TOAST */
@@ -213,51 +255,84 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
   <div class="nav-tabs">
     <button class="nav-tab active" data-page="disassemble">Disassemble</button>
     <button class="nav-tab gen-tab" data-page="generate">Generate</button>
-    <button class="nav-tab view-tab" id="view-tab" data-page="view" style="display:none">◉ &nbsp;3D Model</button>
+    <button class="nav-tab view-tab" id="view-tab" data-page="view" style="display:none">&#9711; &nbsp;3D Model</button>
   </div>
-  <div class="nav-right"><span class="nav-stat" id="nav-stat">—</span></div>
+  <div class="nav-right"><span class="nav-stat" id="nav-stat">&#8212;</span></div>
 </div>
 
 <!-- ══ DISASSEMBLE ══ -->
 <div class="page active" id="page-disassemble">
   <div id="lib-sidebar">
     <div class="sidebar-head"><span class="sidebar-label">Saved</span><span class="sidebar-title">Library</span></div>
-    <div id="lib-list"><div id="lib-empty" style="padding:20px 10px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.18);text-align:center;line-height:1.7;">Click components or Save All to build your library</div></div>
+    <div id="lib-list"><div id="lib-empty-msg" style="padding:20px 10px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.18);text-align:center;line-height:1.7;">Save components to build your library</div></div>
     <div class="sidebar-actions">
-      <button class="sidebar-btn reconstruct" id="btn-reconstruct">⟳ &nbsp;Reconstruct</button>
-      <button class="sidebar-btn clear" id="btn-clear-lib">✕ &nbsp;Clear Library</button>
+      <button class="sidebar-btn reconstruct" id="btn-reconstruct">&#8635; &nbsp;Reconstruct</button>
+      <button class="sidebar-btn clear" id="btn-clear-lib">&#10005; &nbsp;Clear Library</button>
     </div>
   </div>
-  <div id="viewer-wrap">
-    <!-- Upload bar -->
+
+  <div id="disassemble-main">
+    <!-- Upload bar (always visible) -->
     <div id="upload-bar">
       <span class="upload-eyebrow">IFC Files</span>
       <div class="upload-divider"></div>
       <input type="file" id="ifc-file-input" accept=".ifc" style="display:none">
       <input type="file" id="ifc-bulk-input" accept=".ifc" multiple style="display:none">
-      <button class="btn btn-ghost" id="btn-choose-single" onclick="document.getElementById('ifc-file-input').click()">Choose File</button>
-      <button class="btn btn-ghost" id="btn-choose-bulk" onclick="document.getElementById('ifc-bulk-input').click()">Choose Folder / Multiple</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('ifc-file-input').click()">Choose File</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('ifc-bulk-input').click()">Choose Multiple</button>
       <span id="upload-filename">No file selected</span>
       <button class="btn btn-primary" id="btn-upload" disabled>Process &amp; Upload</button>
       <span id="upload-status"></span>
     </div>
-    <!-- Bulk progress panel -->
-    <div id="bulk-progress">
-      <div id="bulk-summary">
-        <span id="bulk-summary-text">Processing 0 of 0 files…</span>
-        <button id="bulk-close">✕</button>
+
+    <!-- SINGLE FILE MODE -->
+    <div id="single-mode">
+      <div id="aps-viewer">
+        <div id="viewer-empty"><div class="empty-headline">No model loaded</div><div class="empty-sub">Upload an IFC file to begin</div></div>
       </div>
-      <div id="bulk-file-list"></div>
+      <div id="component-panel">
+        <div id="comp-panel-head">
+          <div><span class="sidebar-label">All</span><span class="comp-panel-title">Components</span></div>
+          <button id="btn-save-all">Save All</button>
+        </div>
+        <div id="comp-filters"><button class="comp-filter active" data-filter="all">All</button></div>
+        <div id="comp-list"><div style="padding:24px 12px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.15);text-align:center;line-height:1.7;">Upload an IFC file to see components</div></div>
+      </div>
     </div>
-    <div id="aps-viewer"><div id="viewer-empty"><div class="empty-headline">No model loaded</div><div class="empty-sub">Upload an IFC file to begin</div></div></div>
-  </div>
-  <div id="component-panel">
-    <div id="comp-panel-head">
-      <div><span class="sidebar-label">All</span><span class="comp-panel-title">Components</span></div>
-      <button id="btn-save-all">Save All</button>
+
+    <!-- BULK BROWSER MODE -->
+    <div id="bulk-mode">
+      <!-- Progress strip (shown while uploading) -->
+      <div id="bulk-progress-strip">
+        <div id="bulk-progress-summary">
+          <span id="bulk-progress-text">Processing files&#8230;</span>
+        </div>
+        <div id="bulk-file-rows"></div>
+      </div>
+      <!-- Bulk top bar -->
+      <div id="bulk-topbar">
+        <select id="bulk-file-select"><option value="">&#8212; Select file &#8212;</option></select>
+        <div class="bulk-topbar-divider"></div>
+        <input id="bulk-search" type="text" placeholder="Search components&#8230;">
+        <select id="bulk-filter-select">
+          <option value="all">All categories</option>
+          <option value="arch">Architecture</option>
+          <option value="struct">Structure</option>
+          <option value="mep">MEP</option>
+          <option value="other">Other</option>
+        </select>
+        <div class="bulk-topbar-divider"></div>
+        <button id="bulk-save-all-btn">Save All</button>
+        <button id="bulk-save-selected-btn">Save Selected</button>
+        <span id="bulk-count"></span>
+        <button id="bulk-done-btn">&#8592; Back to Viewer</button>
+      </div>
+      <!-- Component grid -->
+      <div id="bulk-comp-area">
+        <div id="bulk-comp-grid"></div>
+        <div id="bulk-empty">Upload multiple IFC files to browse their components here.</div>
+      </div>
     </div>
-    <div id="comp-filters"><button class="comp-filter active" data-filter="all">All</button></div>
-    <div id="comp-list"><div id="comp-empty-msg" style="padding:24px 12px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.15);text-align:center;line-height:1.7;">Upload an IFC file to see components</div></div>
   </div>
 </div>
 
@@ -267,7 +342,7 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
     <div id="gen-chat-area">
       <div class="gen-msg assistant">
         <span class="gen-msg-role">AI Architect</span>
-        <div class="gen-msg-bubble">I'm your AI building designer. Tell me what you want to build and I'll create a complete plan — structure, MEP, electrical, finishes, cost estimates, and a downloadable IFC file.<br><br>Describe your building: <em>type, location, size, budget, timeline, any special requirements.</em></div>
+        <div class="gen-msg-bubble">I&#8217;m your AI building designer. Tell me what you want to build and I&#8217;ll create a complete plan &#8212; structure, MEP, electrical, finishes, cost estimates, and a downloadable IFC file.<br><br>Describe your building: <em>type, location, size, budget, timeline, any special requirements.</em></div>
       </div>
     </div>
     <div id="gen-suggestions">
@@ -277,7 +352,7 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
       <button class="gen-suggestion">Apartment building, 5 floors, steel frame, Miami FL</button>
     </div>
     <div id="gen-input-bar">
-      <textarea id="gen-input" placeholder="Describe your building — type, location, size, budget, materials, timeline…" rows="1"></textarea>
+      <textarea id="gen-input" placeholder="Describe your building&#8230;" rows="1"></textarea>
       <button id="gen-send">Design</button>
     </div>
   </div>
@@ -289,14 +364,14 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
     <div id="view-sidebar-head"><span class="sidebar-label">Generated</span><span class="view-sidebar-title">Building Plan</span></div>
     <div id="view-plan-summary"><div style="padding:24px 12px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.15);text-align:center;line-height:1.7;">Generate a building to see the plan</div></div>
     <div id="view-actions">
-      <button class="view-btn export" id="btn-export-ifc" disabled>↓ &nbsp;Export IFC</button>
-      <button class="view-btn back" id="btn-back-to-chat">← &nbsp;Back to Chat</button>
+      <button class="view-btn export" id="btn-export-ifc" disabled>&#8595; &nbsp;Export IFC</button>
+      <button class="view-btn back" id="btn-back-to-chat">&#8592; &nbsp;Back to Chat</button>
     </div>
   </div>
   <div id="view-viewer-wrap">
     <div id="view-bar">
       <span class="view-bar-title" id="view-building-name">No model loaded</span>
-      <span id="view-status">—</span>
+      <span id="view-status">&#8212;</span>
     </div>
     <div id="gen-aps-viewer"><div id="gen-viewer-empty"><div class="gen-empty-headline">Awaiting generation</div><div class="gen-empty-sub">Describe a building in the Generate tab</div></div></div>
   </div>
@@ -312,271 +387,413 @@ const GROUP_LABELS={all:'All',arch:'Architecture',struct:'Structure',mep:'MEP',o
 function groupOf(c){if(ARCH.has(c))return'arch';if(STRUCT.has(c))return'struct';if(MEP.has(c))return'mep';return'other';}
 function dotClass(c){return'dot-'+groupOf(c);}
 
-let currentProjectId=null,allComponents=[],library=[],activeFilter='all';
-let viewer=null,genViewer=null,apsInitialized=false;
-let globalIdToDbId={},groupDbIds={};
-let genHistory=[],genSpec=null,genStreaming=false;
-let bulkUploading=false;
+// ── State ────────────────────────────────────────────────────────────────────
+var currentProjectId=null,allComponents=[],library=[],activeFilter='all';
+var viewer=null,genViewer=null,apsInitialized=false;
+var globalIdToDbId={},groupDbIds={};
+var genHistory=[],genSpec=null,genStreaming=false;
 
-// ── APS ───────────────────────────────────────────────────────────
+// bulk browser state
+var bulkProjects={}; // {projectId: {name, filename, components:[]}}
+var bulkSelectedIds=new Set();
+var bulkCurrentProjectId=null;
+var bulkSearchTimer=null;
+
+// ── APS ──────────────────────────────────────────────────────────────────────
 async function ensureApsInit(){
   if(apsInitialized)return;
-  const td=await fetch('/api/aps/token').then(r=>r.json());
-  return new Promise(resolve=>{
-    Autodesk.Viewing.Initializer({env:'AutodeskProduction2',api:'streamingV2',getAccessToken:(cb)=>cb(td.access_token,td.expires_in)},()=>{apsInitialized=true;resolve();});
+  var td=await fetch('/api/aps/token').then(r=>r.json());
+  return new Promise(function(resolve){
+    Autodesk.Viewing.Initializer({env:'AutodeskProduction2',api:'streamingV2',
+      getAccessToken:function(cb){cb(td.access_token,td.expires_in);}},
+      function(){apsInitialized=true;resolve();});
   });
 }
+
 async function initViewer(urn){
   document.getElementById('viewer-empty').style.display='none';
   await ensureApsInit();
   if(viewer){viewer.finish();viewer=null;}
   viewer=new Autodesk.Viewing.GuiViewer3D(document.getElementById('aps-viewer'),{extensions:['Autodesk.DocumentBrowser']});
   viewer.start();
-  Autodesk.Viewing.Document.load('urn:'+urn,(doc)=>{
-    viewer.loadDocumentNode(doc,doc.getRoot().getDefaultGeometry()).then(()=>{
+  Autodesk.Viewing.Document.load('urn:'+urn,function(doc){
+    viewer.loadDocumentNode(doc,doc.getRoot().getDefaultGeometry()).then(function(){
       viewer.addEventListener(Autodesk.Viewing.SELECTION_CHANGED_EVENT,onSelectionChanged);
       buildGlobalIdMap();
     });
-  },(c,m)=>{console.error(c,m);toast('Failed to load model');});
+  },function(c,m){console.error(c,m);toast('Failed to load model');});
 }
+
 async function initGenViewer(urn){
   document.getElementById('gen-viewer-empty').style.display='none';
-  document.getElementById('view-status').textContent='Loading…';
+  document.getElementById('view-status').textContent='Loading\u2026';
   await ensureApsInit();
   if(genViewer){genViewer.finish();genViewer=null;}
   genViewer=new Autodesk.Viewing.GuiViewer3D(document.getElementById('gen-aps-viewer'),{});
   genViewer.start();
-  Autodesk.Viewing.Document.load('urn:'+urn,(doc)=>{
-    genViewer.loadDocumentNode(doc,doc.getRoot().getDefaultGeometry()).then(()=>{document.getElementById('view-status').textContent='Ready';});
-  },(c,m)=>{document.getElementById('view-status').textContent='Preview failed';});
+  Autodesk.Viewing.Document.load('urn:'+urn,function(doc){
+    genViewer.loadDocumentNode(doc,doc.getRoot().getDefaultGeometry()).then(function(){
+      document.getElementById('view-status').textContent='Ready';
+    });
+  },function(){document.getElementById('view-status').textContent='Preview failed';});
 }
+
 function buildGlobalIdMap(){
-  viewer.getObjectTree(tree=>{
-    const dbIds=[];
-    tree.enumNodeChildren(tree.getRootId(),id=>{if(tree.getChildCount(id)===0)dbIds.push(id);},true);
+  viewer.getObjectTree(function(tree){
+    var dbIds=[];
+    tree.enumNodeChildren(tree.getRootId(),function(id){if(tree.getChildCount(id)===0)dbIds.push(id);},true);
     globalIdToDbId={};groupDbIds={all:dbIds};
-    dbIds.forEach(dbId=>{
-      viewer.getProperties(dbId,props=>{
-        let gid=null;
-        if(props.properties){for(const x of props.properties){if(x.attributeName==='GLOBALID'&&x.displayCategory==='IFC'){gid=x.displayValue;break;}}}
-        if(gid){const comp=allComponents.find(c=>c.revit_id===gid);if(comp){globalIdToDbId[gid]={dbId,compId:comp.id};const g=groupOf(comp.category);if(!groupDbIds[g])groupDbIds[g]=[];groupDbIds[g].push(dbId);}}
+    dbIds.forEach(function(dbId){
+      viewer.getProperties(dbId,function(props){
+        var gid=null;
+        if(props.properties){for(var i=0;i<props.properties.length;i++){var p=props.properties[i];if(p.attributeName==='GLOBALID'&&p.displayCategory==='IFC'){gid=p.displayValue;break;}}}
+        if(gid){var comp=allComponents.find(function(c){return c.revit_id===gid;});if(comp){globalIdToDbId[gid]={dbId:dbId,compId:comp.id};var g=groupOf(comp.category);if(!groupDbIds[g])groupDbIds[g]=[];groupDbIds[g].push(dbId);}}
       });
     });
   });
 }
+
 function isolateGroup(g){
   if(!viewer)return;
   if(g==='all'){viewer.showAll();viewer.clearSelection();return;}
-  const ids=groupDbIds[g];
+  var ids=groupDbIds[g];
   if(!ids||ids.length===0){viewer.showAll();return;}
   viewer.isolate(ids);viewer.fitToView(ids);
 }
+
 async function onSelectionChanged(event){
-  const ids=event.dbIdArray;if(!ids||ids.length===0)return;
-  viewer.getProperties(ids[0],async props=>{
-    let gid=null;
-    if(props.properties){for(const p of props.properties){if(p.attributeName==='GLOBALID'&&p.displayCategory==='IFC'){gid=p.displayValue;break;}}}
+  var ids=event.dbIdArray;if(!ids||ids.length===0)return;
+  viewer.getProperties(ids[0],async function(props){
+    var gid=null;
+    if(props.properties){for(var i=0;i<props.properties.length;i++){var p=props.properties[i];if(p.attributeName==='GLOBALID'&&p.displayCategory==='IFC'){gid=p.displayValue;break;}}}
     if(!gid)return;
-    const m=allComponents.find(c=>c.revit_id===gid);if(m)highlightCompItem(m.id);
-    try{const r=await fetch('/api/component/by-revit-id/'+gid);if(r.ok){const comp=await r.json();const item=document.querySelector('.comp-item[data-id="'+comp.id+'"]');if(item&&!item.classList.contains('open'))item.querySelector('.comp-item-header').click();}}catch(e){}
+    var m=allComponents.find(function(c){return c.revit_id===gid;});if(m)highlightCompItem(m.id);
   });
 }
+
 function highlightCompItem(id){
-  document.querySelectorAll('.comp-item').forEach(el=>el.classList.remove('selected'));
-  const el=document.querySelector('.comp-item[data-id="'+id+'"]');
+  document.querySelectorAll('.comp-item').forEach(function(el){el.classList.remove('selected');});
+  var el=document.querySelector('.comp-item[data-id="'+id+'"]');
   if(el){el.classList.add('selected');el.scrollIntoView({behavior:'smooth',block:'nearest'});}
 }
 
-// ── SINGLE FILE UPLOAD ────────────────────────────────────────────
+// ── Single file upload ────────────────────────────────────────────────────────
 document.getElementById('ifc-file-input').onchange=function(){
-  if(this.files[0]){
-    document.getElementById('upload-filename').textContent=this.files[0].name;
-    document.getElementById('btn-upload').disabled=false;
-    document.getElementById('btn-upload').textContent='Process & Upload';
-    document.getElementById('btn-upload').onclick=doSingleUpload;
-  }
+  if(!this.files[0])return;
+  document.getElementById('upload-filename').textContent=this.files[0].name;
+  document.getElementById('btn-upload').disabled=false;
+  document.getElementById('btn-upload').textContent='Process & Upload';
+  document.getElementById('btn-upload').onclick=doSingleUpload;
 };
 
 async function doSingleUpload(){
-  const file=document.getElementById('ifc-file-input').files[0];if(!file)return;
-  const status=document.getElementById('upload-status'),btn=document.getElementById('btn-upload');
-  btn.disabled=true;status.textContent='⟳ Processing…';
-  const fd=new FormData();fd.append('file',file);
+  var file=document.getElementById('ifc-file-input').files[0];if(!file)return;
+  var status=document.getElementById('upload-status'),btn=document.getElementById('btn-upload');
+  btn.disabled=true;status.textContent='\u29d7 Processing\u2026';
+  // ensure single mode visible
+  showSingleMode();
+  var fd=new FormData();fd.append('file',file);
   try{
-    const res=await fetch('/api/upload',{method:'POST',body:fd});
-    const data=await res.json();
+    var res=await fetch('/api/upload',{method:'POST',body:fd});
+    var data=await res.json();
     if(data.status==='done'){
       currentProjectId=data.project_id;
-      status.textContent='✓ '+data.stats.components+' components';
-      document.getElementById('nav-stat').textContent=data.stats.components+' components · '+data.stats.relationships+' relationships';
-      const comps=await fetch('/api/projects/'+data.project_id+'/components').then(r=>r.json());
+      status.textContent='\u2713 '+data.stats.components+' components';
+      document.getElementById('nav-stat').textContent=data.stats.components+' components';
+      var comps=await fetch('/api/projects/'+data.project_id+'/components').then(function(r){return r.json();});
       allComponents=comps;activeFilter='all';buildDynamicFilters();renderCompPanel();
       await initViewer(data.aps.urn);
       await refreshLibrary();
       toast('Loaded: '+file.name);
-    }else{status.textContent='✕ '+(data.error||'Error');}
-  }catch(e){status.textContent='✕ Upload failed';console.error(e);}
+    }else{status.textContent='\u2715 '+(data.error||'Error');}
+  }catch(e){status.textContent='\u2715 Failed';console.error(e);}
   btn.disabled=false;
 }
 document.getElementById('btn-upload').onclick=doSingleUpload;
 
-// ── BULK FILE UPLOAD ──────────────────────────────────────────────
+// ── Bulk upload → browser mode ────────────────────────────────────────────────
 document.getElementById('ifc-bulk-input').onchange=function(){
-  const files=Array.from(this.files).filter(f=>f.name.endsWith('.ifc'));
-  if(files.length===0)return;
-  const count=files.length;
-  document.getElementById('upload-filename').textContent=count+' file'+(count>1?'s':'')+' selected';
+  var files=Array.from(this.files).filter(function(f){return f.name.endsWith('.ifc');});
+  if(!files.length)return;
+  document.getElementById('upload-filename').textContent=files.length+' files selected';
   document.getElementById('btn-upload').disabled=false;
-  document.getElementById('btn-upload').textContent='Upload '+count+' File'+(count>1?'s':'');
-  document.getElementById('btn-upload').onclick=()=>doBulkUpload(files);
+  document.getElementById('btn-upload').textContent='Upload '+files.length+' Files';
+  document.getElementById('btn-upload').onclick=function(){doBulkUpload(files);};
 };
 
 async function doBulkUpload(files){
-  if(bulkUploading)return;
-  bulkUploading=true;
-  const btn=document.getElementById('btn-upload');
+  var btn=document.getElementById('btn-upload');
   btn.disabled=true;
   document.getElementById('upload-status').textContent='';
 
-  // Build the file list UI
-  const progress=document.getElementById('bulk-progress');
-  const fileList=document.getElementById('bulk-file-list');
-  const summaryText=document.getElementById('bulk-summary-text');
-  progress.style.display='flex';
-  fileList.innerHTML='';
+  // Switch to bulk mode immediately
+  showBulkMode();
+  bulkProjects={};bulkSelectedIds=new Set();
 
-  const rows={};
-  files.forEach(f=>{
-    const row=document.createElement('div');row.className='bulk-file-row';
-    row.innerHTML=
-      '<div class="bulk-file-name">'+f.name+'</div>'+
+  // Show progress strip
+  var strip=document.getElementById('bulk-progress-strip');
+  var fileRows=document.getElementById('bulk-file-rows');
+  var progressText=document.getElementById('bulk-progress-text');
+  strip.classList.add('active');
+  fileRows.innerHTML='';
+
+  var rowEls={};
+  files.forEach(function(f){
+    var row=document.createElement('div');row.className='bulk-file-row';
+    row.innerHTML='<div class="bulk-file-name">'+f.name+'</div>'+
       '<div class="bulk-file-bar"><div class="bulk-file-bar-fill" style="width:0%"></div></div>'+
       '<div class="bulk-file-status pending">Queued</div>';
-    fileList.appendChild(row);
-    rows[f.name]={row,bar:row.querySelector('.bulk-file-bar-fill'),status:row.querySelector('.bulk-file-status')};
+    fileRows.appendChild(row);
+    rowEls[f.name]={bar:row.querySelector('.bulk-file-bar-fill'),status:row.querySelector('.bulk-file-status')};
   });
 
-  const fd=new FormData();
-  files.forEach(f=>fd.append('files',f));
+  // Update file dropdown
+  var sel=document.getElementById('bulk-file-select');
+  sel.innerHTML='<option value="">&#8212; Select file &#8212;</option>';
+  renderBulkGrid();
 
-  let processed=0,failed=0,totalComps=0;
-  summaryText.textContent='Starting…';
+  var fd=new FormData();
+  files.forEach(function(f){fd.append('files',f);});
+
+  var processed=0,failed=0,totalComps=0;
+  progressText.textContent='Starting\u2026';
 
   try{
-    const res=await fetch('/api/upload/bulk',{method:'POST',body:fd});
-    const reader=res.body.getReader();const decoder=new TextDecoder();let buffer='';
+    var res=await fetch('/api/upload/bulk',{method:'POST',body:fd});
+    var reader=res.body.getReader();var decoder=new TextDecoder();var buffer='';
     while(true){
-      const{done,value}=await reader.read();if(done)break;
-      buffer+=decoder.decode(value,{stream:true});
-      const lines=buffer.split('\n');buffer=lines.pop();
-      for(const line of lines){
-        if(!line.startsWith('data:'))continue;
+      var chunk=await reader.read();if(chunk.done)break;
+      buffer+=decoder.decode(chunk.value,{stream:true});
+      var lines=buffer.split('\n');buffer=lines.pop();
+      for(var i=0;i<lines.length;i++){
+        var line=lines[i];if(!line.startsWith('data:'))continue;
         try{
-          const ev=JSON.parse(line.slice(5));
+          var ev=JSON.parse(line.slice(5));
           if(ev.type==='start'){
-            summaryText.textContent='Processing '+(ev.index+1)+' of '+ev.total+': '+ev.file;
-            if(rows[ev.file]){
-              rows[ev.file].status.textContent='Running…';
-              rows[ev.file].status.className='bulk-file-status running';
-              rows[ev.file].bar.style.width='30%';
-            }
+            progressText.textContent='Processing '+(ev.index+1)+' of '+ev.total+': '+ev.file;
+            if(rowEls[ev.file]){rowEls[ev.file].status.textContent='Running\u2026';rowEls[ev.file].status.className='bulk-file-status running';rowEls[ev.file].bar.style.width='20%';}
           }else if(ev.type==='step'){
-            if(rows[ev.file]){
-              rows[ev.file].status.textContent=ev.step==='aps'?'Uploading…':'Pipeline…';
-              rows[ev.file].bar.style.width=ev.step==='aps'?'70%':'40%';
-            }
+            if(rowEls[ev.file]){rowEls[ev.file].bar.style.width=ev.step==='aps'?'70%':'40%';rowEls[ev.file].status.textContent=ev.step==='aps'?'Uploading\u2026':'Pipeline\u2026';}
           }else if(ev.type==='done'){
             processed++;totalComps+=ev.stats.components;
-            if(rows[ev.file]){
-              rows[ev.file].status.textContent='✓ '+ev.stats.components+' components';
-              rows[ev.file].status.className='bulk-file-status done';
-              rows[ev.file].bar.style.width='100%';
-            }
-            // Load last processed file into viewer
-            currentProjectId=ev.project_id;
-            const comps=await fetch('/api/projects/'+ev.project_id+'/components').then(r=>r.json());
-            allComponents=comps;activeFilter='all';buildDynamicFilters();renderCompPanel();
-            await initViewer(ev.aps.urn);
+            if(rowEls[ev.file]){rowEls[ev.file].status.textContent='\u2713 '+ev.stats.components;rowEls[ev.file].status.className='bulk-file-status done';rowEls[ev.file].bar.style.width='100%';}
+            // Fetch components for this project and store in bulkProjects
+            var comps=await fetch('/api/projects/'+ev.project_id+'/components').then(function(r){return r.json();});
+            bulkProjects[ev.project_id]={name:ev.file.replace('.ifc',''),filename:ev.file,components:comps};
+            // Add to dropdown
+            var opt=document.createElement('option');opt.value=ev.project_id;opt.textContent=ev.file.replace('.ifc','')+' ('+ev.stats.components+')';
+            sel.appendChild(opt);
+            // Auto-select first
+            if(Object.keys(bulkProjects).length===1){sel.value=ev.project_id;bulkCurrentProjectId=ev.project_id;renderBulkGrid();}
             await refreshLibrary();
           }else if(ev.type==='error'){
             failed++;
-            if(rows[ev.file]){
-              rows[ev.file].status.textContent='✕ Error';
-              rows[ev.file].status.className='bulk-file-status error';
-              rows[ev.file].bar.style.width='100%';
-              rows[ev.file].bar.style.background='var(--accent)';
-            }
+            if(rowEls[ev.file]){rowEls[ev.file].status.textContent='\u2715 Error';rowEls[ev.file].status.className='bulk-file-status error';rowEls[ev.file].bar.style.width='100%';rowEls[ev.file].bar.style.background='var(--accent)';}
           }else if(ev.type==='complete'){
-            summaryText.textContent='Done: '+processed+' uploaded, '+failed+' failed — '+totalComps+' total components added to library';
+            progressText.textContent='\u2713 Done: '+processed+' uploaded, '+failed+' failed \u2014 '+totalComps+' components total';
             document.getElementById('nav-stat').textContent=totalComps+' components in library';
-            toast('Bulk upload complete: '+processed+' files, '+totalComps+' components');
+            toast('Bulk upload complete: '+processed+' files');
           }
         }catch(e){}
       }
     }
-  }catch(e){
-    summaryText.textContent='Upload error: '+e.message;
-    console.error(e);
-  }
-  bulkUploading=false;
+  }catch(e){progressText.textContent='Upload error: '+e.message;console.error(e);}
   btn.disabled=false;
   btn.textContent='Process & Upload';
 }
 
-document.getElementById('bulk-close').onclick=function(){
-  document.getElementById('bulk-progress').style.display='none';
+// ── Mode switching ────────────────────────────────────────────────────────────
+function showSingleMode(){
+  document.getElementById('single-mode').style.display='flex';
+  document.getElementById('bulk-mode').classList.remove('active');
+}
+function showBulkMode(){
+  document.getElementById('single-mode').style.display='none';
+  document.getElementById('bulk-mode').classList.add('active');
+  var empty=document.getElementById('bulk-empty');
+  empty.classList.toggle('active',Object.keys(bulkProjects).length===0);
+}
+
+document.getElementById('bulk-done-btn').onclick=function(){
+  showSingleMode();
+  document.getElementById('bulk-progress-strip').classList.remove('active');
 };
 
-// ── DYNAMIC FILTERS ───────────────────────────────────────────────
+// ── Bulk browser ──────────────────────────────────────────────────────────────
+document.getElementById('bulk-file-select').onchange=function(){
+  var pid=parseInt(this.value);
+  if(!pid){bulkCurrentProjectId=null;renderBulkGrid();return;}
+  bulkCurrentProjectId=pid;
+  bulkSelectedIds=new Set();
+  renderBulkGrid();
+};
+
+document.getElementById('bulk-search').oninput=function(){
+  clearTimeout(bulkSearchTimer);
+  bulkSearchTimer=setTimeout(renderBulkGrid,150);
+};
+
+document.getElementById('bulk-filter-select').onchange=renderBulkGrid;
+
+function getBulkComponents(){
+  if(!bulkCurrentProjectId||!bulkProjects[bulkCurrentProjectId])return[];
+  var comps=bulkProjects[bulkCurrentProjectId].components;
+  var q=document.getElementById('bulk-search').value.trim().toLowerCase();
+  var gf=document.getElementById('bulk-filter-select').value;
+  return comps.filter(function(c){
+    if(gf!=='all'&&groupOf(c.category)!==gf)return false;
+    if(q){var name=(c.family_name||c.type_name||c.category||'').toLowerCase();var cat=c.category.toLowerCase();return name.includes(q)||cat.includes(q);}
+    return true;
+  });
+}
+
+function renderBulkGrid(){
+  var grid=document.getElementById('bulk-comp-grid');
+  var empty=document.getElementById('bulk-empty');
+  var countEl=document.getElementById('bulk-count');
+  grid.innerHTML='';
+  var comps=getBulkComponents();
+  countEl.textContent=comps.length+' components';
+  if(!comps.length){empty.classList.add('active');return;}
+  empty.classList.remove('active');
+  comps.forEach(function(comp){
+    var inLib=library.some(function(l){return l.id===comp.id;});
+    var selected=bulkSelectedIds.has(comp.id);
+    var card=document.createElement('div');
+    card.className='bulk-comp-card'+(selected?' selected':'')+(inLib?' in-library':'');
+    card.dataset.id=comp.id;
+    var dims='';
+    if(comp.width_mm||comp.height_mm||comp.length_mm){
+      var parts=[];
+      if(comp.length_mm)parts.push(Math.round(comp.length_mm)+'L');
+      if(comp.width_mm)parts.push(Math.round(comp.width_mm)+'W');
+      if(comp.height_mm)parts.push(Math.round(comp.height_mm)+'H');
+      dims=parts.join(' \u00d7 ')+' mm';
+    }
+    var dotCol=groupOf(comp.category)==='arch'?'#8ecae6':groupOf(comp.category)==='struct'?'#80b918':groupOf(comp.category)==='mep'?'#ff6b6b':'#666';
+    card.innerHTML=
+      '<div class="bulk-comp-card-dot" style="background:'+dotCol+'"></div>'+
+      '<div class="bulk-comp-card-cat">'+comp.category.replace('Ifc','')+'</div>'+
+      '<div class="bulk-comp-card-name">'+(comp.family_name||comp.type_name||comp.category)+'</div>'+
+      (dims?'<div class="bulk-comp-card-dims">'+dims+'</div>':'')+
+      '<button class="bulk-comp-save'+(inLib?' saved':'')+'" data-id="'+comp.id+'">'+(inLib?'\u2713 Saved':'Save')+'</button>';
+    // Toggle selection on card click
+    (function(cid){
+      card.onclick=function(e){
+        if(e.target.classList.contains('bulk-comp-save'))return;
+        if(bulkSelectedIds.has(cid))bulkSelectedIds.delete(cid);
+        else bulkSelectedIds.add(cid);
+        card.classList.toggle('selected',bulkSelectedIds.has(cid));
+      };
+    })(comp.id);
+    grid.appendChild(card);
+  });
+  // Attach save button events via delegation
+}
+
+document.getElementById('bulk-comp-area').addEventListener('click',function(e){
+  var btn=e.target.closest('.bulk-comp-save');
+  if(!btn)return;
+  e.stopPropagation();
+  var cid=parseInt(btn.dataset.id);
+  saveBulkComponent(cid,btn);
+});
+
+async function saveBulkComponent(cid,btn){
+  var res=await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:cid})});
+  var data=await res.json();
+  if(data.status==='saved'||data.status==='already_saved'){
+    await refreshLibrary();
+    // Update all cards with this id
+    document.querySelectorAll('.bulk-comp-save[data-id="'+cid+'"]').forEach(function(b){
+      b.textContent='\u2713 Saved';b.classList.add('saved');
+      var card=b.closest('.bulk-comp-card');if(card)card.classList.add('in-library');
+    });
+    toast('Saved to library');
+  }
+}
+
+document.getElementById('bulk-save-all-btn').onclick=async function(){
+  var comps=getBulkComponents();
+  var unsaved=comps.filter(function(c){return !library.some(function(l){return l.id===c.id;});});
+  if(!unsaved.length){toast('All components already saved');return;}
+  this.textContent='Saving\u2026';this.disabled=true;
+  for(var i=0;i<unsaved.length;i++){
+    await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:unsaved[i].id})});
+  }
+  await refreshLibrary();
+  renderBulkGrid();
+  this.textContent='Save All';this.disabled=false;
+  toast('Saved '+unsaved.length+' components');
+};
+
+document.getElementById('bulk-save-selected-btn').onclick=async function(){
+  if(!bulkSelectedIds.size){toast('Select components first');return;}
+  this.textContent='Saving\u2026';this.disabled=true;
+  var toSave=Array.from(bulkSelectedIds).filter(function(id){return !library.some(function(l){return l.id===id;});});
+  for(var i=0;i<toSave.length;i++){
+    await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:toSave[i]})});
+  }
+  await refreshLibrary();
+  bulkSelectedIds=new Set();
+  renderBulkGrid();
+  this.textContent='Save Selected';this.disabled=false;
+  toast('Saved '+toSave.length+' components');
+};
+
+// ── Dynamic filters (single mode) ─────────────────────────────────────────────
 function buildDynamicFilters(){
-  const gc={all:allComponents.length};
-  allComponents.forEach(c=>{const g=groupOf(c.category);gc[g]=(gc[g]||0)+1;});
-  const fb=document.getElementById('comp-filters');fb.innerHTML='';
-  ['all','arch','struct','mep','other'].forEach(g=>{
+  var gc={all:allComponents.length};
+  allComponents.forEach(function(c){var g=groupOf(c.category);gc[g]=(gc[g]||0)+1;});
+  var fb=document.getElementById('comp-filters');fb.innerHTML='';
+  ['all','arch','struct','mep','other'].forEach(function(g){
     if(g!=='all'&&!gc[g])return;
-    const btn=document.createElement('button');
+    var btn=document.createElement('button');
     btn.className='comp-filter'+(g===activeFilter?' active':'');btn.dataset.filter=g;
     btn.innerHTML=GROUP_LABELS[g]+'<span class="filter-count">'+(gc[g]||0)+'</span>';
-    btn.onclick=()=>{document.querySelectorAll('.comp-filter').forEach(b=>b.classList.remove('active'));btn.classList.add('active');activeFilter=g;renderCompPanel();isolateGroup(g);};
+    btn.onclick=function(){document.querySelectorAll('.comp-filter').forEach(function(b){b.classList.remove('active');});btn.classList.add('active');activeFilter=g;renderCompPanel();isolateGroup(g);};
     fb.appendChild(btn);
   });
 }
 
-// ── COMPONENT PANEL ───────────────────────────────────────────────
+// ── Component panel (single mode) ─────────────────────────────────────────────
 function renderCompPanel(){
-  const list=document.getElementById('comp-list');if(!list)return;
-  const filtered=activeFilter==='all'?allComponents:allComponents.filter(c=>groupOf(c.category)===activeFilter);
+  var list=document.getElementById('comp-list');if(!list)return;
+  var filtered=activeFilter==='all'?allComponents:allComponents.filter(function(c){return groupOf(c.category)===activeFilter;});
   list.innerHTML='';
-  if(filtered.length===0){
-    list.innerHTML='<div style="padding:24px 12px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.15);text-align:center;line-height:1.7;">'+(allComponents.length===0?'Upload an IFC file to see components':'No components in this category')+'</div>';
-    return;
-  }
+  if(!filtered.length){list.innerHTML='<div style="padding:24px 12px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.15);text-align:center;line-height:1.7;">'+(allComponents.length===0?'Upload an IFC file':'No components in this category')+'</div>';return;}
   filtered.forEach(function(comp){
     var inLib=library.some(function(l){return l.id===comp.id;});
-    var f=function(v){return v!=null?Number(v).toFixed(1):'—';};
-    var item=document.createElement('div');
-    item.className='comp-item'+(inLib?' in-library':'');item.dataset.id=comp.id;
+    var f=function(v){return v!=null?Number(v).toFixed(1):'&#8212;';};
+    var item=document.createElement('div');item.className='comp-item'+(inLib?' in-library':'');item.dataset.id=comp.id;
     var header=document.createElement('div');header.className='comp-item-header';
     var dot=document.createElement('div');dot.className='comp-dot '+dotClass(comp.category);
     var info=document.createElement('div');info.className='comp-item-info';
-    info.innerHTML='<div class="comp-item-cat">'+comp.category.replace('Ifc','')+'</div><div class="comp-item-name">'+(comp.family_name||comp.type_name||'—')+'</div>';
-    var saveBtn=document.createElement('button');saveBtn.className='comp-item-save'+(inLib?' saved':'');saveBtn.textContent=inLib?'✓':'Save';
+    info.innerHTML='<div class="comp-item-cat">'+comp.category.replace('Ifc','')+'</div><div class="comp-item-name">'+(comp.family_name||comp.type_name||'&#8212;')+'</div>';
+    var saveBtn=document.createElement('button');saveBtn.className='comp-item-save'+(inLib?' saved':'');saveBtn.textContent=inLib?'\u2713':'Save';
     (function(cid){saveBtn.onclick=function(e){e.stopPropagation();saveComponentById(cid);};})(comp.id);
-    var chevron=document.createElement('span');chevron.className='comp-chevron';chevron.textContent='›';
+    var chevron=document.createElement('span');chevron.className='comp-chevron';chevron.textContent='\u203a';
     header.appendChild(dot);header.appendChild(info);header.appendChild(saveBtn);header.appendChild(chevron);
     (function(it){header.onclick=function(){it.classList.toggle('open');};})(item);
     var body=document.createElement('div');body.className='comp-item-body';
-    body.innerHTML='<div class="comp-stat-row"><span class="comp-stat-k">DB id</span><span class="comp-stat-v hi">'+comp.id+'</span></div><div class="comp-stat-row"><span class="comp-stat-k">Level</span><span class="comp-stat-v">'+(comp.level||'—')+'</span></div><div class="comp-stat-row"><span class="comp-stat-k">Width</span><span class="comp-stat-v">'+f(comp.width_mm)+' mm</span></div><div class="comp-stat-row"><span class="comp-stat-k">Height</span><span class="comp-stat-v">'+f(comp.height_mm)+' mm</span></div><div class="comp-stat-row"><span class="comp-stat-k">Length</span><span class="comp-stat-v">'+f(comp.length_mm)+' mm</span></div><div class="comp-stat-row"><span class="comp-stat-k">Area</span><span class="comp-stat-v">'+(comp.area_m2!=null?Number(comp.area_m2).toFixed(2)+' m²':'—')+'</span></div>';
+    body.innerHTML='<div class="comp-stat-row"><span class="comp-stat-k">ID</span><span class="comp-stat-v hi">'+comp.id+'</span></div>'+
+      '<div class="comp-stat-row"><span class="comp-stat-k">Level</span><span class="comp-stat-v">'+(comp.level||'&#8212;')+'</span></div>'+
+      '<div class="comp-stat-row"><span class="comp-stat-k">W</span><span class="comp-stat-v">'+f(comp.width_mm)+' mm</span></div>'+
+      '<div class="comp-stat-row"><span class="comp-stat-k">H</span><span class="comp-stat-v">'+f(comp.height_mm)+' mm</span></div>'+
+      '<div class="comp-stat-row"><span class="comp-stat-k">L</span><span class="comp-stat-v">'+f(comp.length_mm)+' mm</span></div>';
     item.appendChild(header);item.appendChild(body);list.appendChild(item);
   });
 }
 
-// ── LIBRARY ───────────────────────────────────────────────────────
-async function refreshLibrary(){var res=await fetch('/api/library');library=await res.json();renderLibrary();if(allComponents.length>0)renderCompPanel();}
+// ── Library ───────────────────────────────────────────────────────────────────
+async function refreshLibrary(){
+  var res=await fetch('/api/library');library=await res.json();
+  renderLibrary();if(allComponents.length>0)renderCompPanel();
+}
 async function saveComponentById(id){
   var res=await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:id})});
   var data=await res.json();
-  if(data.status==='saved'||data.status==='already_saved'){await refreshLibrary();var comp=allComponents.find(function(c){return c.id===id;});toast('Saved: '+(comp?comp.family_name||comp.category:id));}
+  if(data.status==='saved'||data.status==='already_saved'){await refreshLibrary();toast('Saved to library');}
 }
 async function saveAll(){
   var visible=activeFilter==='all'?allComponents:allComponents.filter(function(c){return groupOf(c.category)===activeFilter;});
@@ -589,25 +806,25 @@ async function clearLibrary(){if(!confirm('Clear the entire library?'))return;aw
 function renderLibrary(){
   var list=document.getElementById('lib-list');if(!list)return;
   list.innerHTML='';
-  if(library.length===0){list.innerHTML='<div id="lib-empty" style="padding:20px 10px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.18);text-align:center;line-height:1.7;">Click components or Save All to build your library</div>';return;}
+  if(!library.length){list.innerHTML='<div id="lib-empty-msg" style="padding:20px 10px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.18);text-align:center;line-height:1.7;">Save components to build your library</div>';return;}
   library.forEach(function(comp){
-    var item=document.createElement('div');item.className='lib-item';item.dataset.compId=comp.id;
-    item.innerHTML='<div class="lib-cat">'+comp.category.replace('Ifc','')+'</div><div class="lib-name">'+(comp.family_name||comp.type_name||'—')+'</div><button class="lib-remove" data-comp-id="'+comp.id+'">✕</button>';
+    var item=document.createElement('div');item.className='lib-item';
+    item.innerHTML='<div class="lib-cat">'+comp.category.replace('Ifc','')+'</div><div class="lib-name">'+(comp.family_name||comp.type_name||'&#8212;')+'</div><button class="lib-remove" data-comp-id="'+comp.id+'">\u2715</button>';
     list.appendChild(item);
   });
 }
 document.getElementById('lib-list').addEventListener('click',function(e){
-  var btn=e.target.closest('.lib-remove');if(btn){e.stopPropagation();removeFromLibrary(parseInt(btn.dataset.compId));}
+  var btn=e.target.closest('.lib-remove');if(!btn)return;
+  e.stopPropagation();removeFromLibrary(parseInt(btn.dataset.compId));
 });
 async function reconstruct(){
   if(!currentProjectId){toast('Upload a file first');return;}
-  if(library.length===0){toast('Save some components first');return;}
-  var btn=document.getElementById('btn-reconstruct');btn.textContent='⟳ Working…';btn.disabled=true;
-  try{var res=await fetch('/api/reconstruct',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project_id:currentProjectId})});var data=await res.json();toast(data.status==='done'?'Reconstructed: '+(data.output||'done'):'Reconstruction failed');}catch(e){toast('Error');}
-  btn.textContent='⟳ Reconstruct';btn.disabled=false;
+  var btn=document.getElementById('btn-reconstruct');btn.textContent='\u29d7 Working\u2026';btn.disabled=true;
+  try{var res=await fetch('/api/reconstruct',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project_id:currentProjectId})});var data=await res.json();toast(data.status==='done'?'Reconstructed: '+(data.output||'done'):'Failed');}catch(e){toast('Error');}
+  btn.textContent='\u29d7 Reconstruct';btn.disabled=false;
 }
 
-// ── GENERATE ─────────────────────────────────────────────────────
+// ── Generate chat ─────────────────────────────────────────────────────────────
 function addGenMessage(role,content,isHtml){
   var area=document.getElementById('gen-chat-area');
   var msg=document.createElement('div');msg.className='gen-msg '+role;
@@ -629,17 +846,17 @@ function updatePlanSidebar(spec){
   var s=document.getElementById('view-plan-summary');
   var m=spec.metadata||{};var fl=spec.floors||[];
   var tc=fl.reduce(function(a,f){return a+(f.components||[]).length;},0);
-  var html='<div class="plan-section"><div class="plan-section-label">Building</div><div class="plan-val big">'+(spec.name||'—')+'</div>'+(m.building_type?'<div class="plan-val" style="margin-top:4px;color:rgba(255,255,255,0.4);">'+m.building_type+'</div>':'')+'</div>';
+  var html='<div class="plan-section"><div class="plan-section-label">Building</div><div class="plan-val big">'+(spec.name||'&#8212;')+'</div>'+(m.building_type?'<div class="plan-val" style="margin-top:4px;color:rgba(255,255,255,0.4);">'+m.building_type+'</div>':'')+'</div>';
   if(m.location)html+='<div class="plan-section"><div class="plan-section-label">Location</div><div class="plan-val">'+m.location+'</div></div>';
   html+='<div class="plan-section"><div class="plan-section-label">Scale</div>';
   html+='<div class="plan-row"><span class="plan-row-k">Floors</span><span class="plan-row-v">'+fl.length+'</span></div>';
   html+='<div class="plan-row"><span class="plan-row-k">Components</span><span class="plan-row-v">'+tc+'</span></div>';
-  if(m.gross_floor_area_m2)html+='<div class="plan-row"><span class="plan-row-k">GFA</span><span class="plan-row-v">'+m.gross_floor_area_m2+' m²</span></div>';
+  if(m.gross_floor_area_m2)html+='<div class="plan-row"><span class="plan-row-k">GFA</span><span class="plan-row-v">'+m.gross_floor_area_m2+' m\u00b2</span></div>';
   html+='</div>';
   if(m.estimated_cost_usd){
-    html+='<div class="plan-section"><div class="plan-section-label">Cost Estimate</div><div class="plan-val big green">$'+Number(m.estimated_cost_usd).toLocaleString()+'</div>';
+    html+='<div class="plan-section"><div class="plan-section-label">Cost Estimate</div><div class="plan-val big" style="color:var(--green)">$'+Number(m.estimated_cost_usd).toLocaleString()+'</div>';
     var cb=m.cost_breakdown;
-    if(cb){['structure_usd','envelope_usd','fitout_usd','hvac_usd','plumbing_usd','electrical_usd','fire_usd','site_prelim_usd'].forEach(function(k){if(cb[k])html+='<div class="plan-row"><span class="plan-row-k">'+k.replace('_usd','').replace('_',' ')+'</span><span class="plan-row-v">$'+Number(cb[k]).toLocaleString()+'</span></div>';});}
+    if(cb){['structure_usd','envelope_usd','fitout_usd','hvac_usd','plumbing_usd','electrical_usd','fire_usd','site_prelim_usd'].forEach(function(k){if(cb[k])html+='<div class="plan-row"><span class="plan-row-k">'+k.replace('_usd','').replace(/_/g,' ')+'</span><span class="plan-row-v">$'+Number(cb[k]).toLocaleString()+'</span></div>';});}
     html+='</div>';
   }
   if(m.estimated_duration_months)html+='<div class="plan-section"><div class="plan-section-label">Timeline</div><div class="plan-val">'+m.estimated_duration_months+' months</div></div>';
@@ -680,7 +897,7 @@ async function sendGenMessage(){
             document.getElementById('gen-chat-area').scrollTop=9999;
           }else if(data.type==='spec'&&data.spec){
             genSpec=data.spec;updatePlanSidebar(genSpec);
-            if(aiMsg){var badge=document.createElement('div');badge.className='spec-ready-badge';badge.innerHTML='✓ &nbsp;Building plan ready — <strong>click to view in 3D</strong>';badge.onclick=function(){switchToView();};aiMsg.querySelector('.gen-msg-bubble').appendChild(badge);}
+            if(aiMsg){var badge=document.createElement('div');badge.className='spec-ready-badge';badge.innerHTML='\u2713 &nbsp;Building plan ready \u2014 <strong>click to view in 3D</strong>';badge.onclick=function(){switchToView();};aiMsg.querySelector('.gen-msg-bubble').appendChild(badge);}
             autoGenerateAndView();
           }else if(data.type==='done'){genHistory.push({role:'assistant',content:fullText});}
         }catch(e){}
@@ -692,40 +909,40 @@ async function sendGenMessage(){
 
 async function autoGenerateAndView(){
   if(!genSpec)return;
-  document.getElementById('view-status').textContent='Generating IFC…';
+  document.getElementById('view-status').textContent='Generating IFC\u2026';
   try{
     var res=await fetch('/api/generate/ifc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec:genSpec,upload_preview:true})});
     var data=await res.json();
     if(data.status==='done'&&data.aps){
       await initGenViewer(data.aps.urn);
       var badges=document.querySelectorAll('.spec-ready-badge');
-      if(badges.length>0)badges[badges.length-1].innerHTML='✓ &nbsp;3D model ready — <strong>click to open viewer</strong>';
-      toast('3D model ready — switch to 3D Model tab');
+      if(badges.length>0)badges[badges.length-1].innerHTML='\u2713 &nbsp;3D model ready \u2014 <strong>click to open viewer</strong>';
+      toast('3D model ready');
     }else{document.getElementById('view-status').textContent=data.aps_error?'APS failed':'Error';}
   }catch(e){console.error(e);}
 }
 
 function switchToView(){
-  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(function(t){t.classList.remove('active');});
+  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
   document.getElementById('view-tab').classList.add('active');
   document.getElementById('page-view').classList.add('active');
-  if(genViewer)setTimeout(()=>genViewer.resize(),50);
+  if(genViewer)setTimeout(function(){genViewer.resize();},50);
 }
 
 async function exportIfc(){
   if(!genSpec){toast('No building plan yet');return;}
-  var btn=document.getElementById('btn-export-ifc');btn.textContent='↓ Generating…';btn.disabled=true;
+  var btn=document.getElementById('btn-export-ifc');btn.textContent='\u2193 Generating\u2026';btn.disabled=true;
   try{
     var res=await fetch('/api/generate/ifc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec:genSpec,upload_preview:false})});
     var data=await res.json();
     if(data.status==='done'){window.location.href='/api/generate/download?file='+encodeURIComponent(data.output);toast('IFC downloaded');}
     else{toast('Export failed: '+(data.error||'Unknown'));}
   }catch(e){toast('Export error');}
-  btn.textContent='↓ Export IFC';btn.disabled=false;
+  btn.textContent='\u2193 Export IFC';btn.disabled=false;
 }
 
-// ── NAV ───────────────────────────────────────────────────────────
+// ── Nav ───────────────────────────────────────────────────────────────────────
 document.querySelectorAll('.nav-tab').forEach(function(tab){
   tab.onclick=function(){
     document.querySelectorAll('.nav-tab').forEach(function(t){t.classList.remove('active');});
@@ -740,8 +957,8 @@ document.getElementById('btn-reconstruct').onclick=reconstruct;
 document.getElementById('btn-clear-lib').onclick=clearLibrary;
 document.getElementById('btn-export-ifc').onclick=exportIfc;
 document.getElementById('btn-back-to-chat').onclick=function(){
-  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(function(t){t.classList.remove('active');});
+  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
   document.querySelector('[data-page="generate"]').classList.add('active');
   document.getElementById('page-generate').classList.add('active');
 };
