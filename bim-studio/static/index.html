@@ -9,15 +9,16 @@
 <link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.css">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root {
-  --ink:#0a0a0a; --ink-light:#1a1a1a; --ink-mid:#2a2a2a;
-  --rule:rgba(255,255,255,0.07); --rule2:rgba(255,255,255,0.12);
-  --accent:#c8502a; --gold:#b8953a; --green:#2ab87a;
-  --muted:rgba(255,255,255,0.3); --text:rgba(255,255,255,0.85);
+:root{
+  --ink:#0a0a0a;--ink-light:#1a1a1a;--ink-mid:#2a2a2a;
+  --rule:rgba(255,255,255,0.07);--rule2:rgba(255,255,255,0.12);
+  --accent:#c8502a;--gold:#b8953a;--green:#2ab87a;
+  --muted:rgba(255,255,255,0.3);--text:rgba(255,255,255,0.85);
   --display:'Playfair Display',Georgia,serif;
-  --mono:'DM Mono',monospace; --sans:'DM Sans',sans-serif;
+  --mono:'DM Mono',monospace;--sans:'DM Sans',sans-serif;
 }
 body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100vh;overflow:hidden;display:flex;flex-direction:column;}
+/* NAV */
 #nav{display:flex;align-items:stretch;height:52px;background:var(--ink);flex-shrink:0;border-bottom:2px solid var(--accent);}
 .nav-brand{display:flex;align-items:center;padding:0 20px;border-right:1px solid var(--rule2);gap:10px;min-width:180px;}
 .nav-title{font-family:var(--display);font-size:17px;font-weight:700;color:#fff;font-style:italic;}
@@ -30,8 +31,10 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 .nav-tab.gen-tab.active::after{background:var(--green);}
 .nav-right{margin-left:auto;display:flex;align-items:center;padding:0 20px;}
 .nav-stat{font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.06em;}
+/* PAGES */
 .page{display:none;flex:1;overflow:hidden;}
 .page.active{display:flex;}
+/* ── DISASSEMBLE ── */
 #page-disassemble{flex-direction:row;}
 #lib-sidebar{width:200px;background:var(--ink);display:flex;flex-direction:column;flex-shrink:0;border-right:1px solid var(--rule2);}
 .sidebar-head{padding:14px 14px 10px;border-bottom:1px solid var(--rule);}
@@ -105,7 +108,8 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 .comp-stat-k{color:rgba(255,255,255,0.3);font-weight:300;}
 .comp-stat-v{font-family:var(--mono);font-size:10px;color:var(--text);}
 .comp-stat-v.hi{color:var(--accent);}
-.dot-arch{background:#8ecae6;} .dot-struct{background:#80b918;} .dot-mep{background:#ff6b6b;} .dot-other{background:#666;}
+.dot-arch{background:#8ecae6;}.dot-struct{background:#80b918;}.dot-mep{background:#ff6b6b;}.dot-other{background:#666;}
+/* ── GENERATE ── */
 #page-generate{flex-direction:row;}
 #spec-sidebar{width:240px;background:var(--ink);border-right:1px solid var(--rule2);display:flex;flex-direction:column;flex-shrink:0;}
 #spec-sidebar-head{padding:14px 14px 10px;border-bottom:1px solid var(--rule);}
@@ -135,7 +139,7 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 .gen-msg.assistant .gen-msg-bubble{background:rgba(255,255,255,0.04);border-left:2px solid var(--green);color:var(--text);}
 .spec-ready-badge{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:9px;letter-spacing:0.1em;color:var(--green);border:1px solid rgba(42,184,122,0.3);padding:4px 10px;margin-top:8px;}
 .typing-dot{display:inline-block;width:4px;height:4px;background:var(--muted);margin:0 2px;animation:blink 1.2s ease-in-out infinite;}
-.typing-dot:nth-child(2){animation-delay:0.2s;} .typing-dot:nth-child(3){animation-delay:0.4s;}
+.typing-dot:nth-child(2){animation-delay:0.2s;}.typing-dot:nth-child(3){animation-delay:0.4s;}
 @keyframes blink{0%,80%,100%{opacity:0.2}40%{opacity:1}}
 #gen-suggestions{padding:0 28px 12px;display:flex;gap:8px;flex-wrap:wrap;}
 .gen-suggestion{background:none;border:1px solid var(--rule2);color:rgba(255,255,255,0.3);font-family:var(--mono);font-size:9px;padding:6px 12px;cursor:pointer;transition:all 0.12s;}
@@ -145,7 +149,8 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 #gen-input:focus{border-left-color:var(--green);}
 #gen-input::placeholder{color:rgba(255,255,255,0.2);}
 #gen-send{background:var(--green);border:none;color:#fff;font-family:var(--mono);font-size:9px;padding:11px 18px;cursor:pointer;letter-spacing:0.1em;text-transform:uppercase;transition:background 0.12s;white-space:nowrap;}
-#gen-send:hover{background:#22a86d;} #gen-send:disabled{opacity:0.35;cursor:not-allowed;}
+#gen-send:hover{background:#22a86d;}
+#gen-send:disabled{opacity:0.35;cursor:not-allowed;}
 #gen-preview{width:360px;background:var(--ink);border-left:1px solid var(--rule2);display:flex;flex-direction:column;flex-shrink:0;}
 #gen-preview-head{padding:14px 14px 10px;border-bottom:1px solid var(--rule2);display:flex;align-items:center;justify-content:space-between;}
 .gen-preview-title{font-family:var(--display);font-size:14px;color:#fff;font-style:italic;}
@@ -153,12 +158,14 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 #gen-viewer-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;pointer-events:none;}
 .gen-empty-headline{font-family:var(--display);font-size:18px;font-style:italic;color:rgba(255,255,255,0.08);text-align:center;}
 .gen-empty-sub{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.12);letter-spacing:0.15em;text-transform:uppercase;text-align:center;}
+/* LOADING */
 #loading{position:fixed;inset:0;background:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;z-index:999;}
 .loading-title{font-family:var(--display);font-size:28px;font-style:italic;color:rgba(255,255,255,0.85);}
 .loading-bar{width:100px;height:1px;background:rgba(255,255,255,0.08);position:relative;overflow:hidden;}
 .loading-progress{position:absolute;top:0;left:-100%;width:100%;height:100%;background:var(--accent);animation:load 1.2s ease-in-out infinite;}
 @keyframes load{to{left:100%;}}
 .loading-sub{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.2);letter-spacing:0.2em;text-transform:uppercase;}
+/* TOAST */
 #toast{position:fixed;bottom:20px;right:20px;background:var(--ink-light);border-left:2px solid var(--accent);padding:8px 16px;font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.8);opacity:0;transition:opacity 0.2s;pointer-events:none;z-index:999;}
 #toast.show{opacity:1;}
 .adsk-viewing-viewer{background:#111 !important;}
@@ -174,10 +181,12 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
   </div>
   <div class="nav-right"><span class="nav-stat" id="nav-stat">—</span></div>
 </div>
+
+<!-- DISASSEMBLE -->
 <div class="page active" id="page-disassemble">
   <div id="lib-sidebar">
     <div class="sidebar-head"><span class="sidebar-label">Saved</span><span class="sidebar-title">Library</span></div>
-    <div id="lib-list"><div id="lib-empty">Click components or use Save All to build your library</div></div>
+    <div id="lib-list"><div id="lib-empty">Click components or Save All to build your library</div></div>
     <div class="sidebar-actions">
       <button class="sidebar-btn reconstruct" id="btn-reconstruct">⟳ &nbsp;Reconstruct</button>
       <button class="sidebar-btn clear" id="btn-clear-lib">✕ &nbsp;Clear Library</button>
@@ -203,6 +212,8 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
     <div id="comp-list"><div id="comp-empty-msg">Upload an IFC file to see components</div></div>
   </div>
 </div>
+
+<!-- GENERATE -->
 <div class="page" id="page-generate">
   <div id="spec-sidebar">
     <div id="spec-sidebar-head"><span class="sidebar-label">Current</span><span class="sidebar-title">Building Plan</span></div>
@@ -217,13 +228,13 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
       <div class="gen-msg assistant">
         <span class="gen-msg-role">AI Architect</span>
         <div class="gen-msg-bubble">
-          I'm your AI building designer. Tell me what you want to build and I'll create a complete plan — component selection from our library, cost estimates, site analysis, and a downloadable IFC file.<br><br>
+          I'm your AI building designer. Tell me what you want to build and I'll create a complete plan — component selection from our IFC library, cost estimates, site analysis, and a downloadable IFC file.<br><br>
           Describe your building: <em>type, location, size, budget, timeline, materials, any special requirements.</em>
         </div>
       </div>
     </div>
     <div id="gen-suggestions">
-      <button class="gen-suggestion">Design a 3-bedroom house in Austin TX, budget $400k</button>
+      <button class="gen-suggestion">3-bedroom house in Austin TX, budget $400k</button>
       <button class="gen-suggestion">Small commercial office, 2 floors, London UK</button>
       <button class="gen-suggestion">Apartment building, 5 floors, steel frame, Miami FL</button>
       <button class="gen-suggestion">Add a second floor to the current plan</button>
@@ -246,51 +257,64 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
     </div>
   </div>
 </div>
+
 <div id="toast"></div>
 <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
 <script>
+// ── CATEGORY HELPERS ──────────────────────────────────────────────
 const ARCH=new Set(['IfcWall','IfcWallStandardCase','IfcWallElementedCase','IfcSlab','IfcRoof','IfcDoor','IfcWindow','IfcStair','IfcStairFlight','IfcRailing','IfcCurtainWall','IfcCovering','IfcFurnishingElement','IfcFurniture','IfcOpeningElement','IfcPlate','IfcMember']);
 const STRUCT=new Set(['IfcColumn','IfcColumnStandardCase','IfcBeam','IfcBeamStandardCase']);
 const MEP=new Set(['IfcDuctSegment','IfcDuctFitting','IfcPipeSegment','IfcPipeFitting','IfcAirTerminal','IfcValve','IfcPump','IfcFan','IfcFlowSegment','IfcFlowFitting','IfcFlowTerminal','IfcFlowController','IfcFlowMovingDevice','IfcFlowStorageDevice','IfcElectricAppliance','IfcLightFixture','IfcOutlet']);
 const GROUP_LABELS={all:'All',arch:'Architecture',struct:'Structure',mep:'MEP',other:'Other'};
 function groupOf(c){if(ARCH.has(c))return'arch';if(STRUCT.has(c))return'struct';if(MEP.has(c))return'mep';return'other';}
 function dotClass(c){return'dot-'+groupOf(c);}
+
+// ── STATE ─────────────────────────────────────────────────────────
 let currentProjectId=null,allComponents=[],library=[],activeFilter='all';
-let viewer=null,genViewer=null,globalIdToDbId={},groupDbIds={};
+let viewer=null,genViewer=null,apsInitialized=false;
+let globalIdToDbId={},groupDbIds={};
 let genHistory=[],genSpec=null,genStreaming=false;
+
+// ── APS INIT (shared, called once) ───────────────────────────────
+async function ensureApsInit(){
+  if(apsInitialized)return;
+  const td=await fetch('/api/aps/token').then(r=>r.json());
+  return new Promise(resolve=>{
+    Autodesk.Viewing.Initializer({
+      env:'AutodeskProduction2',api:'streamingV2',
+      getAccessToken:(cb)=>cb(td.access_token,td.expires_in)
+    },()=>{apsInitialized=true;resolve();});
+  });
+}
 
 async function initViewer(urn){
   document.getElementById('viewer-empty').style.display='none';
-  const td=await fetch('/api/aps/token').then(r=>r.json());
-  Autodesk.Viewing.Initializer({env:'AutodeskProduction2',api:'streamingV2',getAccessToken:(cb)=>cb(td.access_token,td.expires_in)},()=>{
-    const c=document.getElementById('aps-viewer');
-    if(viewer){viewer.finish();viewer=null;}
-    viewer=new Autodesk.Viewing.GuiViewer3D(c,{extensions:['Autodesk.DocumentBrowser']});
-    viewer.start();
-    Autodesk.Viewing.Document.load('urn:'+urn,(doc)=>{
-      viewer.loadDocumentNode(doc,doc.getRoot().getDefaultGeometry()).then(()=>{
-        viewer.addEventListener(Autodesk.Viewing.SELECTION_CHANGED_EVENT,onSelectionChanged);
-        buildGlobalIdMap();
-      });
-    },(c,m)=>{console.error(c,m);toast('Failed to load model');});
-  });
+  await ensureApsInit();
+  const container=document.getElementById('aps-viewer');
+  if(viewer){viewer.finish();viewer=null;}
+  viewer=new Autodesk.Viewing.GuiViewer3D(container,{extensions:['Autodesk.DocumentBrowser']});
+  viewer.start();
+  Autodesk.Viewing.Document.load('urn:'+urn,(doc)=>{
+    viewer.loadDocumentNode(doc,doc.getRoot().getDefaultGeometry()).then(()=>{
+      viewer.addEventListener(Autodesk.Viewing.SELECTION_CHANGED_EVENT,onSelectionChanged);
+      buildGlobalIdMap();
+    });
+  },(c,m)=>{console.error(c,m);toast('Failed to load model');});
 }
 
 async function initGenViewer(urn){
   document.getElementById('gen-viewer-empty').style.display='none';
   document.getElementById('gen-preview-status').textContent='Loading…';
-  const td=await fetch('/api/aps/token').then(r=>r.json());
-  Autodesk.Viewing.Initializer({env:'AutodeskProduction2',api:'streamingV2',getAccessToken:(cb)=>cb(td.access_token,td.expires_in)},()=>{
-    const c=document.getElementById('gen-aps-viewer');
-    if(genViewer){genViewer.finish();genViewer=null;}
-    genViewer=new Autodesk.Viewing.GuiViewer3D(c,{});
-    genViewer.start();
-    Autodesk.Viewing.Document.load('urn:'+urn,(doc)=>{
-      genViewer.loadDocumentNode(doc,doc.getRoot().getDefaultGeometry()).then(()=>{
-        document.getElementById('gen-preview-status').textContent='Ready';
-      });
-    },(c,m)=>{document.getElementById('gen-preview-status').textContent='Preview failed';});
-  });
+  await ensureApsInit();
+  const container=document.getElementById('gen-aps-viewer');
+  if(genViewer){genViewer.finish();genViewer=null;}
+  genViewer=new Autodesk.Viewing.GuiViewer3D(container,{});
+  genViewer.start();
+  Autodesk.Viewing.Document.load('urn:'+urn,(doc)=>{
+    genViewer.loadDocumentNode(doc,doc.getRoot().getDefaultGeometry()).then(()=>{
+      document.getElementById('gen-preview-status').textContent='Ready';
+    });
+  },(c,m)=>{document.getElementById('gen-preview-status').textContent='Preview failed';});
 }
 
 function buildGlobalIdMap(){
@@ -298,13 +322,11 @@ function buildGlobalIdMap(){
     const dbIds=[];
     tree.enumNodeChildren(tree.getRootId(),id=>{if(tree.getChildCount(id)===0)dbIds.push(id);},true);
     globalIdToDbId={};groupDbIds={all:dbIds};
-    let p=0;
     dbIds.forEach(dbId=>{
       viewer.getProperties(dbId,props=>{
         let gid=null;
         if(props.properties){for(const x of props.properties){if(x.attributeName==='GLOBALID'&&x.displayCategory==='IFC'){gid=x.displayValue;break;}}}
         if(gid){const comp=allComponents.find(c=>c.revit_id===gid);if(comp){globalIdToDbId[gid]={dbId,compId:comp.id};const g=groupOf(comp.category);if(!groupDbIds[g])groupDbIds[g]=[];groupDbIds[g].push(dbId);}}
-        p++;
       });
     });
   });
@@ -325,7 +347,10 @@ async function onSelectionChanged(event){
     if(props.properties){for(const p of props.properties){if(p.attributeName==='GLOBALID'&&p.displayCategory==='IFC'){gid=p.displayValue;break;}}}
     if(!gid)return;
     const m=allComponents.find(c=>c.revit_id===gid);if(m)highlightCompItem(m.id);
-    try{const r=await fetch('/api/component/by-revit-id/'+gid);if(r.ok){const comp=await r.json();const item=document.querySelector('.comp-item[data-id="'+comp.id+'"]');if(item&&!item.classList.contains('open'))item.querySelector('.comp-item-header').click();}}catch(e){}
+    try{
+      const r=await fetch('/api/component/by-revit-id/'+gid);
+      if(r.ok){const comp=await r.json();const item=document.querySelector('.comp-item[data-id="'+comp.id+'"]');if(item&&!item.classList.contains('open'))item.querySelector('.comp-item-header').click();}
+    }catch(e){}
   });
 }
 
@@ -335,6 +360,7 @@ function highlightCompItem(id){
   if(el){el.classList.add('selected');el.scrollIntoView({behavior:'smooth',block:'nearest'});}
 }
 
+// ── FILE UPLOAD ───────────────────────────────────────────────────
 document.getElementById('ifc-file-input').onchange=function(){
   if(this.files[0]){document.getElementById('upload-filename').textContent=this.files[0].name;document.getElementById('btn-upload').disabled=false;}
 };
@@ -352,13 +378,19 @@ document.getElementById('btn-upload').onclick=async function(){
       status.textContent='✓ '+data.stats.components+' components';
       document.getElementById('nav-stat').textContent=data.stats.components+' components · '+data.stats.relationships+' relationships';
       const comps=await fetch('/api/projects/'+data.project_id+'/components').then(r=>r.json());
-      allComponents=comps;activeFilter='all';buildDynamicFilters();renderCompPanel();
-      await initViewer(data.aps.urn);await refreshLibrary();toast('Loaded: '+file.name);
-    }else{status.textContent='✕ '+(data.error||'Error');}
+      allComponents=comps;activeFilter='all';
+      buildDynamicFilters();renderCompPanel();
+      await initViewer(data.aps.urn);
+      await refreshLibrary();
+      toast('Loaded: '+file.name);
+    }else{
+      status.textContent='✕ '+(data.error||'Error');
+    }
   }catch(e){status.textContent='✕ Upload failed';console.error(e);}
   btn.disabled=false;
 };
 
+// ── DYNAMIC FILTERS ───────────────────────────────────────────────
 function buildDynamicFilters(){
   const gc={all:allComponents.length};
   allComponents.forEach(c=>{const g=groupOf(c.category);gc[g]=(gc[g]||0)+1;});
@@ -374,6 +406,7 @@ function buildDynamicFilters(){
   });
 }
 
+// ── COMPONENT PANEL ───────────────────────────────────────────────
 function renderCompPanel(){
   const list=document.getElementById('comp-list'),empty=document.getElementById('comp-empty-msg');
   const filtered=activeFilter==='all'?allComponents:allComponents.filter(c=>groupOf(c.category)===activeFilter);
@@ -384,13 +417,31 @@ function renderCompPanel(){
     const f=v=>v!=null?Number(v).toFixed(1):'—';
     const item=document.createElement('div');
     item.className='comp-item'+(inLib?' in-library':'');item.dataset.id=comp.id;
-    item.innerHTML='<div class="comp-item-header"><div class="comp-dot '+dotClass(comp.category)+'"></div><div class="comp-item-info"><div class="comp-item-cat">'+comp.category.replace('Ifc','')+'</div><div class="comp-item-name">'+(comp.family_name||comp.type_name||'—')+'</div></div><button class="comp-item-save'+(inLib?' saved':'')+'>'+(inLib?'✓':'Save')+'</button><span class="comp-chevron">›</span></div><div class="comp-item-body"><div class="comp-stat-row"><span class="comp-stat-k">DB id</span><span class="comp-stat-v hi">'+comp.id+'</span></div><div class="comp-stat-row"><span class="comp-stat-k">Level</span><span class="comp-stat-v">'+(comp.level||'—')+'</span></div><div class="comp-stat-row"><span class="comp-stat-k">Width</span><span class="comp-stat-v">'+f(comp.width_mm)+' mm</span></div><div class="comp-stat-row"><span class="comp-stat-k">Height</span><span class="comp-stat-v">'+f(comp.height_mm)+' mm</span></div><div class="comp-stat-row"><span class="comp-stat-k">Length</span><span class="comp-stat-v">'+f(comp.length_mm)+' mm</span></div><div class="comp-stat-row"><span class="comp-stat-k">Area</span><span class="comp-stat-v">'+(comp.area_m2!=null?Number(comp.area_m2).toFixed(2)+' m²':'—')+'</span></div></div>';
+    item.innerHTML=
+      '<div class="comp-item-header">'+
+        '<div class="comp-dot '+dotClass(comp.category)+'"></div>'+
+        '<div class="comp-item-info">'+
+          '<div class="comp-item-cat">'+comp.category.replace('Ifc','')+'</div>'+
+          '<div class="comp-item-name">'+(comp.family_name||comp.type_name||'—')+'</div>'+
+        '</div>'+
+        '<button class="comp-item-save'+(inLib?' saved':'')+'>'+(inLib?'✓':'Save')+'</button>'+
+        '<span class="comp-chevron">›</span>'+
+      '</div>'+
+      '<div class="comp-item-body">'+
+        '<div class="comp-stat-row"><span class="comp-stat-k">DB id</span><span class="comp-stat-v hi">'+comp.id+'</span></div>'+
+        '<div class="comp-stat-row"><span class="comp-stat-k">Level</span><span class="comp-stat-v">'+(comp.level||'—')+'</span></div>'+
+        '<div class="comp-stat-row"><span class="comp-stat-k">Width</span><span class="comp-stat-v">'+f(comp.width_mm)+' mm</span></div>'+
+        '<div class="comp-stat-row"><span class="comp-stat-k">Height</span><span class="comp-stat-v">'+f(comp.height_mm)+' mm</span></div>'+
+        '<div class="comp-stat-row"><span class="comp-stat-k">Length</span><span class="comp-stat-v">'+f(comp.length_mm)+' mm</span></div>'+
+        '<div class="comp-stat-row"><span class="comp-stat-k">Area</span><span class="comp-stat-v">'+(comp.area_m2!=null?Number(comp.area_m2).toFixed(2)+' m²':'—')+'</span></div>'+
+      '</div>';
     item.querySelector('.comp-item-header').onclick=()=>item.classList.toggle('open');
     item.querySelector('.comp-item-save').onclick=async e=>{e.stopPropagation();await saveComponentById(comp.id);};
     list.appendChild(item);
   });
 }
 
+// ── LIBRARY ───────────────────────────────────────────────────────
 async function refreshLibrary(){const res=await fetch('/api/library');library=await res.json();renderLibrary();renderCompPanel();}
 
 async function saveComponentById(id){
@@ -436,11 +487,15 @@ async function reconstruct(){
   if(!currentProjectId){toast('Upload a file first');return;}
   if(library.length===0){toast('Save some components first');return;}
   const btn=document.getElementById('btn-reconstruct');btn.textContent='⟳ Working…';btn.disabled=true;
-  try{const res=await fetch('/api/reconstruct',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project_id:currentProjectId})});const data=await res.json();toast(data.status==='done'?'Reconstructed: '+(data.output||'done'):'Reconstruction failed');}catch(e){toast('Error');}
+  try{
+    const res=await fetch('/api/reconstruct',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project_id:currentProjectId})});
+    const data=await res.json();
+    toast(data.status==='done'?'Reconstructed: '+(data.output||'done'):'Reconstruction failed');
+  }catch(e){toast('Error');}
   btn.textContent='⟳ Reconstruct';btn.disabled=false;
 }
 
-// ── GENERATE ──
+// ── GENERATE ─────────────────────────────────────────────────────
 function addGenMessage(role,content,isHtml=false){
   const area=document.getElementById('generate-chat-area');
   const msg=document.createElement('div');msg.className='gen-msg '+role;
@@ -457,14 +512,27 @@ function addGenTyping(){
   area.appendChild(msg);area.scrollTop=area.scrollHeight;
 }
 
-function formatSpecText(text){return text.replace(/<building_spec>[\s\S]*?<\/building_spec>/g,'').replace(/\n/g,'<br>').trim();}
+function formatSpecText(t){return t.replace(/<building_spec>[\s\S]*?<\/building_spec>/g,'').replace(/\n/g,'<br>').trim();}
 
 function updateSpecSidebar(spec){
   if(!spec)return;
-  const summary=document.getElementById('spec-summary');
-  const meta=spec.metadata||{};const floors=spec.floors||[];
-  const tc=floors.reduce((s,f)=>s+(f.components||[]).length,0);
-  summary.innerHTML='<div class="spec-section"><div class="spec-section-label">Building</div><div class="spec-val accent">'+(spec.name||'—')+'</div><div style="margin-top:4px;font-size:11px;color:rgba(255,255,255,0.4);">'+(meta.building_type||'')+'</div></div>'+(meta.location?'<div class="spec-section"><div class="spec-section-label">Location</div><div class="spec-val">'+meta.location+'</div></div>':'')+'<div class="spec-section"><div class="spec-section-label">Scale</div><div class="spec-val">'+floors.length+' floor'+(floors.length!==1?'s':'')+' · '+tc+' components</div>'+(meta.gross_floor_area_m2?'<div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px;">'+meta.gross_floor_area_m2+' m² GFA</div>':'')+'</div>'+(meta.estimated_cost_usd?'<div class="spec-section"><div class="spec-section-label">Cost Estimate</div><div class="spec-val accent">$'+Number(meta.estimated_cost_usd).toLocaleString()+'</div></div>':'')+(meta.estimated_duration_months?'<div class="spec-section"><div class="spec-section-label">Timeline</div><div class="spec-val">'+meta.estimated_duration_months+' months</div></div>':'')+(meta.structural_system?'<div class="spec-section"><div class="spec-section-label">Structure</div><div class="spec-val">'+meta.structural_system+'</div></div>':'')+(meta.primary_material?'<div class="spec-section"><div class="spec-section-label">Materials</div><div class="spec-val">'+meta.primary_material+'</div></div>':'')+(meta.site_concerns?'<div class="spec-section"><div class="spec-section-label">Site Notes</div><div class="spec-val" style="font-size:11px;color:rgba(255,255,255,0.5);">'+meta.site_concerns+'</div></div>':'')+(meta.building_code?'<div class="spec-section"><div class="spec-section-label">Code</div><div class="spec-val">'+meta.building_code+'</div></div>':'')+'<div class="spec-section"><div class="spec-section-label">Floors</div>'+floors.map(f=>'<div style="font-size:11px;color:rgba(255,255,255,0.5);padding:2px 0;">'+f.name+' — '+(f.components||[]).length+' components</div>').join('')+'</div>';
+  const s=document.getElementById('spec-summary');
+  const m=spec.metadata||{};const fl=spec.floors||[];
+  const tc=fl.reduce((a,f)=>a+(f.components||[]).length,0);
+  const row=(label,val,accent)=>'<div class="spec-section"><div class="spec-section-label">'+label+'</div><div class="spec-val'+(accent?' accent':'')+'">'+val+'</div></div>';
+  s.innerHTML=
+    row('Building','<span style="font-family:var(--display);font-size:14px;font-style:italic;">'+(spec.name||'—')+'</span>'+(m.building_type?'<div style="margin-top:4px;font-size:11px;color:rgba(255,255,255,0.4);">'+m.building_type+'</div>':''),false)+
+    (m.location?row('Location',m.location,false):'')+
+    row('Scale',fl.length+' floor'+(fl.length!==1?'s':'')+' · '+tc+' components'+(m.gross_floor_area_m2?'<div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px;">'+m.gross_floor_area_m2+' m² GFA</div>':''),false)+
+    (m.estimated_cost_usd?row('Cost Estimate','$'+Number(m.estimated_cost_usd).toLocaleString(),true):'')+
+    (m.estimated_duration_months?row('Timeline',m.estimated_duration_months+' months',false):'')+
+    (m.structural_system?row('Structure',m.structural_system,false):'')+
+    (m.primary_material?row('Materials',m.primary_material,false):'')+
+    (m.site_concerns?'<div class="spec-section"><div class="spec-section-label">Site Notes</div><div class="spec-val" style="font-size:11px;color:rgba(255,255,255,0.5);">'+m.site_concerns+'</div></div>':'')+
+    (m.building_code?row('Code',m.building_code,false):'')+
+    '<div class="spec-section"><div class="spec-section-label">Floors</div>'+
+    fl.map(f=>'<div style="font-size:11px;color:rgba(255,255,255,0.5);padding:2px 0;">'+f.name+' — '+(f.components||[]).length+' components</div>').join('')+
+    '</div>';
   document.getElementById('btn-export-ifc').disabled=false;
   document.getElementById('btn-preview-3d').disabled=false;
 }
@@ -488,9 +556,16 @@ async function sendGenMessage(){
         if(!line.startsWith('data:'))continue;
         try{
           const data=JSON.parse(line.slice(5));
-          if(data.type==='text'){fullText+=data.text;document.getElementById('gen-typing')?.remove();if(!aiMsg)aiMsg=addGenMessage('assistant','',true);aiMsg.querySelector('.gen-msg-bubble').innerHTML=formatSpecText(fullText);document.getElementById('generate-chat-area').scrollTop=9999;}
-          else if(data.type==='spec'&&data.spec){genSpec=data.spec;updateSpecSidebar(genSpec);if(aiMsg){const badge=document.createElement('div');badge.className='spec-ready-badge';badge.innerHTML='✓ &nbsp;Building plan generated — export IFC or ask for changes';aiMsg.querySelector('.gen-msg-bubble').appendChild(badge);}}
-          else if(data.type==='done'){genHistory.push({role:'assistant',content:fullText});}
+          if(data.type==='text'){
+            fullText+=data.text;
+            document.getElementById('gen-typing')?.remove();
+            if(!aiMsg)aiMsg=addGenMessage('assistant','',true);
+            aiMsg.querySelector('.gen-msg-bubble').innerHTML=formatSpecText(fullText);
+            document.getElementById('generate-chat-area').scrollTop=9999;
+          }else if(data.type==='spec'&&data.spec){
+            genSpec=data.spec;updateSpecSidebar(genSpec);
+            if(aiMsg){const badge=document.createElement('div');badge.className='spec-ready-badge';badge.innerHTML='✓ &nbsp;Building plan generated — export IFC or ask for changes';aiMsg.querySelector('.gen-msg-bubble').appendChild(badge);}
+          }else if(data.type==='done'){genHistory.push({role:'assistant',content:fullText});}
         }catch(e){}
       }
     }
@@ -504,7 +579,7 @@ async function exportIfc(){
   try{
     const res=await fetch('/api/generate/ifc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec:genSpec,upload_preview:false})});
     const data=await res.json();
-    if(data.status==='done'){window.location.href='/api/generate/download?file='+encodeURIComponent(data.output);toast('IFC file downloaded');}
+    if(data.status==='done'){window.location.href='/api/generate/download?file='+encodeURIComponent(data.output);toast('IFC downloaded');}
     else{toast('Export failed: '+(data.error||'Unknown'));}
   }catch(e){toast('Export error');}
   btn.textContent='↓ Export IFC';btn.disabled=false;
@@ -513,7 +588,7 @@ async function exportIfc(){
 async function previewIn3D(){
   if(!genSpec){toast('No building plan yet');return;}
   const btn=document.getElementById('btn-preview-3d');btn.textContent='◉ Uploading…';btn.disabled=true;
-  document.getElementById('gen-preview-status').textContent='Uploading to APS…';
+  document.getElementById('gen-preview-status').textContent='Uploading…';
   try{
     const res=await fetch('/api/generate/ifc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec:genSpec,upload_preview:true})});
     const data=await res.json();
@@ -523,6 +598,7 @@ async function previewIn3D(){
   btn.textContent='◉ Preview in 3D';btn.disabled=false;
 }
 
+// ── UI WIRING ─────────────────────────────────────────────────────
 document.querySelectorAll('.nav-tab').forEach(tab=>{
   tab.onclick=()=>{
     document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
@@ -545,8 +621,10 @@ document.getElementById('gen-input').addEventListener('keydown',e=>{if(e.key==='
 document.getElementById('gen-input').addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,160)+'px';});
 document.querySelectorAll('.gen-suggestion').forEach(s=>{s.onclick=()=>{document.getElementById('gen-input').value=s.textContent;sendGenMessage();};});
 
+// ── TOAST ─────────────────────────────────────────────────────────
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800);}
 
+// ── INIT ──────────────────────────────────────────────────────────
 async function init(){await refreshLibrary();document.getElementById('loading').style.display='none';}
 init();
 </script>
