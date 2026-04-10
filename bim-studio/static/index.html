@@ -632,13 +632,16 @@ async function doBulkUpload(files){
             if(rowEls[ev.file]){rowEls[ev.file].bar.style.width=ev.step==='aps'?'70%':'40%';rowEls[ev.file].status.textContent=ev.step==='aps'?'Uploading\u2026':'Pipeline\u2026';}
           }else if(ev.type==='done'){
             processed++;totalComps+=ev.stats.components;
-            if(rowEls[ev.file]){rowEls[ev.file].status.textContent='\u2713 '+ev.stats.components;rowEls[ev.file].status.className='bulk-file-status done';rowEls[ev.file].bar.style.width='100%';}
+            var statusText=ev.cached?'\u21ba Already processed ('+ev.stats.components+')':'\u2713 '+ev.stats.components;
+            if(rowEls[ev.file]){rowEls[ev.file].status.textContent=statusText;rowEls[ev.file].status.className='bulk-file-status done';rowEls[ev.file].bar.style.width='100%';}
             // Fetch components for this project and store in bulkProjects
             var comps=await fetch('/api/projects/'+ev.project_id+'/components').then(function(r){return r.json();});
             bulkProjects[ev.project_id]={name:ev.file.replace('.ifc',''),filename:ev.file,components:comps};
-            // Add to dropdown
-            var opt=document.createElement('option');opt.value=ev.project_id;opt.textContent=ev.file.replace('.ifc','')+' ('+ev.stats.components+')';
-            sel.appendChild(opt);
+            // Add to dropdown (skip if already there)
+            if(!document.querySelector('#bulk-file-select option[value="'+ev.project_id+'"]')){
+              var opt=document.createElement('option');opt.value=ev.project_id;opt.textContent=ev.file.replace('.ifc','')+' ('+ev.stats.components+')';
+              sel.appendChild(opt);
+            }
             // Auto-select first
             if(Object.keys(bulkProjects).length===1){sel.value=ev.project_id;bulkCurrentProjectId=ev.project_id;renderBulkGrid();}
             await refreshLibrary();
