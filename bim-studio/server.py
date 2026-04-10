@@ -1,19 +1,21 @@
 import os
 import json
 import subprocess
+import tempfile
 import psycopg2
 import psycopg2.extras
 import anthropic
 from flask import Flask, jsonify, send_from_directory, request, Response, stream_with_context
 from dotenv import load_dotenv
+from speckle_upload import upload_ifc_to_speckle
 
 load_dotenv()
 
 app = Flask(__name__, static_folder="static")
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-SPECKLE_PROJECT_ID = os.getenv("SPECKLE_PROJECT_ID", "8cd76bca8d")
-SPECKLE_MODEL_ID   = os.getenv("SPECKLE_MODEL_ID",   "a69f7e2443")
+UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), '..', 'uploads')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 def get_db():
     return psycopg2.connect(
@@ -36,13 +38,100 @@ def safe_float(v):
 def index():
     return send_from_directory("static", "index.html")
 
+# ── IFC Upload ─────────────────────────────────────────────────────────────
+
+@app.route("/api/upload", methods=["POST"])
+def upload_ifc():
+    """
+    Accept an IFC file, run the full pipeline, upload to Speckle.
+    Returns project_id (Postgres), speckle model URL, and stats.
+    """
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    f = request.files["file"]
+    if not f.filename.endswith(".ifc"):
+        return jsonify({"error": "Only .ifc files are supported"}), 400
+
+    # Save uploaded file
+    filepath = os.path.join(UPLOAD_FOLDER, f.filename)
+    f.save(filepath)
+    print(f"Saved IFC to {filepath}")
+
+    try:
+        # ── Step 1: Run the pipeline ───────────────────────────────────────
+        print("Running pipeline...")
+        result = subprocess.run(
+            ["python3", "run.py", filepath],
+            capture_output=True, text=True, timeout=300,
+            cwd=os.path.join(os.path.dirname(__file__), '..')
+        )
+
+        if result.returncode != 0:
+            return jsonify({"error": "Pipeline failed", "log": result.stderr}), 500
+
+        # Extract project_id from run.py output
+        project_id = None
+        for line in result.stdout.splitlines():
+            if line.startswith("project_id:"):
+                project_id = int(line.split(":")[1].strip())
+
+        if not project_id:
+            # Fall back to querying DB for latest project
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM projects ORDER BY id DESC LIMIT 1")
+            project_id = cur.fetchone()[0]
+            cur.close(); conn.close()
+
+        print(f"Pipeline done. project_id={project_id}")
+
+        # ── Step 2: Upload to Speckle ──────────────────────────────────────
+        print("Uploading to Speckle...")
+        speckle_result = upload_ifc_to_speckle(filepath, model_name=f.filename.replace(".ifc", ""))
+
+        # Save speckle model info to DB
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE projects
+            SET speckle_model_id = %s, speckle_project_id = %s
+            WHERE id = %s
+        """, (speckle_result["model_id"], speckle_result["project_id"], project_id))
+        conn.commit()
+        cur.close(); conn.close()
+
+        # Get stats
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT COUNT(*) as total FROM components WHERE project_id = %s", (project_id,))
+        total = cur.fetchone()["total"]
+        cur.execute("SELECT COUNT(*) as total FROM relationships WHERE project_id = %s", (project_id,))
+        rels = cur.fetchone()["total"]
+        cur.close(); conn.close()
+
+        return jsonify({
+            "status": "done",
+            "project_id": project_id,
+            "speckle": speckle_result,
+            "stats": {"components": total, "relationships": rels}
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Projects ───────────────────────────────────────────────────────────────
 
 @app.route("/api/projects")
 def get_projects():
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("SELECT id, name, filename, status, processed_at FROM projects ORDER BY id")
+    cur.execute("""
+        SELECT id, name, filename, status, processed_at,
+               speckle_model_id, speckle_project_id
+        FROM projects ORDER BY id DESC
+    """)
     rows = [dict(r) for r in cur.fetchall()]
     cur.close(); conn.close()
     return jsonify(rows)
@@ -109,11 +198,10 @@ def get_stats(pid):
     cur.close(); conn.close()
     return jsonify({"total": total, "relationships": rels, "categories": cats})
 
-# ── Speckle / Component Lookup ─────────────────────────────────────────────
+# ── Component Lookup ───────────────────────────────────────────────────────
 
 @app.route("/api/component/by-revit-id/<revit_id>")
 def get_component_by_revit_id(revit_id):
-    """Look up a component by its IFC GlobalId (= Speckle applicationId)."""
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
@@ -144,7 +232,6 @@ def get_component_by_revit_id(revit_id):
 
 @app.route("/api/library", methods=["GET"])
 def get_library():
-    """Get all components saved to the library."""
     conn = get_db()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
@@ -171,7 +258,6 @@ def get_library():
 
 @app.route("/api/library/save", methods=["POST"])
 def save_to_library():
-    """Save a component to the library by component ID or revit_id."""
     data = request.json
     component_id = data.get("component_id")
     revit_id     = data.get("revit_id")
@@ -180,7 +266,6 @@ def save_to_library():
     conn = get_db()
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    # Look up by revit_id if component_id not provided
     if not component_id and revit_id:
         cur.execute("SELECT id FROM components WHERE revit_id = %s LIMIT 1", (revit_id,))
         row = cur.fetchone()
@@ -189,7 +274,6 @@ def save_to_library():
             return jsonify({"error": "Component not found"}), 404
         component_id = row["id"]
 
-    # Check if already saved
     cur.execute("SELECT id FROM library WHERE component_id = %s", (component_id,))
     if cur.fetchone():
         cur.close(); conn.close()
@@ -206,7 +290,6 @@ def save_to_library():
 
 @app.route("/api/library/remove", methods=["POST"])
 def remove_from_library():
-    """Remove a component from the library."""
     data = request.json
     component_id = data.get("component_id")
     conn = get_db()
@@ -218,7 +301,6 @@ def remove_from_library():
 
 @app.route("/api/library/clear", methods=["POST"])
 def clear_library():
-    """Clear the entire library."""
     conn = get_db()
     cur  = conn.cursor()
     cur.execute("DELETE FROM library")
@@ -230,7 +312,6 @@ def clear_library():
 
 @app.route("/api/reconstruct", methods=["POST"])
 def reconstruct():
-    """Run reconstruct.py on a given project and return the output file path."""
     data       = request.json
     project_id = data.get("project_id")
 
@@ -240,35 +321,20 @@ def reconstruct():
     try:
         result = subprocess.run(
             ["python3", "reconstruct.py", str(project_id)],
-            capture_output=True, text=True, timeout=120
+            capture_output=True, text=True, timeout=120,
+            cwd=os.path.join(os.path.dirname(__file__), '..')
         )
         if result.returncode != 0:
             return jsonify({"error": result.stderr}), 500
 
-        # Find the output file
         output_file = None
         for line in result.stdout.splitlines():
             if line.startswith("Output:"):
                 output_file = line.replace("Output:", "").strip()
 
-        return jsonify({
-            "status": "done",
-            "output": output_file,
-            "log": result.stdout
-        })
+        return jsonify({"status": "done", "output": output_file, "log": result.stdout})
     except subprocess.TimeoutExpired:
         return jsonify({"error": "Reconstruction timed out"}), 500
-
-# ── Speckle Config ─────────────────────────────────────────────────────────
-
-@app.route("/api/speckle/config")
-def speckle_config():
-    """Return Speckle project/model IDs for the frontend."""
-    return jsonify({
-        "project_id": SPECKLE_PROJECT_ID,
-        "model_id":   SPECKLE_MODEL_ID,
-        "viewer_url": f"https://app.speckle.systems/projects/{SPECKLE_PROJECT_ID}/models/{SPECKLE_MODEL_ID}"
-    })
 
 # ── AI Compose ─────────────────────────────────────────────────────────────
 
@@ -276,13 +342,10 @@ def get_library_summary():
     conn = get_db()
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
-        SELECT
-            p.id as project_id, p.name as project_name,
-            c.id as component_id, c.category, c.family_name, c.type_name,
-            c.width_mm, c.height_mm, c.length_mm, c.area_m2, c.volume_m3,
-            c.quality_score,
-            s.level, s.elevation,
-            s.pos_x, s.pos_y, s.pos_z
+        SELECT p.id as project_id, p.name as project_name,
+               c.id as component_id, c.category, c.family_name, c.type_name,
+               c.width_mm, c.height_mm, c.length_mm, c.area_m2, c.volume_m3,
+               c.quality_score, s.level, s.pos_x, s.pos_y, s.pos_z
         FROM components c
         JOIN projects p ON p.id = c.project_id
         LEFT JOIN spatial_data s ON s.component_id = c.id
@@ -295,11 +358,11 @@ def get_library_summary():
     summary = []
     for r in rows:
         summary.append({
-            "id":      r["component_id"],
-            "project": r["project_name"],
+            "id":       r["component_id"],
+            "project":  r["project_name"],
             "category": r["category"],
-            "name":    r["family_name"] or r["type_name"] or r["category"],
-            "level":   r["level"],
+            "name":     r["family_name"] or r["type_name"] or r["category"],
+            "level":    r["level"],
             "dims": {
                 "w":    round(r["width_mm"],  1) if r["width_mm"]  else None,
                 "h":    round(r["height_mm"], 1) if r["height_mm"] else None,
@@ -342,25 +405,15 @@ You have access to a library of real building components extracted from IFC file
 
 Your job is to help users understand and compose buildings from these components.
 
-When a user asks you to build or compose something:
-1. Select appropriate components from the library that match their requirements
-2. Explain your selections clearly — what you chose and why
-3. Always reference components by their ID so the UI can highlight them
-4. Be honest about limitations — the library only contains what was extracted from real IFC files
-
-When referencing components, use this exact format so the UI can parse them:
+When referencing components, use this exact format:
 [COMPONENT:id:category:name]
 
-For example: [COMPONENT:42:IfcWall:Basic Wall]
-
-Always end your response with a JSON block listing the selected component IDs:
+Always end your response with:
 <selected_components>
-[1, 2, 3, 42, 55]
+[1, 2, 3]
 </selected_components>
 
-If no components are relevant, use an empty array: <selected_components>[]</selected_components>
-
-Be concise but specific. This is a technical demo for an architecture firm."""
+If no components relevant: <selected_components>[]</selected_components>"""
 
 @app.route("/api/compose", methods=["POST"])
 def compose():
@@ -369,7 +422,7 @@ def compose():
     history = data.get("history", [])
 
     library      = get_library_summary()
-    library_text = f"COMPONENT LIBRARY ({len(library)} components across all projects):\n"
+    library_text = f"COMPONENT LIBRARY ({len(library)} components):\n"
     library_text += json.dumps(library, indent=1)
 
     messages = []
@@ -397,8 +450,7 @@ def compose():
             try:
                 start    = full_text.index("<selected_components>") + len("<selected_components>")
                 end      = full_text.index("</selected_components>")
-                ids_str  = full_text[start:end].strip()
-                selected = json.loads(ids_str)
+                selected = json.loads(full_text[start:end].strip())
             except:
                 pass
 
