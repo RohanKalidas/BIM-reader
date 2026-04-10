@@ -302,13 +302,12 @@ def get_component_library_for_ai():
     conn = get_db()
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
-        SELECT c.category, c.family_name, c.type_name,
+        SELECT c.id, c.category, c.family_name, c.type_name,
                c.width_mm, c.height_mm, c.length_mm, c.area_m2,
                c.parameters->>'_material' as material,
                p.name as project_name
         FROM components c
         JOIN projects p ON p.id = c.project_id
-        LEFT JOIN spatial_data s ON s.component_id = c.id
         WHERE p.status = 'done'
         ORDER BY c.category, c.id
     """)
@@ -321,6 +320,7 @@ def get_component_library_for_ai():
         if cat not in by_cat:
             by_cat[cat] = []
         by_cat[cat].append({
+            "id":       r["id"],
             "name":     r["family_name"] or r["type_name"] or cat,
             "w_mm":     r["width_mm"],
             "h_mm":     r["height_mm"],
@@ -337,7 +337,7 @@ def get_component_library_for_ai():
             if item["name"] not in seen:
                 seen.add(item["name"])
                 unique.append(item)
-        summary[cat] = unique[:10]
+        summary[cat] = unique[:15]
     return summary
 
 
@@ -378,6 +378,26 @@ Use your knowledge of:
 - Doors/Windows: use template dimensions unless user specifies
 - HVAC: size by floor count x floor area, route vertically through building core
 - All positions in mm, elevation in metres
+
+## LIBRARY COMPONENTS — REAL GEOMETRY
+The component library includes furniture, fixtures, and fittings with real 3D geometry
+extracted from uploaded IFC files. Each has an "id" field.
+
+When placing furniture or fixtures, ALWAYS check the library first and use a matching
+component by setting "library_component_id" to its id. This gives the user real geometry
+instead of a placeholder box.
+
+Example — placing a dining table from the library:
+{
+  "category": "IfcFurniture",
+  "name": "Dining Table",
+  "library_component_id": 70,
+  "pos_x": 3000, "pos_y": 4000, "pos_z": 0,
+  "rot_z": 0
+}
+
+If no library match exists for a requested item, generate it parametrically with
+realistic width_mm, height_mm, length_mm dimensions for that object type.
 
 ## SPEC FORMAT
 The <building_spec> block must be valid JSON and is completely hidden from the user.
