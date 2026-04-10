@@ -696,21 +696,29 @@ document.getElementById('bulk-comp-area').addEventListener('click',function(e){
   if(!btn)return;
   e.stopPropagation();
   var cid=parseInt(btn.dataset.id);
-  saveBulkComponent(cid,btn);
+  saveBulkComponent(cid);
 });
 
-async function saveBulkComponent(cid,btn){
+async function saveBulkComponent(cid){
   var res=await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:cid})});
   var data=await res.json();
-  if(data.status==='saved'||data.status==='already_saved'){
+  if(data.status==='saved'){
     await refreshLibrary();
-    // Update all cards with this id
-    document.querySelectorAll('.bulk-comp-save[data-id="'+cid+'"]').forEach(function(b){
-      b.textContent='\u2713 Saved';b.classList.add('saved');
-      var card=b.closest('.bulk-comp-card');if(card)card.classList.add('in-library');
-    });
+    renderBulkGrid();
     toast('Saved to library');
+    return true;
+  }else if(data.status==='already_saved'){
+    await refreshLibrary();
+    renderBulkGrid();
+    return true;
+  }else if(data.status==='duplicate'){
+    // Silently skip duplicates — just mark the card visually as a duplicate
+    document.querySelectorAll('.bulk-comp-save[data-id="'+cid+'"]').forEach(function(b){
+      b.textContent='Duplicate';b.style.opacity='0.35';b.disabled=true;
+    });
+    return false;
   }
+  return false;
 }
 
 document.getElementById('bulk-save-all-btn').onclick=async function(){
@@ -718,27 +726,39 @@ document.getElementById('bulk-save-all-btn').onclick=async function(){
   var unsaved=comps.filter(function(c){return !library.some(function(l){return l.id===c.id;});});
   if(!unsaved.length){toast('All components already saved');return;}
   this.textContent='Saving\u2026';this.disabled=true;
+  var saved=0,dupes=0;
   for(var i=0;i<unsaved.length;i++){
-    await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:unsaved[i].id})});
+    var res=await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:unsaved[i].id})});
+    var data=await res.json();
+    if(data.status==='saved')saved++;
+    else if(data.status==='duplicate')dupes++;
   }
   await refreshLibrary();
   renderBulkGrid();
   this.textContent='Save All';this.disabled=false;
-  toast('Saved '+unsaved.length+' components');
+  var msg='Saved '+saved+' components';
+  if(dupes>0)msg+=' ('+dupes+' duplicates skipped)';
+  toast(msg);
 };
 
 document.getElementById('bulk-save-selected-btn').onclick=async function(){
   if(!bulkSelectedIds.size){toast('Select components first');return;}
   this.textContent='Saving\u2026';this.disabled=true;
   var toSave=Array.from(bulkSelectedIds).filter(function(id){return !library.some(function(l){return l.id===id;});});
+  var saved=0,dupes=0;
   for(var i=0;i<toSave.length;i++){
-    await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:toSave[i]})});
+    var res=await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:toSave[i]})});
+    var data=await res.json();
+    if(data.status==='saved')saved++;
+    else if(data.status==='duplicate')dupes++;
   }
   await refreshLibrary();
   bulkSelectedIds=new Set();
   renderBulkGrid();
   this.textContent='Save Selected';this.disabled=false;
-  toast('Saved '+toSave.length+' components');
+  var msg='Saved '+saved+' components';
+  if(dupes>0)msg+=' ('+dupes+' duplicates skipped)';
+  toast(msg);
 };
 
 // ── Dynamic filters (single mode) ─────────────────────────────────────────────
