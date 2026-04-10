@@ -1,11 +1,32 @@
 import os
-import json
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
- 
+
 load_dotenv()
- 
+
+# ── Key name maps ──────────────────────────────────────────────────────────────
+# For each dimension, a ranked list of key names to look for across ANY pset.
+# First match wins. All comparisons are case-insensitive.
+
+HEIGHT_KEYS  = ['height', 'unconnected height', 'depth', 'thickness', 'sill height',
+                'head height', 'default head height', 'overall height']
+WIDTH_KEYS   = ['width', 'thickness', 'total thickness', 'default thickness',
+                'rough width', 'overall width']
+LENGTH_KEYS  = ['length', 'span', 'rough length', 'overall length']
+AREA_KEYS    = ['netsidearea', 'grosssidearea', 'netfloorarea', 'grossfloorarea',
+                'netarea', 'grossarea', 'grossceilingarea', 'totalarea',
+                'projectedarea', 'area']
+VOLUME_KEYS  = ['netvolume', 'grossvolume', 'volume']
+
+# Psets that are metadata only — never contain real dimensions
+SKIP_PSETS = {
+    'phasing', 'graphics', 'pset_manufacturertypeinformation',
+    'pset_membercommon', 'pset_roofcommon', 'other',
+    'materials and finishes', 'analytical properties',
+    'ai_enrichment', '_material', '_material_layers', '_material_constituents'
+}
+
 def get_db():
     return psycopg2.connect(
         host=os.getenv("DB_HOST"),
@@ -14,83 +35,107 @@ def get_db():
         user=os.getenv("DB_USER"),
         password=os.getenv("DB_PASSWORD")
     )
- 
-def extract_from_parameters(parameters):
+
+
+def safe_float(v):
+    """Convert a value to float, return None if not possible."""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+        return f if f > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def search_psets(parameters, key_names):
     """
-    Pull dimensions directly from raw IFC parameter sets.
-    Checks the most common Pset and Qto locations across IFC2x3 and IFC4.
-    Returns a dict with whatever it finds — missing keys will be None.
+    Search all psets in parameters for the first matching key (case-insensitive).
+    Returns the float value or None.
+    Skips internal keys (prefixed with _) and known metadata psets.
+    """
+    if not parameters:
+        return None
+
+    key_names_lower = [k.lower() for k in key_names]
+
+    for pset_name, pset_data in parameters.items():
+        if pset_name.startswith('_'):
+            continue
+        if pset_name.lower() in SKIP_PSETS:
+            continue
+        if not isinstance(pset_data, dict):
+            continue
+
+        for prop_key, prop_val in pset_data.items():
+            if prop_key.lower() in key_names_lower:
+                v = safe_float(prop_val)
+                if v is not None:
+                    return v
+
+    return None
+
+
+def extract_dims(category, parameters):
+    """
+    Extract dimensions from a component's parameters using fuzzy pset search.
+    Returns dict with width_mm, height_mm, length_mm, area_m2, volume_m3, quality_score.
     """
     dims = {}
- 
-    if not parameters:
-        return dims
- 
-    # --- Height ---
-    # strip.py writes wall height here directly from IfcExtrudedAreaSolid
-    dims["height_mm"] = parameters.get("_height_mm")
- 
-    # Standard quantity sets
-    for qto in ["Qto_WallBaseQuantities", "Qto_SlabBaseQuantities",
-                 "Qto_RoofBaseQuantities", "Qto_ColumnBaseQuantities",
-                 "Qto_BeamBaseQuantities", "Qto_DoorBaseQuantities",
-                 "Qto_WindowBaseQuantities", "Qto_CoveringBaseQuantities"]:
-        pset = parameters.get(qto, {})
-        if not pset:
-            continue
-        dims["height_mm"]  = dims.get("height_mm")  or pset.get("Height") or pset.get("Depth")
-        dims["length_mm"]  = dims.get("length_mm")  or pset.get("Length") or pset.get("Width")
-        dims["width_mm"]   = dims.get("width_mm")   or pset.get("Width")  or pset.get("Thickness")
-        dims["area_m2"]    = dims.get("area_m2")    or pset.get("NetSideArea") or pset.get("NetArea") or pset.get("NetFloorArea") or pset.get("GrossArea")
-        dims["volume_m3"]  = dims.get("volume_m3")  or pset.get("NetVolume") or pset.get("GrossVolume")
- 
-    # BaseQuantities (IFC4 style — sometimes just called BaseQuantities)
-    pset = parameters.get("BaseQuantities", {})
-    if pset:
-        dims["height_mm"] = dims.get("height_mm") or pset.get("Height") or pset.get("Depth")
-        dims["length_mm"] = dims.get("length_mm") or pset.get("Length")
-        dims["width_mm"]  = dims.get("width_mm")  or pset.get("Width") or pset.get("Thickness")
-        dims["area_m2"]   = dims.get("area_m2")   or pset.get("NetArea") or pset.get("GrossArea")
-        dims["volume_m3"] = dims.get("volume_m3") or pset.get("NetVolume") or pset.get("GrossVolume")
- 
-    # Pset_WallCommon thickness → width
-    pset = parameters.get("Pset_WallCommon", {})
-    if pset:
-        dims["width_mm"] = dims.get("width_mm") or pset.get("Thickness")
- 
-    # Pset_DoorCommon / Pset_WindowCommon
-    for key in ["Pset_DoorCommon", "Pset_WindowCommon"]:
-        pset = parameters.get(key, {})
-        if pset:
-            dims["height_mm"] = dims.get("height_mm") or pset.get("Height")
-            dims["width_mm"]  = dims.get("width_mm")  or pset.get("Width")
- 
-    # Revit-style parameters (often stored flat under "Identity Data" or similar)
-    for key in ["Constraints", "Dimensions", "Identity Data"]:
-        pset = parameters.get(key, {})
-        if not pset:
-            continue
-        dims["height_mm"] = dims.get("height_mm") or pset.get("Height") or pset.get("Unconnected Height")
-        dims["length_mm"] = dims.get("length_mm") or pset.get("Length")
-        dims["width_mm"]  = dims.get("width_mm")  or pset.get("Width") or pset.get("Thickness")
-        dims["area_m2"]   = dims.get("area_m2")   or pset.get("Area")
-        dims["volume_m3"] = dims.get("volume_m3") or pset.get("Volume")
- 
-    # Convert anything that came back as a string
-    for k, v in dims.items():
-        if isinstance(v, str):
-            try:
-                dims[k] = float(v)
-            except (ValueError, TypeError):
-                dims[k] = None
- 
+
+    # ── Layer 1: AI enrichment (most trusted if enricher ran) ──────────────────
+    enrichment = parameters.get('ai_enrichment', {}) if parameters else {}
+    ai_dims    = enrichment.get('dimensions', {})
+    ai_calc    = enrichment.get('calculated_dimensions', {})
+
+    dims['width_mm']  = safe_float(ai_dims.get('width_mm'))  or safe_float(ai_calc.get('width_mm'))
+    dims['height_mm'] = safe_float(ai_dims.get('height_mm')) or safe_float(ai_calc.get('height_mm'))
+    dims['length_mm'] = safe_float(ai_dims.get('length_mm')) or safe_float(ai_calc.get('length_mm'))
+    dims['area_m2']   = safe_float(ai_dims.get('area_m2'))   or safe_float(ai_calc.get('area_m2'))
+    dims['volume_m3'] = safe_float(ai_dims.get('volume_m3')) or safe_float(ai_calc.get('volume_m3'))
+    depth             = safe_float(ai_dims.get('depth_mm'))  or safe_float(ai_calc.get('depth_mm'))
+    if not dims['height_mm'] and depth:
+        dims['height_mm'] = depth
+
+    quality = enrichment.get('quality_score')
+
+    # ── Layer 2: Strip.py internal keys ────────────────────────────────────────
+    if not dims['height_mm'] and parameters:
+        dims['height_mm'] = safe_float(parameters.get('_height_mm'))
+
+    # ── Layer 3: Fuzzy search across all psets ─────────────────────────────────
+    if not dims['height_mm']:
+        dims['height_mm'] = search_psets(parameters, HEIGHT_KEYS)
+
+    if not dims['width_mm']:
+        dims['width_mm'] = search_psets(parameters, WIDTH_KEYS)
+
+    if not dims['length_mm']:
+        dims['length_mm'] = search_psets(parameters, LENGTH_KEYS)
+
+    if not dims['area_m2']:
+        dims['area_m2'] = search_psets(parameters, AREA_KEYS)
+
+    if not dims['volume_m3']:
+        raw_vol = search_psets(parameters, VOLUME_KEYS)
+        if raw_vol is not None:
+            # If volume > 10000 it's almost certainly stored in mm³ not m³
+            dims['volume_m3'] = raw_vol / 1e9 if raw_vol > 10000 else raw_vol
+
+    # ── Layer 4: Derive quality score from data completeness ───────────────────
+    if quality is None:
+        filled = sum(1 for k in ['width_mm', 'height_mm', 'length_mm', 'area_m2', 'volume_m3']
+                     if dims.get(k) is not None)
+        quality = round(filled / 5, 2)
+
+    dims['quality_score'] = quality
     return dims
- 
- 
+
+
 def populate_dimensions(project_id=None):
-    conn = get_db()
+    conn   = get_db()
     cursor = conn.cursor()
- 
+
     if project_id:
         cursor.execute("""
             SELECT id, category, parameters
@@ -102,46 +147,15 @@ def populate_dimensions(project_id=None):
             SELECT id, category, parameters
             FROM components
         """)
- 
+
     components = cursor.fetchall()
     print(f"Found {len(components)} components\n")
- 
+
     updated = 0
- 
-    for component in components:
-        comp_id, category, parameters = component
- 
-        # --- Layer 1: AI enrichment (most trusted if it ran) ---
-        enrichment = (parameters or {}).get("ai_enrichment", {})
-        ai_dims = enrichment.get("dimensions", {})
-        ai_calc = enrichment.get("calculated_dimensions", {})
- 
-        width   = ai_dims.get("width_mm")   or ai_calc.get("width_mm")
-        height  = ai_dims.get("height_mm")  or ai_calc.get("height_mm")
-        length  = ai_dims.get("length_mm")  or ai_calc.get("length_mm")
-        area    = ai_dims.get("area_m2")    or ai_calc.get("area_m2")
-        volume  = ai_dims.get("volume_m3")  or ai_calc.get("volume_m3")
-        depth   = ai_dims.get("depth_mm")   or ai_calc.get("depth_mm")
-        quality = enrichment.get("quality_score")
- 
-        # Use depth as height for slabs if height still missing
-        if not height and depth:
-            height = depth
- 
-        # --- Layer 2: Raw IFC parameters (fills any gaps left by AI) ---
-        raw = extract_from_parameters(parameters)
- 
-        width   = width   or raw.get("width_mm")
-        height  = height  or raw.get("height_mm")
-        length  = length  or raw.get("length_mm")
-        area    = area    or raw.get("area_m2")
-        volume  = volume  or raw.get("volume_m3")
- 
-        # --- Layer 3: Derive quality score from data completeness if AI didn't set one ---
-        if quality is None:
-            filled = sum(1 for v in [width, height, length, area, volume] if v is not None)
-            quality = round(filled / 5, 2)
- 
+
+    for comp_id, category, parameters in components:
+        dims = extract_dims(category, parameters or {})
+
         cursor.execute("""
             UPDATE components
             SET
@@ -152,19 +166,31 @@ def populate_dimensions(project_id=None):
                 volume_m3     = %s,
                 quality_score = %s
             WHERE id = %s
-        """, (width, height, length, area, volume, quality, comp_id))
- 
+        """, (
+            dims.get('width_mm'),
+            dims.get('height_mm'),
+            dims.get('length_mm'),
+            dims.get('area_m2'),
+            dims.get('volume_m3'),
+            dims.get('quality_score'),
+            comp_id
+        ))
+
         print(f"id={comp_id} [{category}] → "
-              f"w={width} h={height} l={length} "
-              f"area={area} vol={volume} q={quality}")
+              f"w={dims.get('width_mm')} "
+              f"h={dims.get('height_mm')} "
+              f"l={dims.get('length_mm')} "
+              f"area={dims.get('area_m2')} "
+              f"vol={dims.get('volume_m3')} "
+              f"q={dims.get('quality_score')}")
         updated += 1
- 
+
     conn.commit()
     cursor.close()
     conn.close()
     print(f"\nUpdated {updated} components. Done!")
- 
- 
+
+
 if __name__ == "__main__":
     import sys
     pid = int(sys.argv[1]) if len(sys.argv) > 1 else None
@@ -173,4 +199,3 @@ if __name__ == "__main__":
     else:
         print("Running for ALL projects")
     populate_dimensions(project_id=pid)
- 
