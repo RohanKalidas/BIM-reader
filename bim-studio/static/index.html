@@ -316,22 +316,15 @@ async function onSelectionChanged(event) {
   const dbId = ids[0];
 
   viewer.getProperties(dbId, async (props) => {
-    console.log(props.properties)
-    // Try to find the IFC GlobalId in the properties
     let globalId = null;
     if (props.properties) {
       for (const prop of props.properties) {
-        if (prop.attributeName === 'GlobalId' || 
-            prop.attributeName === 'IFCGuid' ||
-            prop.attributeName === 'IfcGUID') {
+        if (prop.attributeName === 'GLOBALID' && prop.displayCategory === 'IFC') {
           globalId = prop.displayValue;
           break;
         }
       }
     }
-
-    // Fall back to externalId
-    if (!globalId) globalId = props.externalId;
 
     if (!globalId) {
       showRawInspector(props);
