@@ -205,7 +205,7 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 .spec-ready-badge:hover{background:rgba(42,184,122,0.08);}
 .typing-dot{display:inline-block;width:4px;height:4px;background:var(--muted);margin:0 2px;animation:blink 1.2s ease-in-out infinite;}
 .typing-dot:nth-child(2){animation-delay:0.2s;}.typing-dot:nth-child(3){animation-delay:0.4s;}
-#gen-steps-card{background:rgba(255,255,255,0.03);border:1px solid var(--rule2);border-left:2px solid var(--green);padding:12px 16px;margin:4px 0 0;display:none;flex-direction:column;gap:6px;max-width:680px;align-self:flex-start;}
+#gen-steps-card{background:rgba(10,10,10,0.96);border:1px solid var(--rule2);border-left:2px solid var(--green);padding:12px 16px;display:none;flex-direction:column;gap:6px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);}
 #gen-steps-card.active{display:flex;}
 .gen-step{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:9px;letter-spacing:0.06em;}
 .gen-step-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;background:var(--rule2);}
@@ -1084,7 +1084,7 @@ async function sendGenMessage(){
             genSpec=data.spec;updatePlanSidebar(genSpec);
             setStep('spec','done',(genSpec.floors||[]).length+" floors");
             setStep('ifc','active','Building...');
-            if(aiMsg){var badge=document.createElement('div');badge.className='spec-ready-badge';badge.innerHTML='\u2713 &nbsp;Building plan ready \u2014 <strong>click to view in 3D</strong>';badge.onclick=function(){switchToView();};aiMsg.querySelector('.gen-msg-bubble').appendChild(badge);}
+            if(aiMsg){var badge=document.createElement('div');badge.id='gen-ready-badge';badge.className='spec-ready-badge';badge.style.opacity='0.4';badge.style.cursor='default';badge.innerHTML='&#9702; &nbsp;Generating 3D model\u2026';aiMsg.querySelector('.gen-msg-bubble').appendChild(badge);}
             autoGenerateAndView();
           }else if(data.type==='done'){genHistory.push({role:'assistant',content:fullText});}
         }catch(e){}
@@ -1104,8 +1104,8 @@ async function autoGenerateAndView(){
       await initGenViewer(data.aps.urn);
       setStep('ifc','done','Ready');
       setTimeout(function(){var card=document.getElementById('gen-steps-card');if(card)card.style.display='none';},2000);
-      var badges=document.querySelectorAll('.spec-ready-badge');
-      if(badges.length>0)badges[badges.length-1].innerHTML='\u2713 &nbsp;3D model ready \u2014 <strong>click to open viewer</strong>';
+      var badge=document.getElementById('gen-ready-badge');
+      if(badge){badge.style.opacity='1';badge.style.cursor='pointer';badge.innerHTML='\u2713 &nbsp;3D model ready \u2014 <strong>click to open viewer</strong>';badge.onclick=function(){switchToView();};}
       toast('3D model ready');
     }else{document.getElementById('view-status').textContent=data.aps_error?'APS failed':'Error';}
   }catch(e){console.error(e);}
