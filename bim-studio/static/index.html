@@ -35,7 +35,15 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 
 /* ══ DISASSEMBLE ══ */
 #page-disassemble{flex-direction:row;}
-#lib-sidebar{width:200px;background:var(--ink);display:flex;flex-direction:column;flex-shrink:0;border-right:1px solid var(--rule2);}
+#lib-sidebar{width:220px;min-width:160px;max-width:480px;background:var(--ink);display:flex;flex-direction:column;flex-shrink:0;border-right:1px solid var(--rule2);position:relative;}
+#lib-resize-handle{position:absolute;top:0;right:-4px;width:8px;height:100%;cursor:col-resize;z-index:10;display:flex;align-items:center;justify-content:center;}
+#lib-resize-handle::after{content:"";width:2px;height:32px;background:var(--rule2);border-radius:1px;transition:background 0.15s;}
+#lib-resize-handle:hover::after{background:var(--accent);}
+#lib-search-wrap{padding:6px 8px;border-bottom:1px solid var(--rule);flex-shrink:0;}
+#lib-search{width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--rule2);border-left:2px solid var(--ink-mid);color:var(--text);font-family:var(--mono);font-size:9px;padding:5px 8px;outline:none;transition:border-color 0.15s;}
+#lib-search:focus{border-left-color:var(--accent);}
+#lib-search::placeholder{color:rgba(255,255,255,0.2);}
+#lib-count{font-family:var(--mono);font-size:7px;color:rgba(255,255,255,0.2);letter-spacing:0.1em;padding:3px 8px 0;}
 .sidebar-head{padding:14px 14px 10px;border-bottom:1px solid var(--rule);}
 .sidebar-label{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.25);letter-spacing:0.2em;text-transform:uppercase;display:block;margin-bottom:3px;}
 .sidebar-title{font-family:var(--display);font-size:15px;color:#fff;font-style:italic;}
@@ -267,7 +275,10 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 <!-- ══ DISASSEMBLE ══ -->
 <div class="page active" id="page-disassemble">
   <div id="lib-sidebar">
+    <div id="lib-resize-handle"></div>
     <div class="sidebar-head"><span class="sidebar-label">Saved</span><span class="sidebar-title">Library</span></div>
+    <div id="lib-search-wrap"><input id="lib-search" type="text" placeholder="Search library…"></div>
+    <div id="lib-count"></div>
     <div id="lib-list"><div id="lib-empty-msg" style="padding:20px 10px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.18);text-align:center;line-height:1.7;">Save components to build your library</div></div>
     <div class="sidebar-actions">
       <button class="sidebar-btn reconstruct" id="btn-reconstruct">&#8635; &nbsp;Reconstruct</button>
@@ -1037,6 +1048,36 @@ document.getElementById('gen-send').onclick=sendGenMessage;
 document.getElementById('gen-input').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendGenMessage();}});
 document.getElementById('gen-input').addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,160)+'px';});
 document.querySelectorAll('.gen-suggestion').forEach(function(s){s.onclick=function(){document.getElementById('gen-input').value=s.textContent;sendGenMessage();};});
+
+// ── Library resize ──────────────────────────────────────────────────────────
+(function(){
+  var handle=document.getElementById('lib-resize-handle');
+  var sidebar=document.getElementById('lib-sidebar');
+  if(!handle||!sidebar)return;
+  var dragging=false,startX=0,startW=0;
+  handle.addEventListener('mousedown',function(e){
+    dragging=true;startX=e.clientX;startW=sidebar.offsetWidth;
+    document.body.style.cursor='col-resize';document.body.style.userSelect='none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove',function(e){
+    if(!dragging)return;
+    var w=Math.min(480,Math.max(160,startW+(e.clientX-startX)));
+    sidebar.style.width=w+'px';
+    if(viewer)viewer.resize();
+  });
+  document.addEventListener('mouseup',function(){
+    if(!dragging)return;
+    dragging=false;document.body.style.cursor='';document.body.style.userSelect='';
+  });
+})();
+
+// ── Library search wiring ────────────────────────────────────────────────────
+var libSrchEl=document.getElementById('lib-search');
+if(libSrchEl){libSrchEl.addEventListener('input',function(){
+  clearTimeout(libSearchTimer);
+  libSearchTimer=setTimeout(renderLibrary,120);
+});}
 
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2800);}
 async function init(){await refreshLibrary();document.getElementById('loading').style.display='none';}
