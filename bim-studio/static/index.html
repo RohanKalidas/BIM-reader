@@ -275,8 +275,7 @@ async function init() {
 function loadSpeckleViewer() {
   if (!speckleConfig) return;
   const iframe = document.getElementById('speckle-iframe');
-  // Embed the Speckle viewer with selection events enabled
-  iframe.src = `https://app.speckle.systems/projects/${speckleConfig.project_id}/models/${speckleConfig.model_id}#embed=%7B%22isEnabled%22%3Atrue%2C%22isTransparent%22%3Afalse%2C%22hideControls%22%3Afalse%2C%22hideSelectionInfo%22%3Afalse%7D`;
+  iframe.src = `https://speckle.xyz/embed?stream=${speckleConfig.project_id}&commit=${speckleConfig.model_id}`;
 }
 
 // Listen for messages from the Speckle iframe
