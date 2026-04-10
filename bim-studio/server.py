@@ -358,27 +358,44 @@ def get_component_library_for_ai():
 
 GENERATE_SYSTEM_PROMPT = """You are an expert AI architect and building consultant integrated into BIM Studio.
 
-You have access to a library of real building components extracted from IFC files — these are your templates.
-When designing a building you MUST use these templates as the basis for component selection and sizing.
+You have access to a library of real building components extracted from IFC files. These are your parametric templates — you scale and adapt them to every new building you design.
 
-Your job is to:
-1. Understand the user's building requirements (type, location, size, budget, timeline, materials)
-2. Research real-world data about the location (building codes, climate, costs, risks) using your knowledge
-3. Select appropriate component templates from the library and scale them parametrically to the new building
-4. Generate a complete BuildingSpec JSON that can be written to an IFC file
-5. Provide cost estimates, safety concerns, timeline, and practical advice
+## YOUR BEHAVIOUR
 
-COMPONENT TEMPLATE RULES:
-- Walls: scale length to match the building's footprint, keep thickness from template, scale height to floor height
-- Slabs: scale length/width to match floor footprint, keep thickness from template
-- Doors/Windows: use template dimensions unless user specifies otherwise
-- MEP: scale based on floor count and building area
-- HVAC: size based on floor count × floor area, route vertically through core
+### When the user's request is vague or missing key information:
+Ask focused clarifying questions. You need to know:
+- Building type (house, office, apartment, warehouse, etc.)
+- Location / site (city, country, terrain, climate zone)
+- Approximate size (floor count, footprint, or total area)
+- Budget (rough range is fine)
+- Timeline / start date
+- Material preferences or constraints
+- Any special requirements (accessibility, sustainability, local codes)
 
-RESPONSE FORMAT:
-Always respond with TWO parts:
-1. A conversational explanation (cost estimates, safety notes, timeline, materials, concerns)
-2. A JSON block tagged exactly like this:
+Ask naturally in one message. Do not generate a building spec until you have enough to make informed decisions.
+
+### When you have enough information:
+1. Give a concise conversational summary: site analysis, cost estimate, timeline, key material choices, any risks or code concerns for that location.
+2. Tell the user you are generating their building plan now.
+3. Silently append the machine-readable spec at the very end of your response inside <building_spec> tags. The user will never see this — it is processed automatically.
+
+## REAL-WORLD KNOWLEDGE
+Use your knowledge of:
+- Local building codes and regulations for the specified location
+- Climate and seismic conditions
+- Typical construction costs per m² for the region
+- Soil and site considerations
+- Material availability
+
+## COMPONENT TEMPLATE RULES
+- Walls: keep thickness from template, scale length to footprint, scale height to floor height
+- Slabs: scale to floor footprint, keep thickness
+- Doors/Windows: use template dimensions unless user specifies
+- HVAC: size by floor count × floor area, route vertically through building core
+- All coordinates in mm, elevation in metres
+
+## SPEC FORMAT
+The <building_spec> block must be valid JSON. It is hidden from the user — never mention it, never explain it, never show it in your conversational text.
 
 <building_spec>
 {
@@ -398,15 +415,13 @@ Always respond with TWO parts:
           "width_mm": 290,
           "height_mm": 3000,
           "length_mm": 12000,
-          "properties": {
-            "Pset_WallCommon": {"IsExternal": "True", "FireRating": "2hr"}
-          }
+          "properties": {"Pset_WallCommon": {"IsExternal": "True"}}
         }
       ]
     }
   ],
   "metadata": {
-    "location": "City, State",
+    "location": "City, Country",
     "building_type": "Residential",
     "estimated_cost_usd": 350000,
     "gross_floor_area_m2": 150,
@@ -414,22 +429,20 @@ Always respond with TWO parts:
     "estimated_duration_months": 8,
     "structural_system": "Timber frame",
     "primary_material": "Brick exterior, timber frame",
-    "site_concerns": "Seismic zone 2, standard foundations required",
+    "site_concerns": "...",
     "building_code": "IBC 2021"
   }
 }
 </building_spec>
 
-Be precise with coordinates. Place walls correctly around a rectangular footprint.
-For a building with footprint W×D (in mm):
-- North wall: pos_x=0, pos_y=D, rot_z=0, length=W
+Wall coordinate guide for a W×D footprint (mm):
 - South wall: pos_x=0, pos_y=0, rot_z=0, length=W
-- East wall:  pos_x=W, pos_y=0, rot_z=90, length=D
+- North wall: pos_x=0, pos_y=D, rot_z=0, length=W
 - West wall:  pos_x=0, pos_y=0, rot_z=90, length=D
-- Slab: pos_x=0, pos_y=0, pos_z=0, length=W, width=D
+- East wall:  pos_x=W, pos_y=0, rot_z=90, length=D
+- Floor slab: pos_x=0, pos_y=0, pos_z=0
 
-Always include at minimum: exterior walls, floor slab, roof slab, and doors for each floor.
-Scale all component dimensions from the templates to fit the building.
+Always include at minimum: 4 exterior walls, floor slab, roof slab, at least one door per floor.
 """
 
 @app.route("/api/generate/stream", methods=["POST"])
@@ -463,6 +476,9 @@ def generate_stream():
 
     def generate():
         full_text = ""
+        visible_text = ""
+        in_spec = False
+
         with client.messages.stream(
             model="claude-sonnet-4-20250514",
             max_tokens=8000,
@@ -471,11 +487,36 @@ def generate_stream():
         ) as stream:
             for text in stream.text_stream:
                 full_text += text
-                # Stream text excluding the spec block
-                visible = text
-                yield f"data: {json.dumps({'type': 'text', 'text': visible})}\n\n"
 
-        # Extract BuildingSpec
+                # Suppress anything inside <building_spec>...</building_spec>
+                # We buffer and check — once we see the opening tag we go silent
+                # until the closing tag, then resume.
+                chunk = visible_text + text
+
+                if not in_spec:
+                    if "<building_spec>" in chunk:
+                        # Split at the opening tag — emit everything before it
+                        before = chunk.split("<building_spec>")[0]
+                        # Remove trailing whitespace/newlines before the tag
+                        before = before.rstrip()
+                        if before:
+                            yield f"data: {json.dumps({'type': 'text', 'text': before})}\n\n"
+                        in_spec = True
+                        visible_text = ""
+                    else:
+                        # Safe to emit — but hold back enough chars to catch
+                        # a partial opening tag at the boundary
+                        safe = chunk[:-len("<building_spec>")]
+                        if safe:
+                            yield f"data: {json.dumps({'type': 'text', 'text': safe})}\n\n"
+                        visible_text = chunk[len(safe):]
+                else:
+                    # Inside spec — check if closing tag has arrived
+                    if "</building_spec>" in full_text:
+                        in_spec = False
+                        visible_text = ""
+
+        # Extract BuildingSpec from full response
         spec = None
         if "<building_spec>" in full_text and "</building_spec>" in full_text:
             try:
@@ -483,8 +524,10 @@ def generate_stream():
                 end   = full_text.index("</building_spec>")
                 raw   = full_text[start:end].strip()
                 spec  = json.loads(raw)
+                print(f"Spec parsed OK: {spec.get('name')} | {len(spec.get('floors',[]))} floors")
             except Exception as e:
                 print(f"Spec parse error: {e}")
+                print(f"Raw spec text: {full_text[full_text.index('<building_spec>'):full_text.index('</building_spec>')+20]}")
 
         yield f"data: {json.dumps({'type': 'spec', 'spec': spec})}\n\n"
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
