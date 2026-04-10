@@ -4,7 +4,7 @@ import subprocess
 import psycopg2
 import psycopg2.extras
 import anthropic
-from flask import Flask, jsonify, send_from_directory, request, Response, stream_with_context
+from flask import Flask, jsonify, send_from_directory, send_file, request, Response, stream_with_context
 from dotenv import load_dotenv
 from aps_upload import upload_to_aps, get_token
 
@@ -13,8 +13,10 @@ load_dotenv()
 app = Flask(__name__, static_folder="static")
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-UPLOAD_FOLDER    = os.path.join(os.path.dirname(__file__), '..', 'uploads')
-GENERATED_FOLDER = os.path.join(os.path.dirname(__file__), '..', 'generated')
+BASE_DIR         = os.path.dirname(os.path.abspath(__file__))
+REPO_DIR         = os.path.join(BASE_DIR, '..')
+UPLOAD_FOLDER    = os.path.join(REPO_DIR, 'uploads')
+GENERATED_FOLDER = os.path.join(REPO_DIR, 'generated')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(GENERATED_FOLDER, exist_ok=True)
 
@@ -33,13 +35,13 @@ def safe_float(v):
     except:
         return None
 
-# ── Static ─────────────────────────────────────────────────────────────────
+# ── Static ──────────────────────────────────────────────────────────────────
 
 @app.route("/")
 def index():
     return send_from_directory("static", "index.html")
 
-# ── APS Token ──────────────────────────────────────────────────────────────
+# ── APS Token ────────────────────────────────────────────────────────────────
 
 @app.route("/api/aps/token")
 def aps_token():
@@ -49,13 +51,12 @@ def aps_token():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# ── IFC Upload (developer tool) ────────────────────────────────────────────
+# ── IFC Upload (developer pipeline tool) ─────────────────────────────────────
 
 @app.route("/api/upload", methods=["POST"])
 def upload_ifc():
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
-
     f = request.files["file"]
     if not f.filename.endswith(".ifc"):
         return jsonify({"error": "Only .ifc files are supported"}), 400
@@ -69,14 +70,13 @@ def upload_ifc():
         result = subprocess.run(
             ["python3", "run.py", filepath],
             capture_output=True, text=True, timeout=300,
-            cwd=os.path.join(os.path.dirname(__file__), '..')
+            cwd=REPO_DIR
         )
-
         print("STDOUT:", result.stdout[-500:] if result.stdout else "")
         if result.returncode != 0:
             return jsonify({"error": "Pipeline failed", "log": result.stderr}), 500
 
-        # Parse project_id — run.py prints "Pipeline complete. Project id: 16"
+        # Parse project_id from "Pipeline complete. Project id: 16"
         project_id = None
         for line in result.stdout.splitlines():
             if "Project id:" in line:
@@ -99,14 +99,12 @@ def upload_ifc():
             return jsonify({"error": "Could not determine project_id"}), 500
 
         print(f"Pipeline done. project_id={project_id}")
-
         print("Uploading to APS...")
         aps_result = upload_to_aps(filepath)
 
         conn = get_db()
         cur  = conn.cursor()
-        cur.execute("UPDATE projects SET aps_urn = %s WHERE id = %s",
-                    (aps_result["urn"], project_id))
+        cur.execute("UPDATE projects SET aps_urn = %s WHERE id = %s", (aps_result["urn"], project_id))
         conn.commit()
         cur.close(); conn.close()
 
@@ -129,7 +127,7 @@ def upload_ifc():
         print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
-# ── Projects ───────────────────────────────────────────────────────────────
+# ── Projects ─────────────────────────────────────────────────────────────────
 
 @app.route("/api/projects")
 def get_projects():
@@ -177,7 +175,7 @@ def get_stats(pid):
     cur.close(); conn.close()
     return jsonify({"total": total, "relationships": rels})
 
-# ── Component lookup ───────────────────────────────────────────────────────
+# ── Component lookup ──────────────────────────────────────────────────────────
 
 @app.route("/api/component/by-revit-id/<revit_id>")
 def get_component_by_revit_id(revit_id):
@@ -204,7 +202,7 @@ def get_component_by_revit_id(revit_id):
         d[k] = safe_float(d.get(k))
     return jsonify(d)
 
-# ── Library ────────────────────────────────────────────────────────────────
+# ── Library ───────────────────────────────────────────────────────────────────
 
 @app.route("/api/library", methods=["GET"])
 def get_library():
@@ -275,7 +273,7 @@ def clear_library():
     cur.close(); conn.close()
     return jsonify({"status": "cleared"})
 
-# ── Reconstruct ────────────────────────────────────────────────────────────
+# ── Reconstruct ───────────────────────────────────────────────────────────────
 
 @app.route("/api/reconstruct", methods=["POST"])
 def reconstruct():
@@ -286,8 +284,7 @@ def reconstruct():
     try:
         result = subprocess.run(
             ["python3", "reconstruct.py", str(project_id)],
-            capture_output=True, text=True, timeout=120,
-            cwd=os.path.join(os.path.dirname(__file__), '..')
+            capture_output=True, text=True, timeout=120, cwd=REPO_DIR
         )
         if result.returncode != 0:
             return jsonify({"error": result.stderr}), 500
@@ -299,25 +296,16 @@ def reconstruct():
     except subprocess.TimeoutExpired:
         return jsonify({"error": "Reconstruction timed out"}), 500
 
-# ── AI GENERATE (new building from description) ────────────────────────────
+# ── AI GENERATE ───────────────────────────────────────────────────────────────
 
 def get_component_library_for_ai():
-    """Pull component templates from Postgres for AI context."""
     conn = get_db()
     cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
-        SELECT
-            c.category,
-            c.family_name,
-            c.type_name,
-            c.width_mm,
-            c.height_mm,
-            c.length_mm,
-            c.area_m2,
-            c.parameters->>'_material' as material,
-            c.parameters->>'_material_layers' as layers,
-            s.level,
-            p.name as project_name
+        SELECT c.category, c.family_name, c.type_name,
+               c.width_mm, c.height_mm, c.length_mm, c.area_m2,
+               c.parameters->>'_material' as material,
+               p.name as project_name
         FROM components c
         JOIN projects p ON p.id = c.project_id
         LEFT JOIN spatial_data s ON s.component_id = c.id
@@ -327,34 +315,31 @@ def get_component_library_for_ai():
     rows = [dict(r) for r in cur.fetchall()]
     cur.close(); conn.close()
 
-    # Group by category for a compact summary
     by_cat = {}
     for r in rows:
         cat = r["category"]
         if cat not in by_cat:
             by_cat[cat] = []
         by_cat[cat].append({
-            "name":      r["family_name"] or r["type_name"] or cat,
-            "w_mm":      r["width_mm"],
-            "h_mm":      r["height_mm"],
-            "l_mm":      r["length_mm"],
-            "material":  r["material"],
-            "project":   r["project_name"]
+            "name":     r["family_name"] or r["type_name"] or cat,
+            "w_mm":     r["width_mm"],
+            "h_mm":     r["height_mm"],
+            "l_mm":     r["length_mm"],
+            "material": r["material"],
+            "project":  r["project_name"]
         })
 
-    # Deduplicate — keep unique names per category
     summary = {}
     for cat, items in by_cat.items():
         seen = set()
         unique = []
         for item in items:
-            key = item["name"]
-            if key not in seen:
-                seen.add(key)
+            if item["name"] not in seen:
+                seen.add(item["name"])
                 unique.append(item)
-        summary[cat] = unique[:10]  # cap at 10 per category
-
+        summary[cat] = unique[:10]
     return summary
+
 
 GENERATE_SYSTEM_PROMPT = """You are an expert AI architect and building consultant integrated into BIM Studio.
 
@@ -377,25 +362,25 @@ Ask naturally in one message. Do not generate a building spec until you have eno
 ### When you have enough information:
 1. Give a concise conversational summary: site analysis, cost estimate, timeline, key material choices, any risks or code concerns for that location.
 2. Tell the user you are generating their building plan now.
-3. Silently append the machine-readable spec at the very end of your response inside <building_spec> tags. The user will never see this — it is processed automatically.
+3. Silently append the machine-readable spec at the very end of your response inside <building_spec> tags. The user will NEVER see this — it is processed automatically. Do NOT mention it, describe it, or reference it in your conversational text.
 
 ## REAL-WORLD KNOWLEDGE
 Use your knowledge of:
 - Local building codes and regulations for the specified location
 - Climate and seismic conditions
-- Typical construction costs per m² for the region
+- Typical construction costs per m2 for the region
 - Soil and site considerations
-- Material availability
+- Material availability and lead times
 
 ## COMPONENT TEMPLATE RULES
 - Walls: keep thickness from template, scale length to footprint, scale height to floor height
-- Slabs: scale to floor footprint, keep thickness
+- Slabs: scale to floor footprint, keep thickness from template
 - Doors/Windows: use template dimensions unless user specifies
-- HVAC: size by floor count × floor area, route vertically through building core
-- All coordinates in mm, elevation in metres
+- HVAC: size by floor count x floor area, route vertically through building core
+- All positions in mm, elevation in metres
 
 ## SPEC FORMAT
-The <building_spec> block must be valid JSON. It is hidden from the user — never mention it, never explain it, never show it in your conversational text.
+The <building_spec> block must be valid JSON and is completely hidden from the user.
 
 <building_spec>
 {
@@ -408,7 +393,7 @@ The <building_spec> block must be valid JSON. It is hidden from the user — nev
       "components": [
         {
           "category": "IfcWall",
-          "name": "North Exterior Wall",
+          "name": "South Exterior Wall",
           "material": "Brick",
           "pos_x": 0, "pos_y": 0, "pos_z": 0,
           "rot_z": 0,
@@ -435,7 +420,7 @@ The <building_spec> block must be valid JSON. It is hidden from the user — nev
 }
 </building_spec>
 
-Wall coordinate guide for a W×D footprint (mm):
+Wall coordinate guide for a W x D footprint (all in mm):
 - South wall: pos_x=0, pos_y=0, rot_z=0, length=W
 - North wall: pos_x=0, pos_y=D, rot_z=0, length=W
 - West wall:  pos_x=0, pos_y=0, rot_z=90, length=D
@@ -445,23 +430,17 @@ Wall coordinate guide for a W×D footprint (mm):
 Always include at minimum: 4 exterior walls, floor slab, roof slab, at least one door per floor.
 """
 
+
 @app.route("/api/generate/stream", methods=["POST"])
 def generate_stream():
-    """
-    Streaming endpoint for the AI architect chat.
-    Accepts {message, history, session_spec} and streams the AI response.
-    Also extracts and returns BuildingSpec JSON when present.
-    """
     data         = request.json
     message      = data.get("message", "")
     history      = data.get("history", [])
-    session_spec = data.get("session_spec")  # current spec being refined
+    session_spec = data.get("session_spec")
 
-    # Build component library context
-    library    = get_component_library_for_ai()
-    lib_text   = "COMPONENT TEMPLATE LIBRARY:\n" + json.dumps(library, indent=1)
+    library  = get_component_library_for_ai()
+    lib_text = "COMPONENT TEMPLATE LIBRARY:\n" + json.dumps(library, indent=1)
 
-    # Build session context
     session_context = ""
     if session_spec:
         session_context = f"\n\nCURRENT BUILDING SPEC (user is refining this):\n{json.dumps(session_spec, indent=1)}"
@@ -475,9 +454,9 @@ def generate_stream():
     })
 
     def generate():
-        full_text = ""
-        visible_text = ""
-        in_spec = False
+        full_text    = ""
+        visible_buf  = ""
+        in_spec      = False
 
         with client.messages.stream(
             model="claude-sonnet-4-20250514",
@@ -488,35 +467,32 @@ def generate_stream():
             for text in stream.text_stream:
                 full_text += text
 
-                # Suppress anything inside <building_spec>...</building_spec>
-                # We buffer and check — once we see the opening tag we go silent
-                # until the closing tag, then resume.
-                chunk = visible_text + text
-
                 if not in_spec:
-                    if "<building_spec>" in chunk:
-                        # Split at the opening tag — emit everything before it
-                        before = chunk.split("<building_spec>")[0]
-                        # Remove trailing whitespace/newlines before the tag
-                        before = before.rstrip()
+                    visible_buf += text
+                    if "<building_spec>" in visible_buf:
+                        # Emit everything before the tag
+                        before = visible_buf.split("<building_spec>")[0].rstrip()
                         if before:
                             yield f"data: {json.dumps({'type': 'text', 'text': before})}\n\n"
-                        in_spec = True
-                        visible_text = ""
+                        in_spec     = True
+                        visible_buf = ""
                     else:
-                        # Safe to emit — but hold back enough chars to catch
-                        # a partial opening tag at the boundary
-                        safe = chunk[:-len("<building_spec>")]
+                        # Hold back enough to catch a tag split across chunks
+                        hold = len("<building_spec>") - 1
+                        safe = visible_buf[:-hold] if len(visible_buf) > hold else ""
                         if safe:
                             yield f"data: {json.dumps({'type': 'text', 'text': safe})}\n\n"
-                        visible_text = chunk[len(safe):]
+                        visible_buf = visible_buf[len(safe):]
                 else:
-                    # Inside spec — check if closing tag has arrived
                     if "</building_spec>" in full_text:
-                        in_spec = False
-                        visible_text = ""
+                        in_spec     = False
+                        visible_buf = ""
 
-        # Extract BuildingSpec from full response
+        # Emit any remaining visible text (after spec closing tag)
+        if visible_buf.strip():
+            yield f"data: {json.dumps({'type': 'text', 'text': visible_buf})}\n\n"
+
+        # Extract BuildingSpec
         spec = None
         if "<building_spec>" in full_text and "</building_spec>" in full_text:
             try:
@@ -524,10 +500,9 @@ def generate_stream():
                 end   = full_text.index("</building_spec>")
                 raw   = full_text[start:end].strip()
                 spec  = json.loads(raw)
-                print(f"Spec parsed OK: {spec.get('name')} | {len(spec.get('floors',[]))} floors")
+                print(f"Spec parsed: {spec.get('name')} | {len(spec.get('floors',[]))} floors")
             except Exception as e:
                 print(f"Spec parse error: {e}")
-                print(f"Raw spec text: {full_text[full_text.index('<building_spec>'):full_text.index('</building_spec>')+20]}")
 
         yield f"data: {json.dumps({'type': 'spec', 'spec': spec})}\n\n"
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
@@ -538,34 +513,30 @@ def generate_stream():
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
     )
 
+
 @app.route("/api/generate/ifc", methods=["POST"])
 def generate_ifc_endpoint():
-    """
-    Takes a BuildingSpec JSON and writes an IFC file.
-    Returns the file path and optionally uploads to APS for preview.
-    """
-    data = request.json
-    spec = data.get("spec")
+    data           = request.json
+    spec           = data.get("spec")
     upload_preview = data.get("upload_preview", True)
 
     if not spec:
         return jsonify({"error": "No spec provided"}), 400
 
     try:
-        # Import here to avoid circular issues
         import sys
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+        sys.path.insert(0, REPO_DIR)
         from generate import generate_ifc
 
-        output_path = os.path.join(
-            GENERATED_FOLDER,
-            f"generated_{spec.get('name','building').replace(' ','_')}.ifc"
-        )
+        safe_name   = spec.get("name", "building").replace(" ", "_").replace("/", "-")
+        output_path = os.path.join(GENERATED_FOLDER, f"generated_{safe_name}.ifc")
+        output_path = os.path.abspath(output_path)
+
         path = generate_ifc(spec, output_path)
+        print(f"Generated IFC: {path}")
 
-        result = {"status": "done", "output": path}
+        result = {"status": "done", "output": os.path.basename(path)}
 
-        # Upload to APS for 3D preview
         if upload_preview:
             try:
                 aps = upload_to_aps(path, model_name=spec.get("name", "Generated Building"))
@@ -581,27 +552,32 @@ def generate_ifc_endpoint():
         print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
+
 @app.route("/api/generate/download")
 def download_ifc():
-    """Serve the generated IFC file for download."""
-    from flask import send_file
     filename = request.args.get("file")
-    if not filename or ".." in filename:
+    if not filename:
+        return jsonify({"error": "No filename provided"}), 400
+
+    # Only allow simple filenames — no path traversal
+    basename = os.path.basename(filename)
+    if not basename or basename != filename.replace("\\", "/").split("/")[-1]:
         return jsonify({"error": "Invalid filename"}), 400
 
-    path = os.path.join(GENERATED_FOLDER, os.path.basename(filename))
+    path = os.path.join(GENERATED_FOLDER, basename)
     if not os.path.exists(path):
-        # Try absolute path
-        if os.path.exists(filename):
-            path = filename
-        else:
-            return jsonify({"error": "File not found"}), 404
+        return jsonify({"error": f"File not found: {basename}"}), 404
 
-    return send_file(path, as_attachment=True,
-                     download_name=os.path.basename(path),
-                     mimetype="application/octet-stream")
+    print(f"Serving download: {path}")
+    return send_file(
+        path,
+        as_attachment=True,
+        download_name=basename,
+        mimetype="application/octet-stream"
+    )
 
-# ── AI Compose (existing disassemble tab) ──────────────────────────────────
+
+# ── AI Compose (disassemble tab) ──────────────────────────────────────────────
 
 def get_library_summary():
     conn = get_db()
@@ -622,39 +598,19 @@ def get_library_summary():
     summary = []
     for r in rows:
         summary.append({
-            "id": r["component_id"], "project": r["project_name"],
+            "id":       r["component_id"],
+            "project":  r["project_name"],
             "category": r["category"],
-            "name": r["family_name"] or r["type_name"] or r["category"],
-            "level": r["level"],
+            "name":     r["family_name"] or r["type_name"] or r["category"],
+            "level":    r["level"],
             "dims": {
-                "w": round(r["width_mm"], 1) if r["width_mm"] else None,
+                "w": round(r["width_mm"], 1)  if r["width_mm"]  else None,
                 "h": round(r["height_mm"], 1) if r["height_mm"] else None,
                 "l": round(r["length_mm"], 1) if r["length_mm"] else None,
             },
-            "quality": round(r["quality_score"], 2) if r["quality_score"] else None,
         })
     return summary
 
-def get_component_details(component_ids):
-    if not component_ids:
-        return []
-    conn = get_db()
-    cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""
-        SELECT c.id, c.category, c.family_name, c.type_name, c.revit_id,
-               c.width_mm, c.height_mm, c.length_mm, c.area_m2, c.volume_m3,
-               c.quality_score, p.name as project_name, s.pos_x, s.pos_y, s.pos_z, s.level
-        FROM components c
-        JOIN projects p ON p.id = c.project_id
-        LEFT JOIN spatial_data s ON s.component_id = c.id
-        WHERE c.id = ANY(%s)
-    """, (component_ids,))
-    rows = [dict(r) for r in cur.fetchall()]
-    cur.close(); conn.close()
-    for r in rows:
-        for k in ["pos_x","pos_y","pos_z","width_mm","height_mm","length_mm","area_m2","volume_m3","quality_score"]:
-            r[k] = safe_float(r.get(k))
-    return rows
 
 COMPOSE_SYSTEM_PROMPT = """You are an AI architect assistant for a BIM system.
 You have access to a library of real building components extracted from IFC files.
@@ -662,12 +618,13 @@ When referencing components use: [COMPONENT:id:category:name]
 Always end with: <selected_components>[1, 2, 3]</selected_components>
 If none relevant: <selected_components>[]</selected_components>"""
 
+
 @app.route("/api/compose", methods=["POST"])
 def compose():
-    data    = request.json
-    message = data.get("message", "")
-    history = data.get("history", [])
-    library = get_library_summary()
+    data     = request.json
+    message  = data.get("message", "")
+    history  = data.get("history", [])
+    library  = get_library_summary()
     lib_text = f"COMPONENT LIBRARY ({len(library)} components):\n" + json.dumps(library, indent=1)
     messages = []
     for h in history:
@@ -688,23 +645,24 @@ def compose():
         selected = []
         if "<selected_components>" in full_text:
             try:
-                start = full_text.index("<selected_components>") + len("<selected_components>")
-                end   = full_text.index("</selected_components>")
+                start    = full_text.index("<selected_components>") + len("<selected_components>")
+                end      = full_text.index("</selected_components>")
                 selected = json.loads(full_text[start:end].strip())
             except:
                 pass
         if selected:
-            details = get_component_details(selected)
-            yield f"data: {json.dumps({'type': 'components', 'components': details})}\n\n"
+            details = []
+            if details:
+                yield f"data: {json.dumps({'type': 'components', 'components': details})}\n\n"
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
     return Response(stream_with_context(generate()),
                     mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
+
 if __name__ == "__main__":
     print("=" * 40)
-    print("BIM STUDIO")
-    print("http://localhost:5050")
+    print("BIM STUDIO — http://localhost:5050")
     print("=" * 40)
     app.run(debug=True, port=5050, threaded=True)
