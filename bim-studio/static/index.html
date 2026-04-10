@@ -72,6 +72,10 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 .btn-green:disabled{opacity:0.3;cursor:not-allowed;}
 #upload-filename{font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
 #upload-status{font-family:var(--mono);font-size:9px;color:var(--accent);letter-spacing:0.06em;white-space:nowrap;}
+#btn-pause{border-color:rgba(184,149,58,0.5);color:var(--gold);}
+#btn-pause:hover{background:rgba(184,149,58,0.1);}
+#btn-stop{border-color:rgba(200,80,42,0.5);color:var(--accent);}
+#btn-stop:hover{background:rgba(200,80,42,0.1);}
 
 /* ══ SINGLE FILE MODE ══ */
 #single-mode{flex:1;display:flex;overflow:hidden;}
@@ -282,6 +286,8 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
       <button class="btn btn-ghost" onclick="document.getElementById('ifc-bulk-input').click()">Choose Multiple</button>
       <span id="upload-filename">No file selected</span>
       <button class="btn btn-primary" id="btn-upload" disabled>Process &amp; Upload</button>
+      <button class="btn btn-ghost" id="btn-pause" style="display:none">⏸ Pause</button>
+      <button class="btn btn-ghost" id="btn-stop" style="display:none">⏹ Stop</button>
       <span id="upload-status"></span>
     </div>
 
@@ -486,15 +492,42 @@ document.getElementById('ifc-file-input').onchange=function(){
   document.getElementById('btn-upload').onclick=doSingleUpload;
 };
 
+var singleAbortCtrl=null;
+
+function showUploadControls(mode){
+  // mode: 'none' | 'single' | 'bulk'
+  var pause=document.getElementById('btn-pause');
+  var stop=document.getElementById('btn-stop');
+  if(mode==='none'){pause.style.display='none';stop.style.display='none';}
+  else if(mode==='single'){pause.style.display='none';stop.style.display='inline-flex';}
+  else if(mode==='bulk'){pause.style.display='inline-flex';stop.style.display='inline-flex';}
+}
+
+document.getElementById('btn-stop').onclick=function(){
+  if(singleAbortCtrl){singleAbortCtrl.abort();singleAbortCtrl=null;}
+  bulkStopped=true;bulkPaused=false;
+  document.getElementById('upload-status').textContent='\u2715 Stopped';
+  showUploadControls('none');
+  document.getElementById('btn-upload').disabled=false;
+};
+
+document.getElementById('btn-pause').onclick=function(){
+  bulkPaused=!bulkPaused;
+  this.textContent=bulkPaused?'\u25b6 Resume':'\u23f8 Pause';
+  if(bulkPaused)document.getElementById('upload-status').textContent='Paused';
+  else document.getElementById('upload-status').textContent='';
+};
+
 async function doSingleUpload(){
   var file=document.getElementById('ifc-file-input').files[0];if(!file)return;
   var status=document.getElementById('upload-status'),btn=document.getElementById('btn-upload');
   btn.disabled=true;status.textContent='\u29d7 Processing\u2026';
-  // ensure single mode visible
   showSingleMode();
+  showUploadControls('single');
+  singleAbortCtrl=new AbortController();
   var fd=new FormData();fd.append('file',file);
   try{
-    var res=await fetch('/api/upload',{method:'POST',body:fd});
+    var res=await fetch('/api/upload',{method:'POST',body:fd,signal:singleAbortCtrl.signal});
     var data=await res.json();
     if(data.status==='done'){
       currentProjectId=data.project_id;
@@ -506,8 +539,13 @@ async function doSingleUpload(){
       await refreshLibrary();
       toast('Loaded: '+file.name);
     }else{status.textContent='\u2715 '+(data.error||'Error');}
-  }catch(e){status.textContent='\u2715 Failed';console.error(e);}
+  }catch(e){
+    if(e.name==='AbortError'){status.textContent='\u2715 Cancelled';}
+    else{status.textContent='\u2715 Failed';console.error(e);}
+  }
+  singleAbortCtrl=null;
   btn.disabled=false;
+  showUploadControls('none');
 }
 document.getElementById('btn-upload').onclick=doSingleUpload;
 
@@ -521,10 +559,13 @@ document.getElementById('ifc-bulk-input').onchange=function(){
   document.getElementById('btn-upload').onclick=function(){doBulkUpload(files);};
 };
 
+var bulkStopped=false,bulkPaused=false;
+
 async function doBulkUpload(files){
   var btn=document.getElementById('btn-upload');
-  btn.disabled=true;
+  btn.disabled=true;bulkStopped=false;bulkPaused=false;
   document.getElementById('upload-status').textContent='';
+  showUploadControls('bulk');
 
   // Switch to bulk mode immediately
   showBulkMode();
@@ -562,6 +603,9 @@ async function doBulkUpload(files){
     var res=await fetch('/api/upload/bulk',{method:'POST',body:fd});
     var reader=res.body.getReader();var decoder=new TextDecoder();var buffer='';
     while(true){
+      // Pause: wait until unpaused
+      while(bulkPaused&&!bulkStopped){await new Promise(function(r){setTimeout(r,300);});}
+      if(bulkStopped){reader.cancel();break;}
       var chunk=await reader.read();if(chunk.done)break;
       buffer+=decoder.decode(chunk.value,{stream:true});
       var lines=buffer.split('\n');buffer=lines.pop();
@@ -597,9 +641,13 @@ async function doBulkUpload(files){
         }catch(e){}
       }
     }
-  }catch(e){progressText.textContent='Upload error: '+e.message;console.error(e);}
+  }catch(e){if(!bulkStopped){progressText.textContent='Upload error: '+e.message;console.error(e);}}
   btn.disabled=false;
   btn.textContent='Process & Upload';
+  showUploadControls('none');
+  if(bulkStopped)document.getElementById('upload-status').textContent='\u2715 Stopped';
+  bulkStopped=false;bulkPaused=false;
+  document.getElementById('btn-pause').textContent='\u23f8 Pause';
 }
 
 // ── Mode switching ────────────────────────────────────────────────────────────
@@ -903,6 +951,9 @@ async function sendGenMessage(){
     var res=await fetch('/api/generate/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,history:genHistory.slice(-8),session_spec:genSpec})});
     var reader=res.body.getReader(),decoder=new TextDecoder();var buffer='';
     while(true){
+      // Pause: wait until unpaused
+      while(bulkPaused&&!bulkStopped){await new Promise(function(r){setTimeout(r,300);});}
+      if(bulkStopped){reader.cancel();break;}
       var chunk=await reader.read();if(chunk.done)break;
       buffer+=decoder.decode(chunk.value,{stream:true});
       var lines=buffer.split('\n');buffer=lines.pop();
