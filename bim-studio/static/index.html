@@ -6,6 +6,7 @@
 <title>BIM Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.css">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -68,21 +69,16 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);height:100vh
 .hud-btn.accent:hover{background:rgba(0,255,157,0.1);}
 .hud-btn:disabled{opacity:0.4;cursor:not-allowed;}
 #upload-filename{font-family:var(--mono);font-size:10px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-#upload-status{font-family:var(--mono);font-size:10px;color:var(--accent);}
+#upload-status{font-family:var(--mono);font-size:10px;color:var(--accent);white-space:nowrap;}
 
-/* Speckle iframe */
-#speckle-iframe{flex:1;border:none;width:100%;height:100%;}
+/* APS viewer container */
+#aps-viewer{flex:1;position:relative;background:#1a1a2e;}
 
 /* Empty state */
-#viewer-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;}
+#viewer-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:none;}
 .empty-icon{font-size:48px;opacity:0.2;}
 .empty-title{font-family:var(--mono);font-size:14px;color:var(--muted);letter-spacing:0.08em;}
 .empty-sub{font-size:12px;color:var(--muted);text-align:center;line-height:1.6;}
-
-/* HUD */
-#dis-hud{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:10px 20px;display:flex;align-items:center;gap:14px;z-index:10;}
-.hud-label{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:0.08em;}
-.hud-sep{width:1px;height:16px;background:var(--border2);}
 
 /* Inspector */
 #dis-inspector{width:280px;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transform:translateX(100%);transition:transform 0.2s;}
@@ -148,6 +144,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);height:100vh
 /* TOAST */
 #toast{position:fixed;bottom:24px;right:24px;background:var(--surface);border:1px solid var(--accent);border-radius:6px;padding:8px 16px;font-family:var(--mono);font-size:11px;color:var(--accent);opacity:0;transition:opacity 0.2s;pointer-events:none;z-index:999;}
 #toast.show{opacity:1;}
+
+/* APS viewer overrides */
+.adsk-viewing-viewer{background:#1a1a2e!important;}
 </style>
 </head>
 <body>
@@ -193,21 +192,13 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);height:100vh
       <span id="upload-status"></span>
     </div>
 
-    <!-- Speckle iframe (hidden until file uploaded) -->
-    <iframe id="speckle-iframe" style="display:none;flex:1;border:none;width:100%;height:100%;" allow="fullscreen"></iframe>
-
-    <!-- Empty state -->
-    <div id="viewer-empty" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;">
-      <div class="empty-icon">▣</div>
-      <div class="empty-title">NO MODEL LOADED</div>
-      <div class="empty-sub">Upload an IFC file above to extract<br>components and view the 3D model</div>
-    </div>
-
-    <!-- HUD (shown after load) -->
-    <div id="dis-hud" style="display:none;">
-      <span class="hud-label">CLICK A COMPONENT TO INSPECT</span>
-      <div class="hud-sep"></div>
-      <button class="hud-btn accent" id="btn-save-selected" disabled>SAVE TO LIBRARY</button>
+    <!-- APS Viewer -->
+    <div id="aps-viewer">
+      <div id="viewer-empty">
+        <div class="empty-icon">▣</div>
+        <div class="empty-title">NO MODEL LOADED</div>
+        <div class="empty-sub">Upload an IFC file above to extract<br>components and view the 3D model</div>
+      </div>
     </div>
   </div>
 
@@ -257,6 +248,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);height:100vh
 
 <div id="toast"></div>
 
+<!-- APS Viewer SDK -->
+<script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
+
 <script>
 // ─────────────────────────────────────────────────────────────────
 // STATE
@@ -266,46 +260,81 @@ let selectedComponent = null;
 let library           = [];
 let chatHistory       = [];
 let isStreaming       = false;
+let viewer            = null;
 
 // ─────────────────────────────────────────────────────────────────
-// SPECKLE VIEWER
+// APS VIEWER
 // ─────────────────────────────────────────────────────────────────
-function loadSpeckleViewer(projectId, modelId) {
-  const iframe = document.getElementById('speckle-iframe');
-  const empty  = document.getElementById('viewer-empty');
-  const hud    = document.getElementById('dis-hud');
+async function initViewer(urn) {
+  document.getElementById('viewer-empty').style.display = 'none';
 
-  iframe.src = `https://app.speckle.systems/projects/${projectId}/models/${modelId}`;
-  iframe.style.display = 'block';
-  empty.style.display  = 'none';
-  hud.style.display    = 'flex';
+  // Get token from our backend
+  const tokenRes = await fetch('/api/aps/token');
+  const tokenData = await tokenRes.json();
+
+  const options = {
+    env: 'AutodeskProduction2',
+    api: 'streamingV2',
+    getAccessToken: (callback) => {
+      callback(tokenData.access_token, tokenData.expires_in);
+    }
+  };
+
+  Autodesk.Viewing.Initializer(options, () => {
+    const container = document.getElementById('aps-viewer');
+
+    if (viewer) {
+      viewer.finish();
+      viewer = null;
+    }
+
+    viewer = new Autodesk.Viewing.GuiViewer3D(container, {
+      extensions: ['Autodesk.DocumentBrowser']
+    });
+    viewer.start();
+
+    const documentId = `urn:${urn}`;
+    Autodesk.Viewing.Document.load(documentId, (doc) => {
+      const viewables = doc.getRoot().getDefaultGeometry();
+      viewer.loadDocumentNode(doc, viewables).then(() => {
+        // Wire selection event
+        viewer.addEventListener(
+          Autodesk.Viewing.SELECTION_CHANGED_EVENT,
+          onSelectionChanged
+        );
+      });
+    }, (errorCode, errorMsg) => {
+      console.error('Failed to load document:', errorCode, errorMsg);
+      toast('Failed to load model in viewer');
+    });
+  });
 }
 
-// Listen for selection events from Speckle iframe
-window.addEventListener('message', async (event) => {
-  if (!event.data || typeof event.data !== 'object') return;
-  const objects = event.data.objects || event.data.data || [];
-  if ((event.data.eventName === 'selection-change' || event.data.type === 'selection') && objects.length > 0) {
-    const obj = objects[0];
-    const applicationId = obj.applicationId || obj.id;
-    if (applicationId) await handleSpeckleSelection(applicationId, obj);
-  }
-});
+async function onSelectionChanged(event) {
+  const ids = event.dbIdArray;
+  if (!ids || ids.length === 0) return;
 
-async function handleSpeckleSelection(applicationId, speckleObj) {
-  try {
-    const res = await fetch(`/api/component/by-revit-id/${applicationId}`);
-    if (res.ok) {
-      const comp = await res.json();
-      selectedComponent = comp;
-      showInspector(comp);
-      document.getElementById('btn-save-selected').disabled = false;
-    } else {
-      showRawInspector(speckleObj);
+  const dbId = ids[0];
+
+  // Get the external ID (= IFC GlobalId = our revit_id)
+  viewer.getProperties(dbId, async (props) => {
+    const externalId = props.externalId;
+    if (!externalId) return;
+
+    try {
+      const res = await fetch(`/api/component/by-revit-id/${externalId}`);
+      if (res.ok) {
+        const comp = await res.json();
+        selectedComponent = comp;
+        showInspector(comp);
+      } else {
+        // Show raw APS properties
+        showRawInspector(props);
+      }
+    } catch(e) {
+      console.error('Lookup failed:', e);
     }
-  } catch(e) {
-    console.error('Lookup failed:', e);
-  }
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -319,7 +348,7 @@ document.getElementById('ifc-file-input').onchange = function() {
 };
 
 document.getElementById('btn-upload').onclick = async function() {
-  const file = document.getElementById('ifc-file-input').files[0];
+  const file   = document.getElementById('ifc-file-input').files[0];
   if (!file) return;
 
   const status = document.getElementById('upload-status');
@@ -337,13 +366,15 @@ document.getElementById('btn-upload').onclick = async function() {
     if (data.status === 'done') {
       currentProjectId = data.project_id;
       status.textContent = `✓ ${data.stats.components} components extracted`;
-      loadSpeckleViewer(data.speckle.project_id, data.speckle.model_id);
-      await refreshLibrary();
       document.getElementById('nav-stat').textContent =
         `${data.stats.components} components · ${data.stats.relationships} relationships`;
+
+      // Load in APS viewer
+      await initViewer(data.aps.urn);
+      await refreshLibrary();
       toast(`Loaded: ${file.name}`);
     } else {
-      status.textContent = '✕ Error: ' + (data.error || 'Unknown error');
+      status.textContent = '✕ ' + (data.error || 'Error');
     }
   } catch(e) {
     status.textContent = '✕ Upload failed';
@@ -392,18 +423,17 @@ function showInspector(comp) {
   document.getElementById('dis-inspector').classList.add('open');
 }
 
-function showRawInspector(obj) {
+function showRawInspector(props) {
   const body = document.getElementById('insp-body');
   body.innerHTML = `
-    <div class="insp-cat">${obj.speckle_type || 'Unknown'}</div>
-    <div class="insp-name">${obj.name || obj.id || '—'}</div>
+    <div class="insp-cat">${props.objectName || 'Unknown'}</div>
+    <div class="insp-name">${props.name || '—'}</div>
     <div class="insp-sec">
-      <div class="insp-sec-head">SPECKLE DATA</div>
-      <div class="insp-row"><span class="insp-k">ID</span><span class="insp-v hi">${obj.id || '—'}</span></div>
-      <div class="insp-row"><span class="insp-k">App ID</span><span class="insp-v">${obj.applicationId || '—'}</span></div>
-      <div class="insp-row"><span class="insp-k">Type</span><span class="insp-v">${obj.ifcType || obj.speckle_type || '—'}</span></div>
+      <div class="insp-sec-head">APS PROPERTIES</div>
+      <div class="insp-row"><span class="insp-k">DB ID</span><span class="insp-v hi">${props.dbId}</span></div>
+      <div class="insp-row"><span class="insp-k">Ext ID</span><span class="insp-v">${props.externalId || '—'}</span></div>
     </div>
-    <div style="padding:10px 0;font-size:11px;color:var(--muted);">Not found in database. Re-run the pipeline on this file.</div>
+    <div style="padding:10px 0;font-size:11px;color:var(--muted);">Component not found in database.</div>
   `;
   document.getElementById('dis-inspector').classList.add('open');
 }
@@ -411,7 +441,7 @@ function showRawInspector(obj) {
 function closeInspector() {
   document.getElementById('dis-inspector').classList.remove('open');
   selectedComponent = null;
-  document.getElementById('btn-save-selected').disabled = true;
+  if (viewer) viewer.clearSelection();
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -519,12 +549,7 @@ async function reconstruct() {
       body: JSON.stringify({project_id: currentProjectId})
     });
     const data = await res.json();
-    if (data.status === 'done') {
-      toast(`Reconstructed: ${data.output || 'done'}`);
-    } else {
-      toast('Reconstruction failed');
-      console.error(data.error);
-    }
+    toast(data.status === 'done' ? `Reconstructed: ${data.output || 'done'}` : 'Reconstruction failed');
   } catch(e) {
     toast('Reconstruction error');
   }
@@ -639,14 +664,14 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     tab.classList.add('active');
     document.getElementById('page-' + tab.dataset.page).classList.add('active');
+    if (tab.dataset.page === 'disassemble' && viewer) viewer.resize();
   };
 });
 
-document.getElementById('insp-close').onclick    = closeInspector;
-document.getElementById('btn-save-selected').onclick = () => { if (selectedComponent) saveComponent(selectedComponent); };
-document.getElementById('btn-reconstruct').onclick   = reconstruct;
-document.getElementById('btn-clear-lib').onclick     = clearLibrary;
-document.getElementById('chat-send').onclick         = sendMessage;
+document.getElementById('insp-close').onclick        = closeInspector;
+document.getElementById('btn-reconstruct').onclick    = reconstruct;
+document.getElementById('btn-clear-lib').onclick      = clearLibrary;
+document.getElementById('chat-send').onclick          = sendMessage;
 
 document.getElementById('chat-input').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
