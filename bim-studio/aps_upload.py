@@ -93,6 +93,8 @@ def upload_file(token, filepath):
 
 def translate_file(token, urn):
     """Submit translation job to convert the file to SVF2 for the viewer."""
+    padded_urn = urn + "=" * (4 - len(urn) % 4) if len(urn) % 4 else urn
+
     headers = {
         "Authorization":  f"Bearer {token}",
         "Content-Type":   "application/json",
@@ -101,7 +103,7 @@ def translate_file(token, urn):
     res = requests.post(
         f"{BASE_URL}/modelderivative/v2/designdata/job",
         json={
-            "input":  {"urn": urn},
+            "input":  {"urn": padded_urn},
             "output": {
                 "formats": [{
                     "type":  "svf2",
@@ -111,6 +113,7 @@ def translate_file(token, urn):
         },
         headers=headers
     )
+    print(f"Translation response {res.status_code}: {res.text[:500]}")
     res.raise_for_status()
     return res.json()
 
