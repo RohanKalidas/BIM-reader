@@ -5,160 +5,791 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BIM Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.css">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#080810;--surface:#10101c;--surface2:#181828;--surface3:#202034;
-  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
-  --accent:#00ff9d;--accent2:#7c6bff;--accent3:#ff6b6b;
-  --text:#e4e4f0;--muted:#5a5a7a;
-  --mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;
+
+:root {
+  --ink:        #0a0a0a;
+  --ink-light:  #1a1a1a;
+  --ink-mid:    #2a2a2a;
+  --paper:      #f5f2ed;
+  --paper-dark: #ede9e2;
+  --rule:       rgba(10,10,10,0.12);
+  --rule-heavy: rgba(10,10,10,0.3);
+  --accent:     #c8502a;
+  --accent2:    #2a5fc8;
+  --gold:       #b8953a;
+  --muted:      #7a7068;
+  --display:    'Playfair Display', Georgia, serif;
+  --mono:       'DM Mono', monospace;
+  --sans:       'DM Sans', sans-serif;
 }
-body{background:var(--bg);color:var(--text);font-family:var(--sans);height:100vh;overflow:hidden;display:flex;flex-direction:column;}
 
-/* NAV */
-#nav{display:flex;align-items:center;height:48px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;padding:0 20px;gap:16px;}
-.nav-logo{font-family:var(--mono);font-size:12px;color:var(--accent);letter-spacing:0.12em;margin-right:8px;}
-.nav-sep{width:1px;height:20px;background:var(--border2);}
-.nav-tab{font-family:var(--mono);font-size:11px;letter-spacing:0.06em;color:var(--muted);padding:6px 14px;border-radius:4px;cursor:pointer;border:1px solid transparent;transition:all 0.15s;background:none;}
-.nav-tab:hover{color:var(--text);}
-.nav-tab.active{color:var(--accent);border-color:rgba(0,255,157,0.25);background:rgba(0,255,157,0.06);}
-.nav-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
-.nav-stat{font-family:var(--mono);font-size:10px;color:var(--muted);}
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
 
-/* PAGES */
-.page{display:none;flex:1;overflow:hidden;}
-.page.active{display:flex;}
+/* ── MASTHEAD ── */
+#nav {
+  display: flex;
+  align-items: stretch;
+  height: 56px;
+  background: var(--ink);
+  flex-shrink: 0;
+  border-bottom: 3px solid var(--accent);
+}
 
-/* ══ DISASSEMBLE ══ */
-#page-disassemble{flex-direction:row;}
+.nav-brand {
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  border-right: 1px solid rgba(255,255,255,0.1);
+  gap: 12px;
+}
 
-/* Library sidebar */
-#lib-sidebar{width:200px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;}
-.panel-head{padding:10px 12px 8px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:0.1em;}
-#lib-list{flex:1;overflow-y:auto;padding:6px;}
-#lib-list::-webkit-scrollbar{width:3px;}
-#lib-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
-#lib-empty{padding:20px 12px;font-size:12px;color:var(--muted);text-align:center;line-height:1.6;}
-.lib-item{background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:7px 9px;margin-bottom:4px;cursor:pointer;transition:all 0.12s;position:relative;}
-.lib-item:hover{border-color:var(--border2);}
-.lib-item.saved{border-color:rgba(0,255,157,0.3);background:rgba(0,255,157,0.04);}
-.lib-cat{font-family:var(--mono);font-size:9px;color:var(--muted);}
-.lib-name{font-size:11px;margin-top:2px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.lib-remove{position:absolute;top:4px;right:6px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:10px;}
-.lib-remove:hover{color:var(--accent3);}
-.lib-actions{padding:8px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px;}
-.lib-btn{background:none;border:1px solid var(--border2);color:var(--muted);font-family:var(--mono);font-size:10px;padding:6px;border-radius:4px;cursor:pointer;transition:all 0.12s;letter-spacing:0.05em;width:100%;}
-.lib-btn:hover{border-color:var(--accent);color:var(--accent);}
-.lib-btn.primary{border-color:rgba(0,255,157,0.3);color:var(--accent);}
-.lib-btn.primary:hover{background:rgba(0,255,157,0.1);}
-.lib-btn.danger{border-color:rgba(255,107,107,0.3);color:var(--accent3);}
-.lib-btn.danger:hover{background:rgba(255,107,107,0.1);}
+.nav-title {
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.02em;
+  font-style: italic;
+}
 
-/* Viewer area */
-#viewer-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;}
+.nav-issue {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--accent);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  border: 1px solid var(--accent);
+  padding: 2px 6px;
+}
 
-/* Upload bar */
-#upload-bar{padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0;}
-.upload-label{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:0.1em;}
-.hud-btn{background:none;border:1px solid var(--border2);color:var(--muted);font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:4px;cursor:pointer;transition:all 0.12s;letter-spacing:0.05em;white-space:nowrap;}
-.hud-btn:hover{border-color:var(--accent);color:var(--accent);}
-.hud-btn.accent{border-color:rgba(0,255,157,0.3);color:var(--accent);}
-.hud-btn.accent:hover{background:rgba(0,255,157,0.1);}
-.hud-btn:disabled{opacity:0.4;cursor:not-allowed;}
-#upload-filename{font-family:var(--mono);font-size:10px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-#upload-status{font-family:var(--mono);font-size:10px;color:var(--accent);white-space:nowrap;}
+.nav-tabs {
+  display: flex;
+  align-items: stretch;
+}
 
-/* APS viewer container */
-#aps-viewer{flex:1;position:relative;background:#1a1a2e;}
+.nav-tab {
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.4);
+  cursor: pointer;
+  border: none;
+  background: none;
+  border-right: 1px solid rgba(255,255,255,0.08);
+  transition: all 0.15s;
+  position: relative;
+}
 
-/* Empty state */
-#viewer-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:none;}
-.empty-icon{font-size:48px;opacity:0.2;}
-.empty-title{font-family:var(--mono);font-size:14px;color:var(--muted);letter-spacing:0.08em;}
-.empty-sub{font-size:12px;color:var(--muted);text-align:center;line-height:1.6;}
+.nav-tab:hover { color: rgba(255,255,255,0.8); }
 
-/* Inspector */
-#dis-inspector{width:280px;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;transform:translateX(100%);transition:transform 0.2s;}
-#dis-inspector.open{transform:translateX(0);}
-#insp-head{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
-#insp-label{font-family:var(--mono);font-size:10px;color:var(--accent);letter-spacing:0.08em;}
-#insp-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;}
-#insp-close:hover{color:var(--text);}
-#insp-save{background:rgba(0,255,157,0.1);border:1px solid rgba(0,255,157,0.3);color:var(--accent);font-family:var(--mono);font-size:10px;padding:4px 10px;border-radius:4px;cursor:pointer;letter-spacing:0.05em;transition:all 0.12s;}
-#insp-save:hover{background:rgba(0,255,157,0.2);}
-#insp-body{flex:1;overflow-y:auto;padding:12px 14px;}
-#insp-body::-webkit-scrollbar{width:3px;}
-#insp-body::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
-.insp-cat{display:inline-block;background:rgba(124,107,255,0.15);color:var(--accent2);font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:2px;margin-bottom:8px;}
-.insp-name{font-size:14px;font-weight:500;margin-bottom:12px;line-height:1.3;}
-.insp-sec{margin-bottom:14px;}
-.insp-sec-head{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:0.1em;margin-bottom:5px;padding-bottom:3px;border-bottom:1px solid var(--border);}
-.insp-row{display:flex;justify-content:space-between;padding:2px 0;font-size:11px;}
-.insp-k{color:var(--muted);}
-.insp-v{font-family:var(--mono);font-size:10px;color:var(--text);}
-.insp-v.hi{color:var(--accent);}
-.q-bar{width:100%;height:3px;background:var(--surface3);border-radius:2px;margin-top:5px;}
-.q-fill{height:100%;border-radius:2px;background:var(--accent);}
+.nav-tab.active {
+  color: #fff;
+  background: rgba(255,255,255,0.06);
+}
 
-/* ══ COMPOSE ══ */
-#page-compose{flex-direction:row;}
-#compose-lib{width:200px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;}
-#compose-lib-list{flex:1;overflow-y:auto;padding:6px;}
-#compose-main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
-#chat-area{flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:16px;}
-#chat-area::-webkit-scrollbar{width:4px;}
-#chat-area::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
-.chat-msg{display:flex;flex-direction:column;gap:4px;max-width:720px;}
-.chat-msg.user{align-self:flex-end;align-items:flex-end;}
-.chat-msg.assistant{align-self:flex-start;}
-.msg-role{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:0.08em;}
-.msg-bubble{padding:10px 14px;border-radius:8px;font-size:13px;line-height:1.65;max-width:600px;}
-.chat-msg.user .msg-bubble{background:var(--surface2);border:1px solid var(--border2);}
-.chat-msg.assistant .msg-bubble{background:var(--surface);border:1px solid var(--border);}
-.comp-ref{display:inline-flex;align-items:center;gap:5px;background:rgba(0,255,157,0.1);border:1px solid rgba(0,255,157,0.25);color:var(--accent);font-family:var(--mono);font-size:10px;padding:1px 7px;border-radius:3px;cursor:pointer;transition:all 0.1s;vertical-align:middle;margin:0 2px;}
-.comp-ref:hover{background:rgba(0,255,157,0.2);}
-.typing-dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent);margin:0 2px;animation:blink 1.2s ease-in-out infinite;}
-.typing-dot:nth-child(2){animation-delay:0.2s;}
-.typing-dot:nth-child(3){animation-delay:0.4s;}
-@keyframes blink{0%,80%,100%{opacity:0.2}40%{opacity:1}}
-#suggestions{padding:0 24px 12px;display:flex;gap:8px;flex-wrap:wrap;}
-.suggestion{background:var(--surface2);border:1px solid var(--border2);color:var(--muted);font-size:12px;padding:5px 12px;border-radius:20px;cursor:pointer;transition:all 0.12s;}
-.suggestion:hover{border-color:var(--accent2);color:var(--accent2);background:rgba(124,107,255,0.08);}
-#chat-input-bar{padding:12px 20px 16px;border-top:1px solid var(--border);display:flex;gap:10px;align-items:flex-end;}
-#chat-input{flex:1;background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-family:var(--sans);font-size:13px;padding:10px 14px;border-radius:6px;outline:none;resize:none;line-height:1.5;min-height:40px;max-height:120px;transition:border-color 0.15s;}
-#chat-input:focus{border-color:rgba(0,255,157,0.35);}
-#chat-input::placeholder{color:var(--muted);}
-#chat-send{background:rgba(0,255,157,0.12);border:1px solid rgba(0,255,157,0.3);color:var(--accent);font-family:var(--mono);font-size:11px;padding:9px 16px;border-radius:6px;cursor:pointer;letter-spacing:0.05em;transition:all 0.12s;white-space:nowrap;}
-#chat-send:hover{background:rgba(0,255,157,0.2);}
-#chat-send:disabled{opacity:0.4;cursor:not-allowed;}
+.nav-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+}
 
-/* LOADING */
-#loading{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:999;}
-.spin{width:28px;height:28px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin 0.7s linear infinite;}
-@keyframes spin{to{transform:rotate(360deg)}}
-.load-text{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:0.1em;}
+.nav-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 16px;
+}
 
-/* TOAST */
-#toast{position:fixed;bottom:24px;right:24px;background:var(--surface);border:1px solid var(--accent);border-radius:6px;padding:8px 16px;font-family:var(--mono);font-size:11px;color:var(--accent);opacity:0;transition:opacity 0.2s;pointer-events:none;z-index:999;}
-#toast.show{opacity:1;}
+.nav-stat {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: rgba(255,255,255,0.35);
+  letter-spacing: 0.06em;
+}
 
-/* APS viewer overrides */
-.adsk-viewing-viewer{background:#1a1a2e!important;}
+/* ── PAGES ── */
+.page { display: none; flex: 1; overflow: hidden; }
+.page.active { display: flex; }
+
+/* ══════════════════════════════════
+   DISASSEMBLE
+══════════════════════════════════ */
+#page-disassemble { flex-direction: row; }
+
+/* ── Library sidebar ── */
+#lib-sidebar {
+  width: 220px;
+  background: var(--ink);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  border-right: 3px solid var(--ink-mid);
+}
+
+.sidebar-head {
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.sidebar-label {
+  font-family: var(--mono);
+  font-size: 8px;
+  color: var(--muted);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.sidebar-title {
+  font-family: var(--display);
+  font-size: 16px;
+  color: #fff;
+  font-style: italic;
+}
+
+#lib-list { flex: 1; overflow-y: auto; padding: 8px; }
+#lib-list::-webkit-scrollbar { width: 2px; }
+#lib-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); }
+
+#lib-empty {
+  padding: 24px 12px;
+  font-family: var(--display);
+  font-size: 13px;
+  font-style: italic;
+  color: rgba(255,255,255,0.2);
+  text-align: center;
+  line-height: 1.7;
+}
+
+.lib-item {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-left: 2px solid transparent;
+  padding: 8px 10px;
+  margin-bottom: 3px;
+  cursor: pointer;
+  transition: all 0.12s;
+  position: relative;
+}
+
+.lib-item:hover {
+  background: rgba(255,255,255,0.07);
+  border-left-color: var(--gold);
+}
+
+.lib-item.saved { border-left-color: var(--accent); }
+
+.lib-cat {
+  font-family: var(--mono);
+  font-size: 8px;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.lib-name {
+  font-size: 11px;
+  margin-top: 2px;
+  color: rgba(255,255,255,0.8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 300;
+}
+
+.lib-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.2);
+  cursor: pointer;
+  font-size: 10px;
+  transition: color 0.1s;
+}
+
+.lib-remove:hover { color: var(--accent); }
+
+.sidebar-actions {
+  padding: 10px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sidebar-btn {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.5);
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 8px;
+  cursor: pointer;
+  transition: all 0.12s;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  width: 100%;
+  text-align: left;
+}
+
+.sidebar-btn:hover { border-color: var(--accent); color: var(--accent); }
+.sidebar-btn.reconstruct { border-color: rgba(200,80,42,0.4); color: var(--accent); }
+.sidebar-btn.reconstruct:hover { background: rgba(200,80,42,0.1); }
+.sidebar-btn.clear { border-color: rgba(255,255,255,0.06); }
+.sidebar-btn.clear:hover { border-color: rgba(255,255,255,0.3); color: rgba(255,255,255,0.6); }
+
+/* ── Viewer area ── */
+#viewer-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  background: #0f0f0f;
+}
+
+/* ── Upload bar ── */
+#upload-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px;
+  height: 44px;
+  background: var(--ink-light);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+}
+
+.upload-eyebrow {
+  font-family: var(--mono);
+  font-size: 8px;
+  color: var(--muted);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.upload-divider {
+  width: 1px;
+  height: 16px;
+  background: rgba(255,255,255,0.08);
+}
+
+.btn {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.btn-ghost {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.15);
+  color: rgba(255,255,255,0.6);
+}
+
+.btn-ghost:hover { border-color: rgba(255,255,255,0.4); color: #fff; }
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent);
+}
+
+.btn-primary:hover { background: #b84424; }
+.btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
+
+#upload-filename {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: rgba(255,255,255,0.35);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#upload-status {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--accent);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+/* ── APS viewer ── */
+#aps-viewer {
+  flex: 1;
+  position: relative;
+  background: #111;
+}
+
+/* ── Empty state ── */
+#viewer-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  pointer-events: none;
+}
+
+.empty-rule {
+  width: 40px;
+  height: 2px;
+  background: rgba(255,255,255,0.1);
+}
+
+.empty-headline {
+  font-family: var(--display);
+  font-size: 28px;
+  font-style: italic;
+  color: rgba(255,255,255,0.12);
+  text-align: center;
+  line-height: 1.3;
+}
+
+.empty-sub {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: rgba(255,255,255,0.2);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+/* ── Inspector ── */
+#dis-inspector {
+  width: 300px;
+  background: var(--paper);
+  border-left: 3px solid var(--ink);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  transform: translateX(100%);
+  transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
+}
+
+#dis-inspector.open { transform: translateX(0); }
+
+#insp-head {
+  padding: 16px 18px 14px;
+  border-bottom: 2px solid var(--ink);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  background: var(--ink);
+}
+
+#insp-category {
+  font-family: var(--mono);
+  font-size: 8px;
+  color: var(--accent);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+#insp-title {
+  font-family: var(--display);
+  font-size: 15px;
+  color: #fff;
+  font-style: italic;
+  line-height: 1.3;
+  max-width: 180px;
+}
+
+.insp-head-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+#insp-save {
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+#insp-save:hover { background: #b84424; }
+
+#insp-close {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.3);
+  cursor: pointer;
+  font-size: 12px;
+  transition: color 0.1s;
+  font-family: var(--mono);
+}
+
+#insp-close:hover { color: #fff; }
+
+#insp-body { flex: 1; overflow-y: auto; }
+#insp-body::-webkit-scrollbar { width: 2px; }
+#insp-body::-webkit-scrollbar-thumb { background: var(--rule-heavy); }
+
+.insp-section {
+  border-bottom: 1px solid var(--rule);
+  padding: 14px 18px;
+}
+
+.insp-section-label {
+  font-family: var(--mono);
+  font-size: 8px;
+  color: var(--muted);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.insp-section-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
+}
+
+.insp-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 3px 0;
+  font-size: 12px;
+}
+
+.insp-k {
+  color: var(--muted);
+  font-weight: 300;
+}
+
+.insp-v {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink);
+  font-weight: 400;
+}
+
+.insp-v.accent { color: var(--accent); font-weight: 500; }
+
+.quality-track {
+  width: 100%;
+  height: 2px;
+  background: var(--rule);
+  margin-top: 8px;
+}
+
+.quality-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
+.saved-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  padding: 4px 10px;
+  border: 1px solid var(--accent);
+  margin: 14px 18px 0;
+}
+
+/* ══════════════════════════════════
+   AI COMPOSE
+══════════════════════════════════ */
+#page-compose { flex-direction: row; }
+
+#compose-lib {
+  width: 220px;
+  background: var(--ink);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  border-right: 3px solid var(--ink-mid);
+  overflow: hidden;
+}
+
+#compose-lib-list { flex: 1; overflow-y: auto; padding: 8px; }
+
+#compose-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--paper); }
+
+#chat-area { flex: 1; overflow-y: auto; padding: 32px; display: flex; flex-direction: column; gap: 24px; }
+#chat-area::-webkit-scrollbar { width: 2px; }
+#chat-area::-webkit-scrollbar-thumb { background: var(--rule-heavy); }
+
+.chat-msg { display: flex; flex-direction: column; gap: 6px; max-width: 680px; }
+.chat-msg.user { align-self: flex-end; align-items: flex-end; }
+.chat-msg.assistant { align-self: flex-start; }
+
+.msg-role {
+  font-family: var(--mono);
+  font-size: 8px;
+  color: var(--muted);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.msg-bubble {
+  padding: 14px 18px;
+  font-size: 13px;
+  line-height: 1.7;
+  max-width: 560px;
+  font-weight: 300;
+}
+
+.chat-msg.user .msg-bubble {
+  background: var(--ink);
+  color: rgba(255,255,255,0.85);
+  border-left: 3px solid var(--accent);
+}
+
+.chat-msg.assistant .msg-bubble {
+  background: #fff;
+  color: var(--ink);
+  border-left: 3px solid var(--ink);
+  box-shadow: 2px 2px 0 var(--rule);
+}
+
+.comp-ref {
+  display: inline-flex;
+  align-items: center;
+  background: var(--ink);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 2px 8px;
+  cursor: pointer;
+  vertical-align: middle;
+  margin: 0 2px;
+  letter-spacing: 0.06em;
+  transition: background 0.1s;
+}
+
+.comp-ref:hover { background: var(--ink-mid); }
+
+.typing-dot {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  background: var(--muted);
+  margin: 0 2px;
+  animation: blink 1.2s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes blink { 0%,80%,100%{opacity:0.2} 40%{opacity:1} }
+
+#suggestions {
+  padding: 0 32px 16px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.suggestion {
+  background: none;
+  border: 1px solid var(--rule-heavy);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.suggestion:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+  background: var(--paper-dark);
+}
+
+#chat-input-bar {
+  padding: 14px 24px 18px;
+  border-top: 2px solid var(--ink);
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  background: var(--paper);
+}
+
+#chat-input {
+  flex: 1;
+  background: #fff;
+  border: 1px solid var(--rule-heavy);
+  border-left: 3px solid var(--ink);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 13px;
+  padding: 10px 14px;
+  outline: none;
+  resize: none;
+  line-height: 1.5;
+  min-height: 42px;
+  max-height: 120px;
+  transition: border-color 0.15s;
+  font-weight: 300;
+}
+
+#chat-input:focus { border-left-color: var(--accent); }
+#chat-input::placeholder { color: var(--muted); }
+
+#chat-send {
+  background: var(--ink);
+  border: none;
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 11px 18px;
+  cursor: pointer;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transition: background 0.12s;
+  white-space: nowrap;
+}
+
+#chat-send:hover { background: var(--ink-mid); }
+#chat-send:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ── LOADING ── */
+#loading {
+  position: fixed;
+  inset: 0;
+  background: var(--ink);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  z-index: 999;
+}
+
+.loading-title {
+  font-family: var(--display);
+  font-size: 32px;
+  font-style: italic;
+  color: rgba(255,255,255,0.9);
+  letter-spacing: 0.02em;
+}
+
+.loading-sub {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: rgba(255,255,255,0.25);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.loading-bar {
+  width: 120px;
+  height: 1px;
+  background: rgba(255,255,255,0.1);
+  position: relative;
+  overflow: hidden;
+}
+
+.loading-progress {
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: var(--accent);
+  animation: load 1.2s ease-in-out infinite;
+}
+
+@keyframes load { to { left: 100%; } }
+
+/* ── TOAST ── */
+#toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: var(--ink);
+  border-left: 3px solid var(--accent);
+  padding: 10px 18px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: rgba(255,255,255,0.85);
+  letter-spacing: 0.06em;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+  z-index: 999;
+}
+
+#toast.show { opacity: 1; }
+
+/* ── APS overrides ── */
+.adsk-viewing-viewer { background: #111 !important; }
+.adsk-button { border-radius: 0 !important; }
 </style>
 </head>
 <body>
 
-<div id="loading"><div class="spin"></div><span class="load-text">CONNECTING...</span></div>
+<div id="loading">
+  <div class="loading-title">BIM Studio</div>
+  <div class="loading-bar"><div class="loading-progress"></div></div>
+  <div class="loading-sub">Initialising</div>
+</div>
 
-<!-- NAV -->
+<!-- MASTHEAD -->
 <div id="nav">
-  <span class="nav-logo">▣ BIM STUDIO</span>
-  <div class="nav-sep"></div>
-  <button class="nav-tab active" data-page="disassemble">DISASSEMBLE</button>
-  <button class="nav-tab" data-page="compose">AI COMPOSE</button>
+  <div class="nav-brand">
+    <span class="nav-title">BIM Studio</span>
+    <span class="nav-issue">AEC</span>
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" data-page="disassemble">Disassemble</button>
+    <button class="nav-tab" data-page="compose">AI Compose</button>
+  </div>
   <div class="nav-right">
     <span class="nav-stat" id="nav-stat">—</span>
   </div>
@@ -167,37 +798,41 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);height:100vh
 <!-- ══ DISASSEMBLE ══ -->
 <div class="page active" id="page-disassemble">
 
-  <!-- Library sidebar -->
+  <!-- Library -->
   <div id="lib-sidebar">
-    <div class="panel-head">SAVED LIBRARY</div>
-    <div id="lib-list">
-      <div id="lib-empty">Upload an IFC file<br>then click components<br>to save them here</div>
+    <div class="sidebar-head">
+      <span class="sidebar-label">Component</span>
+      <span class="sidebar-title">Library</span>
     </div>
-    <div class="lib-actions">
-      <button class="lib-btn primary" id="btn-reconstruct">⟳ RECONSTRUCT</button>
-      <button class="lib-btn danger"  id="btn-clear-lib">✕ CLEAR LIBRARY</button>
+    <div id="lib-list">
+      <div id="lib-empty">Upload a file &amp; click components to build your library</div>
+    </div>
+    <div class="sidebar-actions">
+      <button class="sidebar-btn reconstruct" id="btn-reconstruct">⟳ &nbsp;Reconstruct</button>
+      <button class="sidebar-btn clear" id="btn-clear-lib">✕ &nbsp;Clear Library</button>
     </div>
   </div>
 
-  <!-- Viewer + upload bar -->
+  <!-- Viewer -->
   <div id="viewer-wrap">
 
     <!-- Upload bar -->
     <div id="upload-bar">
-      <span class="upload-label">IFC FILE</span>
+      <span class="upload-eyebrow">Source File</span>
+      <div class="upload-divider"></div>
       <input type="file" id="ifc-file-input" accept=".ifc" style="display:none">
-      <button class="hud-btn accent" onclick="document.getElementById('ifc-file-input').click()">CHOOSE FILE</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('ifc-file-input').click()">Choose IFC</button>
       <span id="upload-filename">No file selected</span>
-      <button class="hud-btn accent" id="btn-upload" disabled>PROCESS & UPLOAD</button>
+      <button class="btn btn-primary" id="btn-upload" disabled>Process &amp; Upload</button>
       <span id="upload-status"></span>
     </div>
 
     <!-- APS Viewer -->
     <div id="aps-viewer">
       <div id="viewer-empty">
-        <div class="empty-icon">▣</div>
-        <div class="empty-title">NO MODEL LOADED</div>
-        <div class="empty-sub">Upload an IFC file above to extract<br>components and view the 3D model</div>
+        <div class="empty-rule"></div>
+        <div class="empty-headline">No model<br>loaded</div>
+        <div class="empty-sub">Upload an IFC file to begin</div>
       </div>
     </div>
   </div>
@@ -205,9 +840,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);height:100vh
   <!-- Inspector -->
   <div id="dis-inspector">
     <div id="insp-head">
-      <span id="insp-label">COMPONENT</span>
-      <div style="display:flex;gap:8px;align-items:center">
-        <button id="insp-save">SAVE TO LIBRARY</button>
+      <div>
+        <div id="insp-category">Category</div>
+        <div id="insp-title">Component</div>
+      </div>
+      <div class="insp-head-actions">
+        <button id="insp-save">Save</button>
         <button id="insp-close">✕</button>
       </div>
     </div>
@@ -218,39 +856,40 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);height:100vh
 <!-- ══ COMPOSE ══ -->
 <div class="page" id="page-compose">
   <div id="compose-lib">
-    <div class="panel-head">COMPONENT LIBRARY</div>
+    <div class="sidebar-head">
+      <span class="sidebar-label">Saved</span>
+      <span class="sidebar-title">Components</span>
+    </div>
     <div id="compose-lib-list">
-      <div style="padding:20px 12px;font-size:12px;color:var(--muted);text-align:center;line-height:1.6;">Save components from<br>Disassemble view</div>
+      <div id="compose-lib-empty" style="padding:24px 12px;font-family:var(--display);font-size:13px;font-style:italic;color:rgba(255,255,255,0.2);text-align:center;line-height:1.7;">Save components from Disassemble view</div>
     </div>
   </div>
   <div id="compose-main">
     <div id="chat-area">
       <div class="chat-msg assistant">
-        <span class="msg-role">AI ARCHITECT</span>
+        <span class="msg-role">AI Architect</span>
         <div class="msg-bubble">
           I have access to your full component library extracted from IFC files. Ask me to find components, explain the building data, or compose something new.<br><br>
-          Try: <em>"What walls do we have?"</em> or <em>"Find all MEP components."</em>
+          <em>Try: "What walls do we have?" or "Find all MEP components."</em>
         </div>
       </div>
     </div>
     <div id="suggestions">
       <button class="suggestion">What components are in the library?</button>
       <button class="suggestion">Show me all walls and their dimensions</button>
-      <button class="suggestion">Explain the MEP systems extracted</button>
-      <button class="suggestion">What would a minimal house need from this library?</button>
+      <button class="suggestion">Explain the MEP systems</button>
+      <button class="suggestion">What would a minimal house need?</button>
     </div>
     <div id="chat-input-bar">
-      <textarea id="chat-input" placeholder="Ask about the building components..." rows="1"></textarea>
-      <button id="chat-send">SEND</button>
+      <textarea id="chat-input" placeholder="Ask about the building components…" rows="1"></textarea>
+      <button id="chat-send">Send</button>
     </div>
   </div>
 </div>
 
 <div id="toast"></div>
 
-<!-- APS Viewer SDK -->
 <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
-
 <script>
 // ─────────────────────────────────────────────────────────────────
 // STATE
@@ -268,44 +907,32 @@ let viewer            = null;
 async function initViewer(urn) {
   document.getElementById('viewer-empty').style.display = 'none';
 
-  // Get token from our backend
-  const tokenRes = await fetch('/api/aps/token');
+  const tokenRes  = await fetch('/api/aps/token');
   const tokenData = await tokenRes.json();
 
   const options = {
     env: 'AutodeskProduction2',
     api: 'streamingV2',
-    getAccessToken: (callback) => {
-      callback(tokenData.access_token, tokenData.expires_in);
-    }
+    getAccessToken: (cb) => cb(tokenData.access_token, tokenData.expires_in)
   };
 
   Autodesk.Viewing.Initializer(options, () => {
     const container = document.getElementById('aps-viewer');
-
-    if (viewer) {
-      viewer.finish();
-      viewer = null;
-    }
+    if (viewer) { viewer.finish(); viewer = null; }
 
     viewer = new Autodesk.Viewing.GuiViewer3D(container, {
       extensions: ['Autodesk.DocumentBrowser']
     });
     viewer.start();
 
-    const documentId = `urn:${urn}`;
-    Autodesk.Viewing.Document.load(documentId, (doc) => {
+    Autodesk.Viewing.Document.load(`urn:${urn}`, (doc) => {
       const viewables = doc.getRoot().getDefaultGeometry();
       viewer.loadDocumentNode(doc, viewables).then(() => {
-        // Wire selection event
-        viewer.addEventListener(
-          Autodesk.Viewing.SELECTION_CHANGED_EVENT,
-          onSelectionChanged
-        );
+        viewer.addEventListener(Autodesk.Viewing.SELECTION_CHANGED_EVENT, onSelectionChanged);
       });
-    }, (errorCode, errorMsg) => {
-      console.error('Failed to load document:', errorCode, errorMsg);
-      toast('Failed to load model in viewer');
+    }, (code, msg) => {
+      console.error('Load failed:', code, msg);
+      toast('Failed to load model');
     });
   });
 }
@@ -316,6 +943,7 @@ async function onSelectionChanged(event) {
   const dbId = ids[0];
 
   viewer.getProperties(dbId, async (props) => {
+    console.log(props.properties);
     let globalId = null;
     if (props.properties) {
       for (const prop of props.properties) {
@@ -325,11 +953,7 @@ async function onSelectionChanged(event) {
         }
       }
     }
-
-    if (!globalId) {
-      showRawInspector(props);
-      return;
-    }
+    if (!globalId) { showRawInspector(props); return; }
 
     try {
       const res = await fetch(`/api/component/by-revit-id/${globalId}`);
@@ -340,9 +964,7 @@ async function onSelectionChanged(event) {
       } else {
         showRawInspector(props);
       }
-    } catch(e) {
-      showRawInspector(props);
-    }
+    } catch(e) { showRawInspector(props); }
   });
 }
 
@@ -357,13 +979,13 @@ document.getElementById('ifc-file-input').onchange = function() {
 };
 
 document.getElementById('btn-upload').onclick = async function() {
-  const file   = document.getElementById('ifc-file-input').files[0];
+  const file = document.getElementById('ifc-file-input').files[0];
   if (!file) return;
 
   const status = document.getElementById('upload-status');
   const btn    = document.getElementById('btn-upload');
   btn.disabled = true;
-  status.textContent = '⟳ Running pipeline...';
+  status.textContent = '⟳ Processing…';
 
   const formData = new FormData();
   formData.append('file', file);
@@ -374,11 +996,9 @@ document.getElementById('btn-upload').onclick = async function() {
 
     if (data.status === 'done') {
       currentProjectId = data.project_id;
-      status.textContent = `✓ ${data.stats.components} components extracted`;
+      status.textContent = `✓ ${data.stats.components} components`;
       document.getElementById('nav-stat').textContent =
         `${data.stats.components} components · ${data.stats.relationships} relationships`;
-
-      // Load in APS viewer
       await initViewer(data.aps.urn);
       await refreshLibrary();
       toast(`Loaded: ${file.name}`);
@@ -387,7 +1007,6 @@ document.getElementById('btn-upload').onclick = async function() {
     }
   } catch(e) {
     status.textContent = '✕ Upload failed';
-    console.error(e);
   }
 
   btn.disabled = false;
@@ -397,52 +1016,51 @@ document.getElementById('btn-upload').onclick = async function() {
 // INSPECTOR
 // ─────────────────────────────────────────────────────────────────
 function showInspector(comp) {
-  const body  = document.getElementById('insp-body');
   const q     = comp.quality_score;
   const f     = v => v != null ? Number(v).toFixed(1) : '—';
   const inLib = library.some(l => l.id === comp.id);
 
-  body.innerHTML = `
-    <div class="insp-cat">${comp.category}</div>
-    <div class="insp-name">${comp.family_name || comp.type_name || '—'}</div>
-    <div class="insp-sec">
-      <div class="insp-sec-head">IDENTITY</div>
-      <div class="insp-row"><span class="insp-k">DB id</span><span class="insp-v hi">${comp.id}</span></div>
+  document.getElementById('insp-category').textContent = comp.category;
+  document.getElementById('insp-title').textContent    = comp.family_name || comp.type_name || '—';
+
+  document.getElementById('insp-body').innerHTML = `
+    <div class="insp-section">
+      <div class="insp-section-label">Identity</div>
+      <div class="insp-row"><span class="insp-k">DB id</span><span class="insp-v accent">${comp.id}</span></div>
       <div class="insp-row"><span class="insp-k">Level</span><span class="insp-v">${comp.level || '—'}</span></div>
       <div class="insp-row"><span class="insp-k">Project</span><span class="insp-v">${comp.project_name || '—'}</span></div>
     </div>
-    <div class="insp-sec">
-      <div class="insp-sec-head">DIMENSIONS</div>
+    <div class="insp-section">
+      <div class="insp-section-label">Dimensions</div>
       <div class="insp-row"><span class="insp-k">Width</span><span class="insp-v">${f(comp.width_mm)} mm</span></div>
       <div class="insp-row"><span class="insp-k">Height</span><span class="insp-v">${f(comp.height_mm)} mm</span></div>
       <div class="insp-row"><span class="insp-k">Length</span><span class="insp-v">${f(comp.length_mm)} mm</span></div>
       <div class="insp-row"><span class="insp-k">Area</span><span class="insp-v">${comp.area_m2 != null ? Number(comp.area_m2).toFixed(2)+' m²' : '—'}</span></div>
       <div class="insp-row"><span class="insp-k">Volume</span><span class="insp-v">${comp.volume_m3 != null ? Number(comp.volume_m3).toFixed(3)+' m³' : '—'}</span></div>
     </div>
-    <div class="insp-sec">
-      <div class="insp-sec-head">QUALITY</div>
-      <div class="insp-row"><span class="insp-k">Score</span><span class="insp-v hi">${q != null ? Number(q).toFixed(2) : '—'}</span></div>
-      ${q != null ? `<div class="q-bar"><div class="q-fill" style="width:${Math.round(q*100)}%"></div></div>` : ''}
+    <div class="insp-section">
+      <div class="insp-section-label">Data Quality</div>
+      <div class="insp-row"><span class="insp-k">Score</span><span class="insp-v accent">${q != null ? Number(q).toFixed(2) : '—'}</span></div>
+      ${q != null ? `<div class="quality-track"><div class="quality-fill" style="width:${Math.round(q*100)}%"></div></div>` : ''}
     </div>
-    ${inLib ? '<div style="color:var(--accent);font-family:var(--mono);font-size:10px;margin-top:8px;">✓ SAVED TO LIBRARY</div>' : ''}
+    ${inLib ? '<div class="saved-badge">✓ &nbsp;Saved to Library</div>' : ''}
   `;
 
-  document.getElementById('insp-save').textContent = inLib ? 'SAVED ✓' : 'SAVE TO LIBRARY';
+  document.getElementById('insp-save').textContent = inLib ? 'Saved ✓' : 'Save';
   document.getElementById('insp-save').onclick = () => saveComponent(comp);
   document.getElementById('dis-inspector').classList.add('open');
 }
 
 function showRawInspector(props) {
-  const body = document.getElementById('insp-body');
-  body.innerHTML = `
-    <div class="insp-cat">${props.objectName || 'Unknown'}</div>
-    <div class="insp-name">${props.name || '—'}</div>
-    <div class="insp-sec">
-      <div class="insp-sec-head">APS PROPERTIES</div>
-      <div class="insp-row"><span class="insp-k">DB ID</span><span class="insp-v hi">${props.dbId}</span></div>
+  document.getElementById('insp-category').textContent = 'Unknown';
+  document.getElementById('insp-title').textContent    = props.name || '—';
+  document.getElementById('insp-body').innerHTML = `
+    <div class="insp-section">
+      <div class="insp-section-label">APS Data</div>
+      <div class="insp-row"><span class="insp-k">DB ID</span><span class="insp-v accent">${props.dbId}</span></div>
       <div class="insp-row"><span class="insp-k">Ext ID</span><span class="insp-v">${props.externalId || '—'}</span></div>
     </div>
-    <div style="padding:10px 0;font-size:11px;color:var(--muted);">Component not found in database.</div>
+    <div style="padding:14px 18px;font-family:var(--mono);font-size:10px;color:var(--muted);">Not found in database.</div>
   `;
   document.getElementById('dis-inspector').classList.add('open');
 }
@@ -473,15 +1091,15 @@ async function saveComponent(comp) {
   if (data.status === 'saved' || data.status === 'already_saved') {
     await refreshLibrary();
     toast(`Saved: ${comp.family_name || comp.category}`);
-    if (selectedComponent && selectedComponent.id === comp.id) showInspector(comp);
+    if (selectedComponent?.id === comp.id) showInspector(comp);
   }
 }
 
-async function removeFromLibrary(componentId) {
+async function removeFromLibrary(id) {
   await fetch('/api/library/remove', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({component_id: componentId})
+    body: JSON.stringify({component_id: id})
   });
   await refreshLibrary();
 }
@@ -494,13 +1112,16 @@ async function clearLibrary() {
 }
 
 function renderLibrary() {
-  const list  = document.getElementById('lib-list');
-  const empty = document.getElementById('lib-empty');
+  const list   = document.getElementById('lib-list');
+  const empty  = document.getElementById('lib-empty');
+  const cList  = document.getElementById('compose-lib-list');
+  const cEmpty = document.getElementById('compose-lib-empty');
 
   if (library.length === 0) {
     list.innerHTML = '';
     empty.style.display = 'block';
     list.appendChild(empty);
+    if (cList) { cList.innerHTML = ''; if(cEmpty) { cEmpty.style.display='block'; cList.appendChild(cEmpty); } }
     return;
   }
 
@@ -512,30 +1133,22 @@ function renderLibrary() {
     item.innerHTML = `
       <div class="lib-cat">${comp.category.replace('Ifc','')}</div>
       <div class="lib-name">${comp.family_name || comp.type_name || '—'}</div>
-      <button class="lib-remove" title="Remove">✕</button>
+      <button class="lib-remove">✕</button>
     `;
     item.querySelector('.lib-remove').onclick = e => { e.stopPropagation(); removeFromLibrary(comp.id); };
     item.onclick = () => showInspector(comp);
     list.appendChild(item);
   });
 
-  // Sync compose tab
-  const composeList = document.getElementById('compose-lib-list');
-  if (composeList) {
-    composeList.innerHTML = '';
-    if (library.length === 0) {
-      composeList.innerHTML = '<div style="padding:20px 12px;font-size:12px;color:var(--muted);text-align:center;line-height:1.6;">Save components from<br>Disassemble view</div>';
-      return;
-    }
+  if (cList) {
+    if (cEmpty) cEmpty.style.display = 'none';
+    cList.innerHTML = '';
     library.forEach(comp => {
       const item = document.createElement('div');
       item.className = 'lib-item saved';
-      item.style.margin = '4px 6px';
-      item.innerHTML = `
-        <div class="lib-cat">${comp.category.replace('Ifc','')}</div>
-        <div class="lib-name">${comp.family_name || comp.type_name || '—'}</div>
-      `;
-      composeList.appendChild(item);
+      item.style.margin = '0 0 3px 0';
+      item.innerHTML = `<div class="lib-cat">${comp.category.replace('Ifc','')}</div><div class="lib-name">${comp.family_name || comp.type_name || '—'}</div>`;
+      cList.appendChild(item);
     });
   }
 }
@@ -548,7 +1161,7 @@ async function reconstruct() {
   if (library.length === 0) { toast('Save some components first'); return; }
 
   const btn = document.getElementById('btn-reconstruct');
-  btn.textContent = '⟳ WORKING...';
+  btn.textContent = '⟳  Working…';
   btn.disabled = true;
 
   try {
@@ -559,11 +1172,9 @@ async function reconstruct() {
     });
     const data = await res.json();
     toast(data.status === 'done' ? `Reconstructed: ${data.output || 'done'}` : 'Reconstruction failed');
-  } catch(e) {
-    toast('Reconstruction error');
-  }
+  } catch(e) { toast('Error'); }
 
-  btn.textContent = '⟳ RECONSTRUCT';
+  btn.textContent = '⟳  Reconstruct';
   btn.disabled = false;
 }
 
@@ -579,10 +1190,10 @@ function parseMessage(text) {
 }
 
 function addMessage(role, content, isHtml = false) {
-  const area = document.getElementById('chat-area');
-  const msg  = document.createElement('div');
+  const area  = document.getElementById('chat-area');
+  const msg   = document.createElement('div');
   msg.className = `chat-msg ${role}`;
-  const label = role === 'user' ? 'YOU' : 'AI ARCHITECT';
+  const label = role === 'user' ? 'You' : 'AI Architect';
   if (isHtml) {
     msg.innerHTML = `<span class="msg-role">${label}</span><div class="msg-bubble">${content}</div>`;
   } else {
@@ -599,7 +1210,7 @@ function addTypingIndicator() {
   const msg  = document.createElement('div');
   msg.className = 'chat-msg assistant';
   msg.id = 'typing-indicator';
-  msg.innerHTML = `<span class="msg-role">AI ARCHITECT</span><div class="msg-bubble"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>`;
+  msg.innerHTML = `<span class="msg-role">AI Architect</span><div class="msg-bubble"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>`;
   area.appendChild(msg);
   area.scrollTop = area.scrollHeight;
 }
@@ -657,7 +1268,7 @@ async function sendMessage() {
     }
   } catch(err) {
     document.getElementById('typing-indicator')?.remove();
-    addMessage('assistant', 'Connection error. Make sure the server is running.');
+    addMessage('assistant', 'Connection error.');
   }
 
   isStreaming = false;
@@ -677,10 +1288,10 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
   };
 });
 
-document.getElementById('insp-close').onclick        = closeInspector;
-document.getElementById('btn-reconstruct').onclick    = reconstruct;
-document.getElementById('btn-clear-lib').onclick      = clearLibrary;
-document.getElementById('chat-send').onclick          = sendMessage;
+document.getElementById('insp-close').onclick     = closeInspector;
+document.getElementById('btn-reconstruct').onclick = reconstruct;
+document.getElementById('btn-clear-lib').onclick   = clearLibrary;
+document.getElementById('chat-send').onclick       = sendMessage;
 
 document.getElementById('chat-input').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
