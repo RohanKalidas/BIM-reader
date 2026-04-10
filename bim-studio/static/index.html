@@ -316,6 +316,7 @@ async function onSelectionChanged(event) {
   const dbId = ids[0];
 
   viewer.getProperties(dbId, async (props) => {
+    console.log(props.properties)
     // Try to find the IFC GlobalId in the properties
     let globalId = null;
     if (props.properties) {
