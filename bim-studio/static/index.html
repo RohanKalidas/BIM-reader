@@ -18,6 +18,8 @@
   --mono:'DM Mono',monospace;--sans:'DM Sans',sans-serif;
 }
 body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100vh;overflow:hidden;display:flex;flex-direction:column;}
+
+/* NAV */
 #nav{display:flex;align-items:stretch;height:52px;background:var(--ink);flex-shrink:0;border-bottom:2px solid var(--accent);}
 .nav-brand{display:flex;align-items:center;padding:0 20px;border-right:1px solid var(--rule2);gap:10px;min-width:180px;}
 .nav-title{font-family:var(--display);font-size:17px;font-weight:700;color:#fff;font-style:italic;}
@@ -28,10 +30,15 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 .nav-tab.active{color:#fff;background:rgba(255,255,255,0.04);}
 .nav-tab.active::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--accent);}
 .nav-tab.gen-tab.active::after{background:var(--green);}
+.nav-tab.view-tab.active::after{background:var(--green);}
 .nav-right{margin-left:auto;display:flex;align-items:center;padding:0 20px;}
 .nav-stat{font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.06em;}
+
+/* PAGES */
 .page{display:none;flex:1;overflow:hidden;}
 .page.active{display:flex;}
+
+/* ══ DISASSEMBLE ══ */
 #page-disassemble{flex-direction:row;}
 #lib-sidebar{width:200px;background:var(--ink);display:flex;flex-direction:column;flex-shrink:0;border-right:1px solid var(--rule2);}
 .sidebar-head{padding:14px 14px 10px;border-bottom:1px solid var(--rule);}
@@ -104,25 +111,13 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 .comp-stat-v{font-family:var(--mono);font-size:10px;color:var(--text);}
 .comp-stat-v.hi{color:var(--accent);}
 .dot-arch{background:#8ecae6;}.dot-struct{background:#80b918;}.dot-mep{background:#ff6b6b;}.dot-other{background:#666;}
+
+/* ══ GENERATE (chat) ══ */
 #page-generate{flex-direction:row;}
-#spec-sidebar{width:240px;background:var(--ink);border-right:1px solid var(--rule2);display:flex;flex-direction:column;flex-shrink:0;}
-#spec-sidebar-head{padding:14px 14px 10px;border-bottom:1px solid var(--rule);}
-#spec-summary{flex:1;overflow-y:auto;padding:10px 12px;font-size:12px;font-weight:300;line-height:1.7;color:rgba(255,255,255,0.6);}
-#spec-summary::-webkit-scrollbar{width:2px;}
-.spec-section{margin-bottom:14px;}
-.spec-section-label{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.25);letter-spacing:0.18em;text-transform:uppercase;margin-bottom:5px;padding-bottom:3px;border-bottom:1px solid var(--rule);}
-.spec-val{color:var(--text);font-family:var(--mono);font-size:10px;}
-.spec-val.accent{color:var(--green);}
-.spec-actions{padding:10px;border-top:1px solid var(--rule);display:flex;flex-direction:column;gap:6px;}
-.spec-btn{background:none;border:1px solid var(--rule2);color:rgba(255,255,255,0.4);font-family:var(--mono);font-size:8px;padding:8px;cursor:pointer;transition:all 0.12s;letter-spacing:0.1em;text-transform:uppercase;width:100%;text-align:left;}
-.spec-btn.export{border-color:rgba(42,184,122,0.4);color:var(--green);}
-.spec-btn.export:hover{background:rgba(42,184,122,0.1);}
-.spec-btn.preview:hover{color:rgba(255,255,255,0.6);}
-.spec-btn:disabled{opacity:0.3;cursor:not-allowed;}
-#generate-main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--ink-light);}
-#generate-chat-area{flex:1;overflow-y:auto;padding:28px;display:flex;flex-direction:column;gap:20px;}
-#generate-chat-area::-webkit-scrollbar{width:2px;}
-#generate-chat-area::-webkit-scrollbar-thumb{background:var(--rule2);}
+#gen-main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--ink-light);}
+#gen-chat-area{flex:1;overflow-y:auto;padding:28px;display:flex;flex-direction:column;gap:20px;}
+#gen-chat-area::-webkit-scrollbar{width:2px;}
+#gen-chat-area::-webkit-scrollbar-thumb{background:var(--rule2);}
 .gen-msg{display:flex;flex-direction:column;gap:5px;max-width:780px;}
 .gen-msg.user{align-self:flex-end;align-items:flex-end;}
 .gen-msg.assistant{align-self:flex-start;}
@@ -130,7 +125,8 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 .gen-msg-bubble{padding:14px 18px;font-size:13px;line-height:1.75;max-width:680px;font-weight:300;}
 .gen-msg.user .gen-msg-bubble{background:var(--ink-mid);border-left:2px solid var(--accent);color:var(--text);}
 .gen-msg.assistant .gen-msg-bubble{background:rgba(255,255,255,0.04);border-left:2px solid var(--green);color:var(--text);}
-.spec-ready-badge{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:9px;letter-spacing:0.1em;color:var(--green);border:1px solid rgba(42,184,122,0.3);padding:4px 10px;margin-top:8px;}
+.spec-ready-badge{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:9px;letter-spacing:0.1em;color:var(--green);border:1px solid rgba(42,184,122,0.3);padding:4px 10px;margin-top:8px;cursor:pointer;}
+.spec-ready-badge:hover{background:rgba(42,184,122,0.08);}
 .typing-dot{display:inline-block;width:4px;height:4px;background:var(--muted);margin:0 2px;animation:blink 1.2s ease-in-out infinite;}
 .typing-dot:nth-child(2){animation-delay:0.2s;}.typing-dot:nth-child(3){animation-delay:0.4s;}
 @keyframes blink{0%,80%,100%{opacity:0.2}40%{opacity:1}}
@@ -144,13 +140,44 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 #gen-send{background:var(--green);border:none;color:#fff;font-family:var(--mono);font-size:9px;padding:11px 18px;cursor:pointer;letter-spacing:0.1em;text-transform:uppercase;transition:background 0.12s;white-space:nowrap;}
 #gen-send:hover{background:#22a86d;}
 #gen-send:disabled{opacity:0.35;cursor:not-allowed;}
-#gen-preview{width:360px;background:var(--ink);border-left:1px solid var(--rule2);display:flex;flex-direction:column;flex-shrink:0;}
-#gen-preview-head{padding:14px 14px 10px;border-bottom:1px solid var(--rule2);display:flex;align-items:center;justify-content:space-between;}
-.gen-preview-title{font-family:var(--display);font-size:14px;color:#fff;font-style:italic;}
+
+/* ══ GENERATED VIEW (full-screen model + plan) ══ */
+#page-view{flex-direction:row;}
+
+/* Left: building plan sidebar */
+#view-sidebar{width:260px;background:var(--ink);border-right:1px solid var(--rule2);display:flex;flex-direction:column;flex-shrink:0;}
+#view-sidebar-head{padding:14px 14px 10px;border-bottom:1px solid var(--rule2);display:flex;align-items:center;justify-content:space-between;}
+.view-sidebar-title{font-family:var(--display);font-size:15px;color:#fff;font-style:italic;}
+#view-plan-summary{flex:1;overflow-y:auto;padding:10px 12px;}
+#view-plan-summary::-webkit-scrollbar{width:2px;}
+.plan-section{margin-bottom:16px;}
+.plan-section-label{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.25);letter-spacing:0.18em;text-transform:uppercase;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid var(--rule);}
+.plan-val{color:var(--text);font-family:var(--mono);font-size:10px;line-height:1.6;}
+.plan-val.green{color:var(--green);}
+.plan-val.big{font-family:var(--display);font-size:16px;font-style:italic;color:#fff;}
+.plan-row{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--rule);font-size:11px;}
+.plan-row-k{color:rgba(255,255,255,0.35);font-weight:300;}
+.plan-row-v{font-family:var(--mono);font-size:10px;color:var(--text);}
+.plan-row-v.green{color:var(--green);}
+#view-actions{padding:10px;border-top:1px solid var(--rule);display:flex;flex-direction:column;gap:6px;}
+.view-btn{background:none;border:1px solid var(--rule2);color:rgba(255,255,255,0.4);font-family:var(--mono);font-size:8px;padding:8px 10px;cursor:pointer;transition:all 0.12s;letter-spacing:0.1em;text-transform:uppercase;width:100%;text-align:left;}
+.view-btn.export{border-color:rgba(42,184,122,0.4);color:var(--green);}
+.view-btn.export:hover{background:rgba(42,184,122,0.1);}
+.view-btn.back{border-color:var(--rule2);}
+.view-btn.back:hover{color:rgba(255,255,255,0.7);}
+.view-btn:disabled{opacity:0.3;cursor:not-allowed;}
+
+/* Centre: full APS viewer */
+#view-viewer-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+#view-bar{display:flex;align-items:center;gap:12px;padding:0 18px;height:42px;background:var(--ink-light);border-bottom:1px solid var(--rule2);flex-shrink:0;}
+.view-bar-title{font-family:var(--display);font-size:14px;font-style:italic;color:#fff;flex:1;}
+#view-status{font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.3);letter-spacing:0.06em;}
 #gen-aps-viewer{flex:1;position:relative;background:#0d0d0d;}
-#gen-viewer-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;pointer-events:none;}
-.gen-empty-headline{font-family:var(--display);font-size:18px;font-style:italic;color:rgba(255,255,255,0.08);text-align:center;}
-.gen-empty-sub{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.12);letter-spacing:0.15em;text-transform:uppercase;text-align:center;}
+#gen-viewer-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:none;}
+.gen-empty-headline{font-family:var(--display);font-size:22px;font-style:italic;color:rgba(255,255,255,0.08);text-align:center;}
+.gen-empty-sub{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.1);letter-spacing:0.15em;text-transform:uppercase;}
+
+/* LOADING */
 #loading{position:fixed;inset:0;background:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;z-index:999;}
 .loading-title{font-family:var(--display);font-size:28px;font-style:italic;color:rgba(255,255,255,0.85);}
 .loading-bar{width:100px;height:1px;background:rgba(255,255,255,0.08);position:relative;overflow:hidden;}
@@ -164,14 +191,18 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 </head>
 <body>
 <div id="loading"><div class="loading-title">BIM Studio</div><div class="loading-bar"><div class="loading-progress"></div></div><div class="loading-sub">Initialising</div></div>
+
 <div id="nav">
   <div class="nav-brand"><span class="nav-title">BIM Studio</span><span class="nav-issue">AEC</span></div>
   <div class="nav-tabs">
     <button class="nav-tab active" data-page="disassemble">Disassemble</button>
     <button class="nav-tab gen-tab" data-page="generate">Generate</button>
+    <button class="nav-tab view-tab" id="view-tab" data-page="view" style="display:none">◉ &nbsp;3D Model</button>
   </div>
   <div class="nav-right"><span class="nav-stat" id="nav-stat">—</span></div>
 </div>
+
+<!-- ══ DISASSEMBLE ══ -->
 <div class="page active" id="page-disassemble">
   <div id="lib-sidebar">
     <div class="sidebar-head"><span class="sidebar-label">Saved</span><span class="sidebar-title">Library</span></div>
@@ -201,44 +232,61 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
     <div id="comp-list"><div id="comp-empty-msg" style="padding:24px 12px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.15);text-align:center;line-height:1.7;">Upload an IFC file to see components</div></div>
   </div>
 </div>
+
+<!-- ══ GENERATE (chat) ══ -->
 <div class="page" id="page-generate">
-  <div id="spec-sidebar">
-    <div id="spec-sidebar-head"><span class="sidebar-label">Current</span><span class="sidebar-title">Building Plan</span></div>
-    <div id="spec-summary"><div id="spec-empty" style="padding:24px 12px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.15);text-align:center;line-height:1.7;">Describe a building to the AI and your plan will appear here</div></div>
-    <div class="spec-actions">
-      <button class="spec-btn export" id="btn-export-ifc" disabled>↓ &nbsp;Export IFC</button>
-      <button class="spec-btn preview" id="btn-preview-3d" disabled>◉ &nbsp;Preview in 3D</button>
-    </div>
-  </div>
-  <div id="generate-main">
-    <div id="generate-chat-area">
+  <div id="gen-main">
+    <div id="gen-chat-area">
       <div class="gen-msg assistant">
         <span class="gen-msg-role">AI Architect</span>
-        <div class="gen-msg-bubble">I'm your AI building designer. Tell me what you want to build and I'll create a complete plan — component selection from our IFC library, cost estimates, site analysis, and a downloadable IFC file.<br><br>Describe your building: <em>type, location, size, budget, timeline, materials, any special requirements.</em></div>
+        <div class="gen-msg-bubble">I'm your AI building designer. Tell me what you want to build and I'll create a complete plan — structure, MEP, electrical, finishes, cost estimates, and a downloadable IFC file.<br><br>Describe your building: <em>type, location, size, budget, timeline, any special requirements.</em></div>
       </div>
     </div>
     <div id="gen-suggestions">
       <button class="gen-suggestion">3-bedroom house in Austin TX, budget $400k</button>
       <button class="gen-suggestion">Small commercial office, 2 floors, London UK</button>
+      <button class="gen-suggestion">Basketball court and gym facility, Chicago IL</button>
       <button class="gen-suggestion">Apartment building, 5 floors, steel frame, Miami FL</button>
-      <button class="gen-suggestion">Add a second floor to the current plan</button>
     </div>
     <div id="gen-input-bar">
       <textarea id="gen-input" placeholder="Describe your building — type, location, size, budget, materials, timeline…" rows="1"></textarea>
       <button id="gen-send">Design</button>
     </div>
   </div>
-  <div id="gen-preview">
-    <div id="gen-preview-head">
-      <span class="gen-preview-title">3D Preview</span>
-      <span id="gen-preview-status" style="font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.25);">—</span>
+</div>
+
+<!-- ══ 3D VIEW (full screen generated model) ══ -->
+<div class="page" id="page-view">
+  <div id="view-sidebar">
+    <div id="view-sidebar-head">
+      <div><span class="sidebar-label">Generated</span><span class="view-sidebar-title">Building Plan</span></div>
     </div>
-    <div id="gen-aps-viewer"><div id="gen-viewer-empty"><div class="gen-empty-headline">No preview yet</div><div class="gen-empty-sub">Export IFC to see 3D preview</div></div></div>
+    <div id="view-plan-summary">
+      <div style="padding:24px 12px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.15);text-align:center;line-height:1.7;">Generate a building to see the plan</div>
+    </div>
+    <div id="view-actions">
+      <button class="view-btn export" id="btn-export-ifc" disabled>↓ &nbsp;Export IFC</button>
+      <button class="view-btn back" id="btn-back-to-chat">← &nbsp;Back to Chat</button>
+    </div>
+  </div>
+  <div id="view-viewer-wrap">
+    <div id="view-bar">
+      <span class="view-bar-title" id="view-building-name">No model loaded</span>
+      <span id="view-status">—</span>
+    </div>
+    <div id="gen-aps-viewer">
+      <div id="gen-viewer-empty">
+        <div class="gen-empty-headline">Awaiting generation</div>
+        <div class="gen-empty-sub">Describe a building in the Generate tab</div>
+      </div>
+    </div>
   </div>
 </div>
+
 <div id="toast"></div>
 <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
 <script>
+// ── CATEGORIES ────────────────────────────────────────────────────
 const ARCH=new Set(['IfcWall','IfcWallStandardCase','IfcWallElementedCase','IfcSlab','IfcRoof','IfcDoor','IfcWindow','IfcStair','IfcStairFlight','IfcRailing','IfcCurtainWall','IfcCovering','IfcFurnishingElement','IfcFurniture','IfcOpeningElement','IfcPlate','IfcMember']);
 const STRUCT=new Set(['IfcColumn','IfcColumnStandardCase','IfcBeam','IfcBeamStandardCase']);
 const MEP=new Set(['IfcDuctSegment','IfcDuctFitting','IfcPipeSegment','IfcPipeFitting','IfcAirTerminal','IfcValve','IfcPump','IfcFan','IfcFlowSegment','IfcFlowFitting','IfcFlowTerminal','IfcFlowController','IfcFlowMovingDevice','IfcFlowStorageDevice','IfcElectricAppliance','IfcLightFixture','IfcOutlet']);
@@ -246,11 +294,13 @@ const GROUP_LABELS={all:'All',arch:'Architecture',struct:'Structure',mep:'MEP',o
 function groupOf(c){if(ARCH.has(c))return'arch';if(STRUCT.has(c))return'struct';if(MEP.has(c))return'mep';return'other';}
 function dotClass(c){return'dot-'+groupOf(c);}
 
+// ── STATE ─────────────────────────────────────────────────────────
 let currentProjectId=null,allComponents=[],library=[],activeFilter='all';
 let viewer=null,genViewer=null,apsInitialized=false;
 let globalIdToDbId={},groupDbIds={};
 let genHistory=[],genSpec=null,genStreaming=false;
 
+// ── APS INIT ─────────────────────────────────────────────────────
 async function ensureApsInit(){
   if(apsInitialized)return;
   const td=await fetch('/api/aps/token').then(r=>r.json());
@@ -275,14 +325,16 @@ async function initViewer(urn){
 
 async function initGenViewer(urn){
   document.getElementById('gen-viewer-empty').style.display='none';
-  document.getElementById('gen-preview-status').textContent='Loading…';
+  document.getElementById('view-status').textContent='Loading…';
   await ensureApsInit();
   if(genViewer){genViewer.finish();genViewer=null;}
   genViewer=new Autodesk.Viewing.GuiViewer3D(document.getElementById('gen-aps-viewer'),{});
   genViewer.start();
   Autodesk.Viewing.Document.load('urn:'+urn,(doc)=>{
-    genViewer.loadDocumentNode(doc,doc.getRoot().getDefaultGeometry()).then(()=>{document.getElementById('gen-preview-status').textContent='Ready';});
-  },(c,m)=>{document.getElementById('gen-preview-status').textContent='Preview failed';});
+    genViewer.loadDocumentNode(doc,doc.getRoot().getDefaultGeometry()).then(()=>{
+      document.getElementById('view-status').textContent='Ready';
+    });
+  },(c,m)=>{document.getElementById('view-status').textContent='Preview failed';});
 }
 
 function buildGlobalIdMap(){
@@ -325,6 +377,7 @@ function highlightCompItem(id){
   if(el){el.classList.add('selected');el.scrollIntoView({behavior:'smooth',block:'nearest'});}
 }
 
+// ── FILE UPLOAD ───────────────────────────────────────────────────
 document.getElementById('ifc-file-input').onchange=function(){
   if(this.files[0]){document.getElementById('upload-filename').textContent=this.files[0].name;document.getElementById('btn-upload').disabled=false;}
 };
@@ -347,13 +400,12 @@ document.getElementById('btn-upload').onclick=async function(){
       await initViewer(data.aps.urn);
       await refreshLibrary();
       toast('Loaded: '+file.name);
-    }else{
-      status.textContent='✕ '+(data.error||'Error');
-    }
+    }else{status.textContent='✕ '+(data.error||'Error');}
   }catch(e){status.textContent='✕ Upload failed';console.error(e);}
   btn.disabled=false;
 };
 
+// ── DYNAMIC FILTERS ───────────────────────────────────────────────
 function buildDynamicFilters(){
   const gc={all:allComponents.length};
   allComponents.forEach(c=>{const g=groupOf(c.category);gc[g]=(gc[g]||0)+1;});
@@ -369,6 +421,7 @@ function buildDynamicFilters(){
   });
 }
 
+// ── COMPONENT PANEL ───────────────────────────────────────────────
 function renderCompPanel(){
   const list=document.getElementById('comp-list');
   if(!list)return;
@@ -382,10 +435,8 @@ function renderCompPanel(){
     var inLib=library.some(function(l){return l.id===comp.id;});
     var f=function(v){return v!=null?Number(v).toFixed(1):'—';};
     var item=document.createElement('div');
-    item.className='comp-item'+(inLib?' in-library':'');
-    item.dataset.id=comp.id;
-    var header=document.createElement('div');
-    header.className='comp-item-header';
+    item.className='comp-item'+(inLib?' in-library':'');item.dataset.id=comp.id;
+    var header=document.createElement('div');header.className='comp-item-header';
     var dot=document.createElement('div');dot.className='comp-dot '+dotClass(comp.category);
     var info=document.createElement('div');info.className='comp-item-info';
     info.innerHTML='<div class="comp-item-cat">'+comp.category.replace('Ifc','')+'</div><div class="comp-item-name">'+(comp.family_name||comp.type_name||'—')+'</div>';
@@ -397,70 +448,46 @@ function renderCompPanel(){
     header.appendChild(dot);header.appendChild(info);header.appendChild(saveBtn);header.appendChild(chevron);
     (function(it){header.onclick=function(){it.classList.toggle('open');};})(item);
     var body=document.createElement('div');body.className='comp-item-body';
-    body.innerHTML=
-      '<div class="comp-stat-row"><span class="comp-stat-k">DB id</span><span class="comp-stat-v hi">'+comp.id+'</span></div>'+
-      '<div class="comp-stat-row"><span class="comp-stat-k">Level</span><span class="comp-stat-v">'+(comp.level||'—')+'</span></div>'+
-      '<div class="comp-stat-row"><span class="comp-stat-k">Width</span><span class="comp-stat-v">'+f(comp.width_mm)+' mm</span></div>'+
-      '<div class="comp-stat-row"><span class="comp-stat-k">Height</span><span class="comp-stat-v">'+f(comp.height_mm)+' mm</span></div>'+
-      '<div class="comp-stat-row"><span class="comp-stat-k">Length</span><span class="comp-stat-v">'+f(comp.length_mm)+' mm</span></div>'+
-      '<div class="comp-stat-row"><span class="comp-stat-k">Area</span><span class="comp-stat-v">'+(comp.area_m2!=null?Number(comp.area_m2).toFixed(2)+' m²':'—')+'</span></div>';
+    body.innerHTML='<div class="comp-stat-row"><span class="comp-stat-k">DB id</span><span class="comp-stat-v hi">'+comp.id+'</span></div><div class="comp-stat-row"><span class="comp-stat-k">Level</span><span class="comp-stat-v">'+(comp.level||'—')+'</span></div><div class="comp-stat-row"><span class="comp-stat-k">Width</span><span class="comp-stat-v">'+f(comp.width_mm)+' mm</span></div><div class="comp-stat-row"><span class="comp-stat-k">Height</span><span class="comp-stat-v">'+f(comp.height_mm)+' mm</span></div><div class="comp-stat-row"><span class="comp-stat-k">Length</span><span class="comp-stat-v">'+f(comp.length_mm)+' mm</span></div><div class="comp-stat-row"><span class="comp-stat-k">Area</span><span class="comp-stat-v">'+(comp.area_m2!=null?Number(comp.area_m2).toFixed(2)+' m²':'—')+'</span></div>';
     item.appendChild(header);item.appendChild(body);
     list.appendChild(item);
   });
 }
 
+// ── LIBRARY ───────────────────────────────────────────────────────
 async function refreshLibrary(){
-  var res=await fetch('/api/library');
-  library=await res.json();
-  renderLibrary();
-  if(allComponents.length>0)renderCompPanel();
+  var res=await fetch('/api/library');library=await res.json();
+  renderLibrary();if(allComponents.length>0)renderCompPanel();
 }
-
 async function saveComponentById(id){
   var res=await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:id})});
   var data=await res.json();
-  if(data.status==='saved'||data.status==='already_saved'){
-    await refreshLibrary();
-    var comp=allComponents.find(function(c){return c.id===id;});
-    toast('Saved: '+(comp?comp.family_name||comp.category:id));
-  }
+  if(data.status==='saved'||data.status==='already_saved'){await refreshLibrary();var comp=allComponents.find(function(c){return c.id===id;});toast('Saved: '+(comp?comp.family_name||comp.category:id));}
 }
-
 async function saveAll(){
   var visible=activeFilter==='all'?allComponents:allComponents.filter(function(c){return groupOf(c.category)===activeFilter;});
   var unsaved=visible.filter(function(c){return !library.some(function(l){return l.id===c.id;});});
-  for(var i=0;i<unsaved.length;i++){
-    await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:unsaved[i].id})});
-  }
+  for(var i=0;i<unsaved.length;i++){await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:unsaved[i].id})});}
   await refreshLibrary();toast('Saved '+unsaved.length+' components');
 }
-
 async function removeFromLibrary(id){
   await fetch('/api/library/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:id})});
   await refreshLibrary();
 }
-
 async function clearLibrary(){
   if(!confirm('Clear the entire library?'))return;
-  await fetch('/api/library/clear',{method:'POST'});
-  await refreshLibrary();toast('Library cleared');
+  await fetch('/api/library/clear',{method:'POST'});await refreshLibrary();toast('Library cleared');
 }
-
 function renderLibrary(){
-  var list=document.getElementById('lib-list');
-  if(!list)return;
+  var list=document.getElementById('lib-list');if(!list)return;
   list.innerHTML='';
-  if(library.length===0){
-    list.innerHTML='<div id="lib-empty" style="padding:20px 10px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.18);text-align:center;line-height:1.7;">Click components or Save All to build your library</div>';
-    return;
-  }
+  if(library.length===0){list.innerHTML='<div id="lib-empty" style="padding:20px 10px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.18);text-align:center;line-height:1.7;">Click components or Save All to build your library</div>';return;}
   library.forEach(function(comp){
     var item=document.createElement('div');item.className='lib-item';item.dataset.compId=comp.id;
     item.innerHTML='<div class="lib-cat">'+comp.category.replace('Ifc','')+'</div><div class="lib-name">'+(comp.family_name||comp.type_name||'—')+'</div><button class="lib-remove" data-comp-id="'+comp.id+'">✕</button>';
     list.appendChild(item);
   });
 }
-
 document.getElementById('lib-list').addEventListener('click',function(e){
   var btn=e.target.closest('.lib-remove');
   if(btn){e.stopPropagation();removeFromLibrary(parseInt(btn.dataset.compId));}
@@ -470,50 +497,60 @@ async function reconstruct(){
   if(!currentProjectId){toast('Upload a file first');return;}
   if(library.length===0){toast('Save some components first');return;}
   var btn=document.getElementById('btn-reconstruct');btn.textContent='⟳ Working…';btn.disabled=true;
-  try{
-    var res=await fetch('/api/reconstruct',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project_id:currentProjectId})});
-    var data=await res.json();
-    toast(data.status==='done'?'Reconstructed: '+(data.output||'done'):'Reconstruction failed');
-  }catch(e){toast('Error');}
+  try{var res=await fetch('/api/reconstruct',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project_id:currentProjectId})});var data=await res.json();toast(data.status==='done'?'Reconstructed: '+(data.output||'done'):'Reconstruction failed');}catch(e){toast('Error');}
   btn.textContent='⟳ Reconstruct';btn.disabled=false;
 }
 
+// ── GENERATE CHAT ─────────────────────────────────────────────────
 function addGenMessage(role,content,isHtml){
-  var area=document.getElementById('generate-chat-area');
+  var area=document.getElementById('gen-chat-area');
   var msg=document.createElement('div');msg.className='gen-msg '+role;
   var label=role==='user'?'You':'AI Architect';
   if(isHtml){msg.innerHTML='<span class="gen-msg-role">'+label+'</span><div class="gen-msg-bubble">'+content+'</div>';}
   else{msg.innerHTML='<span class="gen-msg-role">'+label+'</span><div class="gen-msg-bubble"></div>';msg.querySelector('.gen-msg-bubble').textContent=content;}
   area.appendChild(msg);area.scrollTop=area.scrollHeight;return msg;
 }
-
 function addGenTyping(){
-  var area=document.getElementById('generate-chat-area');
+  var area=document.getElementById('gen-chat-area');
   var msg=document.createElement('div');msg.className='gen-msg assistant';msg.id='gen-typing';
   msg.innerHTML='<span class="gen-msg-role">AI Architect</span><div class="gen-msg-bubble"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>';
   area.appendChild(msg);area.scrollTop=area.scrollHeight;
 }
-
 function formatSpecText(t){return t.replace(/<building_spec>[\s\S]*?<\/building_spec>/g,'').replace(/\n/g,'<br>').trim();}
 
-function updateSpecSidebar(spec){
+function updatePlanSidebar(spec){
   if(!spec)return;
-  var s=document.getElementById('spec-summary');
+  var s=document.getElementById('view-plan-summary');
   var m=spec.metadata||{};var fl=spec.floors||[];
   var tc=fl.reduce(function(a,f){return a+(f.components||[]).length;},0);
-  s.innerHTML=
-    '<div class="spec-section"><div class="spec-section-label">Building</div><div class="spec-val"><span style="font-family:var(--display);font-size:14px;font-style:italic;">'+(spec.name||'—')+'</span>'+(m.building_type?'<div style="margin-top:4px;font-size:11px;color:rgba(255,255,255,0.4);">'+m.building_type+'</div>':'')+'</div></div>'+
-    (m.location?'<div class="spec-section"><div class="spec-section-label">Location</div><div class="spec-val">'+m.location+'</div></div>':'')+
-    '<div class="spec-section"><div class="spec-section-label">Scale</div><div class="spec-val">'+fl.length+' floor'+(fl.length!==1?'s':'')+' · '+tc+' components'+(m.gross_floor_area_m2?'<div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px;">'+m.gross_floor_area_m2+' m² GFA</div>':'')+'</div></div>'+
-    (m.estimated_cost_usd?'<div class="spec-section"><div class="spec-section-label">Cost Estimate</div><div class="spec-val accent">$'+Number(m.estimated_cost_usd).toLocaleString()+'</div></div>':'')+
-    (m.estimated_duration_months?'<div class="spec-section"><div class="spec-section-label">Timeline</div><div class="spec-val">'+m.estimated_duration_months+' months</div></div>':'')+
-    (m.structural_system?'<div class="spec-section"><div class="spec-section-label">Structure</div><div class="spec-val">'+m.structural_system+'</div></div>':'')+
-    (m.primary_material?'<div class="spec-section"><div class="spec-section-label">Materials</div><div class="spec-val">'+m.primary_material+'</div></div>':'')+
-    (m.site_concerns?'<div class="spec-section"><div class="spec-section-label">Site Notes</div><div class="spec-val" style="font-size:11px;color:rgba(255,255,255,0.5);">'+m.site_concerns+'</div></div>':'')+
-    (m.building_code?'<div class="spec-section"><div class="spec-section-label">Code</div><div class="spec-val">'+m.building_code+'</div></div>':'')+
-    '<div class="spec-section"><div class="spec-section-label">Floors</div>'+fl.map(function(f){return'<div style="font-size:11px;color:rgba(255,255,255,0.5);padding:2px 0;">'+f.name+' — '+(f.components||[]).length+' components</div>';}).join('')+'</div>';
+  var html='<div class="plan-section"><div class="plan-section-label">Building</div><div class="plan-val big">'+(spec.name||'—')+'</div>'+(m.building_type?'<div class="plan-val" style="margin-top:4px;color:rgba(255,255,255,0.4);">'+m.building_type+'</div>':'')+'</div>';
+  if(m.location)html+='<div class="plan-section"><div class="plan-section-label">Location</div><div class="plan-val">'+m.location+'</div></div>';
+  html+='<div class="plan-section"><div class="plan-section-label">Scale</div>';
+  html+='<div class="plan-row"><span class="plan-row-k">Floors</span><span class="plan-row-v">'+fl.length+'</span></div>';
+  html+='<div class="plan-row"><span class="plan-row-k">Components</span><span class="plan-row-v">'+tc+'</span></div>';
+  if(m.gross_floor_area_m2)html+='<div class="plan-row"><span class="plan-row-k">GFA</span><span class="plan-row-v">'+m.gross_floor_area_m2+' m²</span></div>';
+  if(m.floors_above_ground)html+='<div class="plan-row"><span class="plan-row-k">Above ground</span><span class="plan-row-v">'+m.floors_above_ground+'</span></div>';
+  html+='</div>';
+  if(m.estimated_cost_usd){
+    html+='<div class="plan-section"><div class="plan-section-label">Cost Estimate</div><div class="plan-val big green">$'+Number(m.estimated_cost_usd).toLocaleString()+'</div>';
+    var cb=m.cost_breakdown;
+    if(cb){
+      ['structure_usd','envelope_usd','fitout_usd','hvac_usd','plumbing_usd','electrical_usd','fire_usd','site_prelim_usd'].forEach(function(k){
+        if(cb[k])html+='<div class="plan-row"><span class="plan-row-k">'+k.replace('_usd','').replace('_',' ')+'</span><span class="plan-row-v">$'+Number(cb[k]).toLocaleString()+'</span></div>';
+      });
+    }
+    html+='</div>';
+  }
+  if(m.estimated_duration_months)html+='<div class="plan-section"><div class="plan-section-label">Timeline</div><div class="plan-val">'+m.estimated_duration_months+' months</div></div>';
+  if(m.structural_system)html+='<div class="plan-section"><div class="plan-section-label">Structure</div><div class="plan-val">'+m.structural_system+'</div></div>';
+  if(m.primary_material)html+='<div class="plan-section"><div class="plan-section-label">Materials</div><div class="plan-val">'+m.primary_material+'</div></div>';
+  if(m.site_concerns)html+='<div class="plan-section"><div class="plan-section-label">Site Notes</div><div class="plan-val" style="font-size:11px;color:rgba(255,255,255,0.5);">'+m.site_concerns+'</div></div>';
+  if(m.building_code)html+='<div class="plan-section"><div class="plan-section-label">Code</div><div class="plan-val">'+m.building_code+'</div></div>';
+  html+='<div class="plan-section"><div class="plan-section-label">Floors</div>'+fl.map(function(f){return'<div class="plan-row"><span class="plan-row-k">'+f.name+'</span><span class="plan-row-v">'+(f.components||[]).length+' components</span></div>';}).join('')+'</div>';
+  s.innerHTML=html;
   document.getElementById('btn-export-ifc').disabled=false;
-  document.getElementById('btn-preview-3d').disabled=false;
+  document.getElementById('view-building-name').textContent=spec.name||'Generated Building';
+  document.getElementById('view-tab').style.display='flex';
 }
 
 async function sendGenMessage(){
@@ -540,12 +577,18 @@ async function sendGenMessage(){
             var ti=document.getElementById('gen-typing');if(ti)ti.remove();
             if(!aiMsg)aiMsg=addGenMessage('assistant','',true);
             aiMsg.querySelector('.gen-msg-bubble').innerHTML=formatSpecText(fullText);
-            document.getElementById('generate-chat-area').scrollTop=9999;
+            document.getElementById('gen-chat-area').scrollTop=9999;
           }else if(data.type==='spec'&&data.spec){
-            genSpec=data.spec;updateSpecSidebar(genSpec);
-            if(aiMsg){var badge=document.createElement('div');badge.className='spec-ready-badge';badge.innerHTML='✓ &nbsp;Building plan ready — generating 3D preview…';aiMsg.querySelector('.gen-msg-bubble').appendChild(badge);}
-            // Auto-trigger IFC generation and 3D preview
-            autoPreview();
+            genSpec=data.spec;
+            updatePlanSidebar(genSpec);
+            if(aiMsg){
+              var badge=document.createElement('div');
+              badge.className='spec-ready-badge';
+              badge.innerHTML='✓ &nbsp;Building plan ready — <strong>click to view in 3D</strong>';
+              badge.onclick=function(){switchToView();};
+              aiMsg.querySelector('.gen-msg-bubble').appendChild(badge);
+            }
+            autoGenerateAndView();
           }else if(data.type==='done'){genHistory.push({role:'assistant',content:fullText});}
         }catch(e){}
       }
@@ -554,26 +597,31 @@ async function sendGenMessage(){
   genStreaming=false;document.getElementById('gen-send').disabled=false;
 }
 
-async function autoPreview(){
+async function autoGenerateAndView(){
   if(!genSpec)return;
+  document.getElementById('view-status').textContent='Generating IFC…';
   try{
-    document.getElementById('gen-preview-status').textContent='Generating IFC…';
     var res=await fetch('/api/generate/ifc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec:genSpec,upload_preview:true})});
     var data=await res.json();
     if(data.status==='done'&&data.aps){
       await initGenViewer(data.aps.urn);
-      // Update the badge
+      document.getElementById('view-status').textContent='Ready';
+      // Update badge
       var badges=document.querySelectorAll('.spec-ready-badge');
-      if(badges.length>0)badges[badges.length-1].innerHTML='✓ &nbsp;3D preview ready — ask for changes or export IFC';
+      if(badges.length>0)badges[badges.length-1].innerHTML='✓ &nbsp;3D model ready — <strong>click to open viewer</strong>';
+      toast('3D model ready — switch to 3D Model tab');
     }else if(data.aps_error){
-      document.getElementById('gen-preview-status').textContent='Preview failed';
-      var badges=document.querySelectorAll('.spec-ready-badge');
-      if(badges.length>0)badges[badges.length-1].innerHTML='✓ &nbsp;Plan ready — export IFC to download';
+      document.getElementById('view-status').textContent='APS failed';
     }
-  }catch(e){
-    console.error('autoPreview error',e);
-    document.getElementById('gen-preview-status').textContent='—';
-  }
+  }catch(e){console.error('autoGenerateAndView error',e);document.getElementById('view-status').textContent='Error';}
+}
+
+function switchToView(){
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('view-tab').classList.add('active');
+  document.getElementById('page-view').classList.add('active');
+  if(genViewer)setTimeout(()=>genViewer.resize(),50);
 }
 
 async function exportIfc(){
@@ -588,19 +636,7 @@ async function exportIfc(){
   btn.textContent='↓ Export IFC';btn.disabled=false;
 }
 
-async function previewIn3D(){
-  if(!genSpec){toast('No building plan yet');return;}
-  var btn=document.getElementById('btn-preview-3d');btn.textContent='◉ Uploading…';btn.disabled=true;
-  document.getElementById('gen-preview-status').textContent='Uploading…';
-  try{
-    var res=await fetch('/api/generate/ifc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec:genSpec,upload_preview:true})});
-    var data=await res.json();
-    if(data.status==='done'&&data.aps){await initGenViewer(data.aps.urn);toast('3D preview ready');}
-    else{toast('APS upload failed — try Export IFC instead');}
-  }catch(e){toast('Preview error');}
-  btn.textContent='◉ Preview in 3D';btn.disabled=false;
-}
-
+// ── NAV ───────────────────────────────────────────────────────────
 document.querySelectorAll('.nav-tab').forEach(function(tab){
   tab.onclick=function(){
     document.querySelectorAll('.nav-tab').forEach(function(t){t.classList.remove('active');});
@@ -608,7 +644,7 @@ document.querySelectorAll('.nav-tab').forEach(function(tab){
     tab.classList.add('active');
     document.getElementById('page-'+tab.dataset.page).classList.add('active');
     if(tab.dataset.page==='disassemble'&&viewer)setTimeout(function(){viewer.resize();},50);
-    if(tab.dataset.page==='generate'&&genViewer)setTimeout(function(){genViewer.resize();},50);
+    if(tab.dataset.page==='view'&&genViewer)setTimeout(function(){genViewer.resize();},50);
   };
 });
 
@@ -616,14 +652,21 @@ document.getElementById('btn-save-all').onclick=saveAll;
 document.getElementById('btn-reconstruct').onclick=reconstruct;
 document.getElementById('btn-clear-lib').onclick=clearLibrary;
 document.getElementById('btn-export-ifc').onclick=exportIfc;
-document.getElementById('btn-preview-3d').onclick=previewIn3D;
+document.getElementById('btn-back-to-chat').onclick=function(){
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelector('[data-page="generate"]').classList.add('active');
+  document.getElementById('page-generate').classList.add('active');
+};
 document.getElementById('gen-send').onclick=sendGenMessage;
 document.getElementById('gen-input').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendGenMessage();}});
 document.getElementById('gen-input').addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,160)+'px';});
 document.querySelectorAll('.gen-suggestion').forEach(function(s){s.onclick=function(){document.getElementById('gen-input').value=s.textContent;sendGenMessage();};});
 
+// ── TOAST ─────────────────────────────────────────────────────────
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2800);}
 
+// ── INIT ──────────────────────────────────────────────────────────
 async function init(){await refreshLibrary();document.getElementById('loading').style.display='none';}
 init();
 </script>
