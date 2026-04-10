@@ -18,7 +18,6 @@
   --mono:'DM Mono',monospace;--sans:'DM Sans',sans-serif;
 }
 body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100vh;overflow:hidden;display:flex;flex-direction:column;}
-/* NAV */
 #nav{display:flex;align-items:stretch;height:52px;background:var(--ink);flex-shrink:0;border-bottom:2px solid var(--accent);}
 .nav-brand{display:flex;align-items:center;padding:0 20px;border-right:1px solid var(--rule2);gap:10px;min-width:180px;}
 .nav-title{font-family:var(--display);font-size:17px;font-weight:700;color:#fff;font-style:italic;}
@@ -31,10 +30,8 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 .nav-tab.gen-tab.active::after{background:var(--green);}
 .nav-right{margin-left:auto;display:flex;align-items:center;padding:0 20px;}
 .nav-stat{font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.06em;}
-/* PAGES */
 .page{display:none;flex:1;overflow:hidden;}
 .page.active{display:flex;}
-/* ── DISASSEMBLE ── */
 #page-disassemble{flex-direction:row;}
 #lib-sidebar{width:200px;background:var(--ink);display:flex;flex-direction:column;flex-shrink:0;border-right:1px solid var(--rule2);}
 .sidebar-head{padding:14px 14px 10px;border-bottom:1px solid var(--rule);}
@@ -43,7 +40,6 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 #lib-list{flex:1;overflow-y:auto;padding:6px;}
 #lib-list::-webkit-scrollbar{width:2px;}
 #lib-list::-webkit-scrollbar-thumb{background:var(--rule2);}
-#lib-empty{padding:20px 10px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.18);text-align:center;line-height:1.7;}
 .lib-item{background:rgba(255,255,255,0.03);border:1px solid var(--rule);border-left:2px solid var(--accent);padding:7px 9px;margin-bottom:3px;cursor:pointer;transition:all 0.12s;position:relative;}
 .lib-item:hover{background:rgba(255,255,255,0.06);}
 .lib-cat{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.3);letter-spacing:0.1em;text-transform:uppercase;}
@@ -87,7 +83,6 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 #comp-list{flex:1;overflow-y:auto;padding:6px;}
 #comp-list::-webkit-scrollbar{width:2px;}
 #comp-list::-webkit-scrollbar-thumb{background:var(--rule2);}
-#comp-empty-msg{padding:24px 12px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.15);text-align:center;line-height:1.7;}
 .comp-item{border:1px solid var(--rule);margin-bottom:3px;transition:border-color 0.12s;}
 .comp-item.selected{border-color:var(--accent);}
 .comp-item.in-library{border-left:2px solid var(--gold);}
@@ -109,7 +104,6 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 .comp-stat-v{font-family:var(--mono);font-size:10px;color:var(--text);}
 .comp-stat-v.hi{color:var(--accent);}
 .dot-arch{background:#8ecae6;}.dot-struct{background:#80b918;}.dot-mep{background:#ff6b6b;}.dot-other{background:#666;}
-/* ── GENERATE ── */
 #page-generate{flex-direction:row;}
 #spec-sidebar{width:240px;background:var(--ink);border-right:1px solid var(--rule2);display:flex;flex-direction:column;flex-shrink:0;}
 #spec-sidebar-head{padding:14px 14px 10px;border-bottom:1px solid var(--rule);}
@@ -125,7 +119,6 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 .spec-btn.export:hover{background:rgba(42,184,122,0.1);}
 .spec-btn.preview:hover{color:rgba(255,255,255,0.6);}
 .spec-btn:disabled{opacity:0.3;cursor:not-allowed;}
-#spec-empty{padding:24px 12px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.15);text-align:center;line-height:1.7;}
 #generate-main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--ink-light);}
 #generate-chat-area{flex:1;overflow-y:auto;padding:28px;display:flex;flex-direction:column;gap:20px;}
 #generate-chat-area::-webkit-scrollbar{width:2px;}
@@ -158,14 +151,12 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 #gen-viewer-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;pointer-events:none;}
 .gen-empty-headline{font-family:var(--display);font-size:18px;font-style:italic;color:rgba(255,255,255,0.08);text-align:center;}
 .gen-empty-sub{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.12);letter-spacing:0.15em;text-transform:uppercase;text-align:center;}
-/* LOADING */
 #loading{position:fixed;inset:0;background:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;z-index:999;}
 .loading-title{font-family:var(--display);font-size:28px;font-style:italic;color:rgba(255,255,255,0.85);}
 .loading-bar{width:100px;height:1px;background:rgba(255,255,255,0.08);position:relative;overflow:hidden;}
 .loading-progress{position:absolute;top:0;left:-100%;width:100%;height:100%;background:var(--accent);animation:load 1.2s ease-in-out infinite;}
 @keyframes load{to{left:100%;}}
 .loading-sub{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.2);letter-spacing:0.2em;text-transform:uppercase;}
-/* TOAST */
 #toast{position:fixed;bottom:20px;right:20px;background:var(--ink-light);border-left:2px solid var(--accent);padding:8px 16px;font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.8);opacity:0;transition:opacity 0.2s;pointer-events:none;z-index:999;}
 #toast.show{opacity:1;}
 .adsk-viewing-viewer{background:#111 !important;}
@@ -181,12 +172,10 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
   </div>
   <div class="nav-right"><span class="nav-stat" id="nav-stat">—</span></div>
 </div>
-
-<!-- DISASSEMBLE -->
 <div class="page active" id="page-disassemble">
   <div id="lib-sidebar">
     <div class="sidebar-head"><span class="sidebar-label">Saved</span><span class="sidebar-title">Library</span></div>
-    <div id="lib-list"><div id="lib-empty">Click components or Save All to build your library</div></div>
+    <div id="lib-list"><div id="lib-empty" style="padding:20px 10px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.18);text-align:center;line-height:1.7;">Click components or Save All to build your library</div></div>
     <div class="sidebar-actions">
       <button class="sidebar-btn reconstruct" id="btn-reconstruct">⟳ &nbsp;Reconstruct</button>
       <button class="sidebar-btn clear" id="btn-clear-lib">✕ &nbsp;Clear Library</button>
@@ -209,15 +198,13 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
       <button id="btn-save-all">Save All</button>
     </div>
     <div id="comp-filters"><button class="comp-filter active" data-filter="all">All</button></div>
-    <div id="comp-list"><div id="comp-empty-msg">Upload an IFC file to see components</div></div>
+    <div id="comp-list"><div id="comp-empty-msg" style="padding:24px 12px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.15);text-align:center;line-height:1.7;">Upload an IFC file to see components</div></div>
   </div>
 </div>
-
-<!-- GENERATE -->
 <div class="page" id="page-generate">
   <div id="spec-sidebar">
     <div id="spec-sidebar-head"><span class="sidebar-label">Current</span><span class="sidebar-title">Building Plan</span></div>
-    <div id="spec-summary"><div id="spec-empty">Describe a building to the AI and your plan will appear here</div></div>
+    <div id="spec-summary"><div id="spec-empty" style="padding:24px 12px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.15);text-align:center;line-height:1.7;">Describe a building to the AI and your plan will appear here</div></div>
     <div class="spec-actions">
       <button class="spec-btn export" id="btn-export-ifc" disabled>↓ &nbsp;Export IFC</button>
       <button class="spec-btn preview" id="btn-preview-3d" disabled>◉ &nbsp;Preview in 3D</button>
@@ -227,10 +214,7 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
     <div id="generate-chat-area">
       <div class="gen-msg assistant">
         <span class="gen-msg-role">AI Architect</span>
-        <div class="gen-msg-bubble">
-          I'm your AI building designer. Tell me what you want to build and I'll create a complete plan — component selection from our IFC library, cost estimates, site analysis, and a downloadable IFC file.<br><br>
-          Describe your building: <em>type, location, size, budget, timeline, materials, any special requirements.</em>
-        </div>
+        <div class="gen-msg-bubble">I'm your AI building designer. Tell me what you want to build and I'll create a complete plan — component selection from our IFC library, cost estimates, site analysis, and a downloadable IFC file.<br><br>Describe your building: <em>type, location, size, budget, timeline, materials, any special requirements.</em></div>
       </div>
     </div>
     <div id="gen-suggestions">
@@ -249,19 +233,12 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
       <span class="gen-preview-title">3D Preview</span>
       <span id="gen-preview-status" style="font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.25);">—</span>
     </div>
-    <div id="gen-aps-viewer">
-      <div id="gen-viewer-empty">
-        <div class="gen-empty-headline">No preview yet</div>
-        <div class="gen-empty-sub">Export IFC to see 3D preview</div>
-      </div>
-    </div>
+    <div id="gen-aps-viewer"><div id="gen-viewer-empty"><div class="gen-empty-headline">No preview yet</div><div class="gen-empty-sub">Export IFC to see 3D preview</div></div></div>
   </div>
 </div>
-
 <div id="toast"></div>
 <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
 <script>
-// ── CATEGORY HELPERS ──────────────────────────────────────────────
 const ARCH=new Set(['IfcWall','IfcWallStandardCase','IfcWallElementedCase','IfcSlab','IfcRoof','IfcDoor','IfcWindow','IfcStair','IfcStairFlight','IfcRailing','IfcCurtainWall','IfcCovering','IfcFurnishingElement','IfcFurniture','IfcOpeningElement','IfcPlate','IfcMember']);
 const STRUCT=new Set(['IfcColumn','IfcColumnStandardCase','IfcBeam','IfcBeamStandardCase']);
 const MEP=new Set(['IfcDuctSegment','IfcDuctFitting','IfcPipeSegment','IfcPipeFitting','IfcAirTerminal','IfcValve','IfcPump','IfcFan','IfcFlowSegment','IfcFlowFitting','IfcFlowTerminal','IfcFlowController','IfcFlowMovingDevice','IfcFlowStorageDevice','IfcElectricAppliance','IfcLightFixture','IfcOutlet']);
@@ -269,30 +246,24 @@ const GROUP_LABELS={all:'All',arch:'Architecture',struct:'Structure',mep:'MEP',o
 function groupOf(c){if(ARCH.has(c))return'arch';if(STRUCT.has(c))return'struct';if(MEP.has(c))return'mep';return'other';}
 function dotClass(c){return'dot-'+groupOf(c);}
 
-// ── STATE ─────────────────────────────────────────────────────────
 let currentProjectId=null,allComponents=[],library=[],activeFilter='all';
 let viewer=null,genViewer=null,apsInitialized=false;
 let globalIdToDbId={},groupDbIds={};
 let genHistory=[],genSpec=null,genStreaming=false;
 
-// ── APS INIT (shared, called once) ───────────────────────────────
 async function ensureApsInit(){
   if(apsInitialized)return;
   const td=await fetch('/api/aps/token').then(r=>r.json());
   return new Promise(resolve=>{
-    Autodesk.Viewing.Initializer({
-      env:'AutodeskProduction2',api:'streamingV2',
-      getAccessToken:(cb)=>cb(td.access_token,td.expires_in)
-    },()=>{apsInitialized=true;resolve();});
+    Autodesk.Viewing.Initializer({env:'AutodeskProduction2',api:'streamingV2',getAccessToken:(cb)=>cb(td.access_token,td.expires_in)},()=>{apsInitialized=true;resolve();});
   });
 }
 
 async function initViewer(urn){
   document.getElementById('viewer-empty').style.display='none';
   await ensureApsInit();
-  const container=document.getElementById('aps-viewer');
   if(viewer){viewer.finish();viewer=null;}
-  viewer=new Autodesk.Viewing.GuiViewer3D(container,{extensions:['Autodesk.DocumentBrowser']});
+  viewer=new Autodesk.Viewing.GuiViewer3D(document.getElementById('aps-viewer'),{extensions:['Autodesk.DocumentBrowser']});
   viewer.start();
   Autodesk.Viewing.Document.load('urn:'+urn,(doc)=>{
     viewer.loadDocumentNode(doc,doc.getRoot().getDefaultGeometry()).then(()=>{
@@ -306,14 +277,11 @@ async function initGenViewer(urn){
   document.getElementById('gen-viewer-empty').style.display='none';
   document.getElementById('gen-preview-status').textContent='Loading…';
   await ensureApsInit();
-  const container=document.getElementById('gen-aps-viewer');
   if(genViewer){genViewer.finish();genViewer=null;}
-  genViewer=new Autodesk.Viewing.GuiViewer3D(container,{});
+  genViewer=new Autodesk.Viewing.GuiViewer3D(document.getElementById('gen-aps-viewer'),{});
   genViewer.start();
   Autodesk.Viewing.Document.load('urn:'+urn,(doc)=>{
-    genViewer.loadDocumentNode(doc,doc.getRoot().getDefaultGeometry()).then(()=>{
-      document.getElementById('gen-preview-status').textContent='Ready';
-    });
+    genViewer.loadDocumentNode(doc,doc.getRoot().getDefaultGeometry()).then(()=>{document.getElementById('gen-preview-status').textContent='Ready';});
   },(c,m)=>{document.getElementById('gen-preview-status').textContent='Preview failed';});
 }
 
@@ -347,10 +315,7 @@ async function onSelectionChanged(event){
     if(props.properties){for(const p of props.properties){if(p.attributeName==='GLOBALID'&&p.displayCategory==='IFC'){gid=p.displayValue;break;}}}
     if(!gid)return;
     const m=allComponents.find(c=>c.revit_id===gid);if(m)highlightCompItem(m.id);
-    try{
-      const r=await fetch('/api/component/by-revit-id/'+gid);
-      if(r.ok){const comp=await r.json();const item=document.querySelector('.comp-item[data-id="'+comp.id+'"]');if(item&&!item.classList.contains('open'))item.querySelector('.comp-item-header').click();}
-    }catch(e){}
+    try{const r=await fetch('/api/component/by-revit-id/'+gid);if(r.ok){const comp=await r.json();const item=document.querySelector('.comp-item[data-id="'+comp.id+'"]');if(item&&!item.classList.contains('open'))item.querySelector('.comp-item-header').click();}}catch(e){}
   });
 }
 
@@ -360,7 +325,6 @@ function highlightCompItem(id){
   if(el){el.classList.add('selected');el.scrollIntoView({behavior:'smooth',block:'nearest'});}
 }
 
-// ── FILE UPLOAD ───────────────────────────────────────────────────
 document.getElementById('ifc-file-input').onchange=function(){
   if(this.files[0]){document.getElementById('upload-filename').textContent=this.files[0].name;document.getElementById('btn-upload').disabled=false;}
 };
@@ -390,7 +354,6 @@ document.getElementById('btn-upload').onclick=async function(){
   btn.disabled=false;
 };
 
-// ── DYNAMIC FILTERS ───────────────────────────────────────────────
 function buildDynamicFilters(){
   const gc={all:allComponents.length};
   allComponents.forEach(c=>{const g=groupOf(c.category);gc[g]=(gc[g]||0)+1;});
@@ -406,43 +369,34 @@ function buildDynamicFilters(){
   });
 }
 
-// ── COMPONENT PANEL ───────────────────────────────────────────────
 function renderCompPanel(){
   const list=document.getElementById('comp-list');
-  const empty=document.getElementById('comp-empty-msg');
   if(!list)return;
   const filtered=activeFilter==='all'?allComponents:allComponents.filter(c=>groupOf(c.category)===activeFilter);
+  list.innerHTML='';
   if(filtered.length===0){
-    list.innerHTML='';
-    if(empty){empty.style.display='block';list.appendChild(empty);}
+    list.innerHTML='<div style="padding:24px 12px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.15);text-align:center;line-height:1.7;">'+(allComponents.length===0?'Upload an IFC file to see components':'No components in this category')+'</div>';
     return;
   }
-  empty.style.display='none';
-  list.innerHTML='';
-  filtered.forEach(comp=>{
-    const inLib=library.some(l=>l.id===comp.id);
-    const f=v=>v!=null?Number(v).toFixed(1):'—';
-    const item=document.createElement('div');
+  filtered.forEach(function(comp){
+    var inLib=library.some(function(l){return l.id===comp.id;});
+    var f=function(v){return v!=null?Number(v).toFixed(1):'—';};
+    var item=document.createElement('div');
     item.className='comp-item'+(inLib?' in-library':'');
     item.dataset.id=comp.id;
-    const header=document.createElement('div');
+    var header=document.createElement('div');
     header.className='comp-item-header';
-    header.innerHTML=
-      '<div class="comp-dot '+dotClass(comp.category)+'"></div>'+
-      '<div class="comp-item-info">'+
-        '<div class="comp-item-cat">'+comp.category.replace('Ifc','')+'</div>'+
-        '<div class="comp-item-name">'+(comp.family_name||comp.type_name||'—')+'</div>'+
-      '</div>';
-    const saveBtn=document.createElement('button');
+    var dot=document.createElement('div');dot.className='comp-dot '+dotClass(comp.category);
+    var info=document.createElement('div');info.className='comp-item-info';
+    info.innerHTML='<div class="comp-item-cat">'+comp.category.replace('Ifc','')+'</div><div class="comp-item-name">'+(comp.family_name||comp.type_name||'—')+'</div>';
+    var saveBtn=document.createElement('button');
     saveBtn.className='comp-item-save'+(inLib?' saved':'');
     saveBtn.textContent=inLib?'✓':'Save';
-    saveBtn.onclick=async e=>{e.stopPropagation();await saveComponentById(comp.id);};
-    const chevron=document.createElement('span');
-    chevron.className='comp-chevron';chevron.textContent='›';
-    header.appendChild(saveBtn);header.appendChild(chevron);
-    header.onclick=()=>item.classList.toggle('open');
-    const body=document.createElement('div');
-    body.className='comp-item-body';
+    (function(cid){saveBtn.onclick=function(e){e.stopPropagation();saveComponentById(cid);};})(comp.id);
+    var chevron=document.createElement('span');chevron.className='comp-chevron';chevron.textContent='›';
+    header.appendChild(dot);header.appendChild(info);header.appendChild(saveBtn);header.appendChild(chevron);
+    (function(it){header.onclick=function(){it.classList.toggle('open');};})(item);
+    var body=document.createElement('div');body.className='comp-item-body';
     body.innerHTML=
       '<div class="comp-stat-row"><span class="comp-stat-k">DB id</span><span class="comp-stat-v hi">'+comp.id+'</span></div>'+
       '<div class="comp-stat-row"><span class="comp-stat-k">Level</span><span class="comp-stat-v">'+(comp.level||'—')+'</span></div>'+
@@ -455,24 +409,29 @@ function renderCompPanel(){
   });
 }
 
-// ── LIBRARY ───────────────────────────────────────────────────────
 async function refreshLibrary(){
-  const res=await fetch('/api/library');
+  var res=await fetch('/api/library');
   library=await res.json();
   renderLibrary();
-  // only re-render comp panel if we have components loaded
   if(allComponents.length>0)renderCompPanel();
 }
+
 async function saveComponentById(id){
-  const res=await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:id})});
-  const data=await res.json();
-  if(data.status==='saved'||data.status==='already_saved'){await refreshLibrary();const comp=allComponents.find(c=>c.id===id);toast('Saved: '+(comp?.family_name||comp?.category||id));}
+  var res=await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:id})});
+  var data=await res.json();
+  if(data.status==='saved'||data.status==='already_saved'){
+    await refreshLibrary();
+    var comp=allComponents.find(function(c){return c.id===id;});
+    toast('Saved: '+(comp?comp.family_name||comp.category:id));
+  }
 }
 
 async function saveAll(){
-  const visible=activeFilter==='all'?allComponents:allComponents.filter(c=>groupOf(c.category)===activeFilter);
-  const unsaved=visible.filter(c=>!library.some(l=>l.id===c.id));
-  for(const comp of unsaved){await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:comp.id})});}
+  var visible=activeFilter==='all'?allComponents:allComponents.filter(function(c){return groupOf(c.category)===activeFilter;});
+  var unsaved=visible.filter(function(c){return !library.some(function(l){return l.id===c.id;});});
+  for(var i=0;i<unsaved.length;i++){
+    await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:unsaved[i].id})});
+  }
   await refreshLibrary();toast('Saved '+unsaved.length+' components');
 }
 
@@ -483,57 +442,54 @@ async function removeFromLibrary(id){
 
 async function clearLibrary(){
   if(!confirm('Clear the entire library?'))return;
-  await fetch('/api/library/clear',{method:'POST'});await refreshLibrary();toast('Library cleared');
+  await fetch('/api/library/clear',{method:'POST'});
+  await refreshLibrary();toast('Library cleared');
 }
 
 function renderLibrary(){
-  const list=document.getElementById('lib-list');
+  var list=document.getElementById('lib-list');
   if(!list)return;
-  const empty=document.getElementById('lib-empty');
+  list.innerHTML='';
   if(library.length===0){
-    list.innerHTML='';
-    if(empty){list.appendChild(empty);}
-    else{list.innerHTML='<div id="lib-empty" style="padding:20px 10px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.18);text-align:center;line-height:1.7;">Click components or Save All to build your library</div>';}
+    list.innerHTML='<div id="lib-empty" style="padding:20px 10px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.18);text-align:center;line-height:1.7;">Click components or Save All to build your library</div>';
     return;
   }
-  list.innerHTML='';
-  library.forEach(comp=>{
-    const item=document.createElement('div');item.className='lib-item';item.dataset.compId=comp.id;
+  library.forEach(function(comp){
+    var item=document.createElement('div');item.className='lib-item';item.dataset.compId=comp.id;
     item.innerHTML='<div class="lib-cat">'+comp.category.replace('Ifc','')+'</div><div class="lib-name">'+(comp.family_name||comp.type_name||'—')+'</div><button class="lib-remove" data-comp-id="'+comp.id+'">✕</button>';
     list.appendChild(item);
   });
 }
 
-document.getElementById('lib-list').addEventListener('click',e=>{
-  const btn=e.target.closest('.lib-remove');
+document.getElementById('lib-list').addEventListener('click',function(e){
+  var btn=e.target.closest('.lib-remove');
   if(btn){e.stopPropagation();removeFromLibrary(parseInt(btn.dataset.compId));}
 });
 
 async function reconstruct(){
   if(!currentProjectId){toast('Upload a file first');return;}
   if(library.length===0){toast('Save some components first');return;}
-  const btn=document.getElementById('btn-reconstruct');btn.textContent='⟳ Working…';btn.disabled=true;
+  var btn=document.getElementById('btn-reconstruct');btn.textContent='⟳ Working…';btn.disabled=true;
   try{
-    const res=await fetch('/api/reconstruct',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project_id:currentProjectId})});
-    const data=await res.json();
+    var res=await fetch('/api/reconstruct',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project_id:currentProjectId})});
+    var data=await res.json();
     toast(data.status==='done'?'Reconstructed: '+(data.output||'done'):'Reconstruction failed');
   }catch(e){toast('Error');}
   btn.textContent='⟳ Reconstruct';btn.disabled=false;
 }
 
-// ── GENERATE ─────────────────────────────────────────────────────
-function addGenMessage(role,content,isHtml=false){
-  const area=document.getElementById('generate-chat-area');
-  const msg=document.createElement('div');msg.className='gen-msg '+role;
-  const label=role==='user'?'You':'AI Architect';
+function addGenMessage(role,content,isHtml){
+  var area=document.getElementById('generate-chat-area');
+  var msg=document.createElement('div');msg.className='gen-msg '+role;
+  var label=role==='user'?'You':'AI Architect';
   if(isHtml){msg.innerHTML='<span class="gen-msg-role">'+label+'</span><div class="gen-msg-bubble">'+content+'</div>';}
   else{msg.innerHTML='<span class="gen-msg-role">'+label+'</span><div class="gen-msg-bubble"></div>';msg.querySelector('.gen-msg-bubble').textContent=content;}
   area.appendChild(msg);area.scrollTop=area.scrollHeight;return msg;
 }
 
 function addGenTyping(){
-  const area=document.getElementById('generate-chat-area');
-  const msg=document.createElement('div');msg.className='gen-msg assistant';msg.id='gen-typing';
+  var area=document.getElementById('generate-chat-area');
+  var msg=document.createElement('div');msg.className='gen-msg assistant';msg.id='gen-typing';
   msg.innerHTML='<span class="gen-msg-role">AI Architect</span><div class="gen-msg-bubble"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>';
   area.appendChild(msg);area.scrollTop=area.scrollHeight;
 }
@@ -542,69 +498,66 @@ function formatSpecText(t){return t.replace(/<building_spec>[\s\S]*?<\/building_
 
 function updateSpecSidebar(spec){
   if(!spec)return;
-  const s=document.getElementById('spec-summary');
-  const m=spec.metadata||{};const fl=spec.floors||[];
-  const tc=fl.reduce((a,f)=>a+(f.components||[]).length,0);
-  const row=(label,val,accent)=>'<div class="spec-section"><div class="spec-section-label">'+label+'</div><div class="spec-val'+(accent?' accent':'')+'">'+val+'</div></div>';
+  var s=document.getElementById('spec-summary');
+  var m=spec.metadata||{};var fl=spec.floors||[];
+  var tc=fl.reduce(function(a,f){return a+(f.components||[]).length;},0);
   s.innerHTML=
-    row('Building','<span style="font-family:var(--display);font-size:14px;font-style:italic;">'+(spec.name||'—')+'</span>'+(m.building_type?'<div style="margin-top:4px;font-size:11px;color:rgba(255,255,255,0.4);">'+m.building_type+'</div>':''),false)+
-    (m.location?row('Location',m.location,false):'')+
-    row('Scale',fl.length+' floor'+(fl.length!==1?'s':'')+' · '+tc+' components'+(m.gross_floor_area_m2?'<div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px;">'+m.gross_floor_area_m2+' m² GFA</div>':''),false)+
-    (m.estimated_cost_usd?row('Cost Estimate','$'+Number(m.estimated_cost_usd).toLocaleString(),true):'')+
-    (m.estimated_duration_months?row('Timeline',m.estimated_duration_months+' months',false):'')+
-    (m.structural_system?row('Structure',m.structural_system,false):'')+
-    (m.primary_material?row('Materials',m.primary_material,false):'')+
+    '<div class="spec-section"><div class="spec-section-label">Building</div><div class="spec-val"><span style="font-family:var(--display);font-size:14px;font-style:italic;">'+(spec.name||'—')+'</span>'+(m.building_type?'<div style="margin-top:4px;font-size:11px;color:rgba(255,255,255,0.4);">'+m.building_type+'</div>':'')+'</div></div>'+
+    (m.location?'<div class="spec-section"><div class="spec-section-label">Location</div><div class="spec-val">'+m.location+'</div></div>':'')+
+    '<div class="spec-section"><div class="spec-section-label">Scale</div><div class="spec-val">'+fl.length+' floor'+(fl.length!==1?'s':'')+' · '+tc+' components'+(m.gross_floor_area_m2?'<div style="font-size:11px;color:rgba(255,255,255,0.4);margin-top:2px;">'+m.gross_floor_area_m2+' m² GFA</div>':'')+'</div></div>'+
+    (m.estimated_cost_usd?'<div class="spec-section"><div class="spec-section-label">Cost Estimate</div><div class="spec-val accent">$'+Number(m.estimated_cost_usd).toLocaleString()+'</div></div>':'')+
+    (m.estimated_duration_months?'<div class="spec-section"><div class="spec-section-label">Timeline</div><div class="spec-val">'+m.estimated_duration_months+' months</div></div>':'')+
+    (m.structural_system?'<div class="spec-section"><div class="spec-section-label">Structure</div><div class="spec-val">'+m.structural_system+'</div></div>':'')+
+    (m.primary_material?'<div class="spec-section"><div class="spec-section-label">Materials</div><div class="spec-val">'+m.primary_material+'</div></div>':'')+
     (m.site_concerns?'<div class="spec-section"><div class="spec-section-label">Site Notes</div><div class="spec-val" style="font-size:11px;color:rgba(255,255,255,0.5);">'+m.site_concerns+'</div></div>':'')+
-    (m.building_code?row('Code',m.building_code,false):'')+
-    '<div class="spec-section"><div class="spec-section-label">Floors</div>'+
-    fl.map(f=>'<div style="font-size:11px;color:rgba(255,255,255,0.5);padding:2px 0;">'+f.name+' — '+(f.components||[]).length+' components</div>').join('')+
-    '</div>';
+    (m.building_code?'<div class="spec-section"><div class="spec-section-label">Code</div><div class="spec-val">'+m.building_code+'</div></div>':'')+
+    '<div class="spec-section"><div class="spec-section-label">Floors</div>'+fl.map(function(f){return'<div style="font-size:11px;color:rgba(255,255,255,0.5);padding:2px 0;">'+f.name+' — '+(f.components||[]).length+' components</div>';}).join('')+'</div>';
   document.getElementById('btn-export-ifc').disabled=false;
   document.getElementById('btn-preview-3d').disabled=false;
 }
 
 async function sendGenMessage(){
-  const input=document.getElementById('gen-input');
-  const msg=input.value.trim();if(!msg||genStreaming)return;
+  var input=document.getElementById('gen-input');
+  var msg=input.value.trim();if(!msg||genStreaming)return;
   input.value='';input.style.height='auto';
   genStreaming=true;document.getElementById('gen-send').disabled=true;
   document.getElementById('gen-suggestions').style.display='none';
-  addGenMessage('user',msg);genHistory.push({role:'user',content:msg});addGenTyping();
-  let fullText='',aiMsg=null;
+  addGenMessage('user',msg,false);genHistory.push({role:'user',content:msg});addGenTyping();
+  var fullText='',aiMsg=null;
   try{
-    const res=await fetch('/api/generate/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,history:genHistory.slice(-8),session_spec:genSpec})});
-    const reader=res.body.getReader(),decoder=new TextDecoder();let buffer='';
+    var res=await fetch('/api/generate/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,history:genHistory.slice(-8),session_spec:genSpec})});
+    var reader=res.body.getReader(),decoder=new TextDecoder();var buffer='';
     while(true){
-      const{done,value}=await reader.read();if(done)break;
-      buffer+=decoder.decode(value,{stream:true});
-      const lines=buffer.split('\n');buffer=lines.pop();
-      for(const line of lines){
-        if(!line.startsWith('data:'))continue;
+      var chunk=await reader.read();if(chunk.done)break;
+      buffer+=decoder.decode(chunk.value,{stream:true});
+      var lines=buffer.split('\n');buffer=lines.pop();
+      for(var i=0;i<lines.length;i++){
+        var line=lines[i];if(!line.startsWith('data:'))continue;
         try{
-          const data=JSON.parse(line.slice(5));
+          var data=JSON.parse(line.slice(5));
           if(data.type==='text'){
             fullText+=data.text;
-            document.getElementById('gen-typing')?.remove();
+            var ti=document.getElementById('gen-typing');if(ti)ti.remove();
             if(!aiMsg)aiMsg=addGenMessage('assistant','',true);
             aiMsg.querySelector('.gen-msg-bubble').innerHTML=formatSpecText(fullText);
             document.getElementById('generate-chat-area').scrollTop=9999;
           }else if(data.type==='spec'&&data.spec){
             genSpec=data.spec;updateSpecSidebar(genSpec);
-            if(aiMsg){const badge=document.createElement('div');badge.className='spec-ready-badge';badge.innerHTML='✓ &nbsp;Building plan generated — export IFC or ask for changes';aiMsg.querySelector('.gen-msg-bubble').appendChild(badge);}
+            if(aiMsg){var badge=document.createElement('div');badge.className='spec-ready-badge';badge.innerHTML='✓ &nbsp;Building plan generated — export IFC or ask for changes';aiMsg.querySelector('.gen-msg-bubble').appendChild(badge);}
           }else if(data.type==='done'){genHistory.push({role:'assistant',content:fullText});}
         }catch(e){}
       }
     }
-  }catch(err){document.getElementById('gen-typing')?.remove();addGenMessage('assistant','Connection error.');}
+  }catch(err){var ti=document.getElementById('gen-typing');if(ti)ti.remove();addGenMessage('assistant','Connection error.',false);}
   genStreaming=false;document.getElementById('gen-send').disabled=false;
 }
 
 async function exportIfc(){
   if(!genSpec){toast('No building plan yet');return;}
-  const btn=document.getElementById('btn-export-ifc');btn.textContent='↓ Generating…';btn.disabled=true;
+  var btn=document.getElementById('btn-export-ifc');btn.textContent='↓ Generating…';btn.disabled=true;
   try{
-    const res=await fetch('/api/generate/ifc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec:genSpec,upload_preview:false})});
-    const data=await res.json();
+    var res=await fetch('/api/generate/ifc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec:genSpec,upload_preview:false})});
+    var data=await res.json();
     if(data.status==='done'){window.location.href='/api/generate/download?file='+encodeURIComponent(data.output);toast('IFC downloaded');}
     else{toast('Export failed: '+(data.error||'Unknown'));}
   }catch(e){toast('Export error');}
@@ -613,26 +566,25 @@ async function exportIfc(){
 
 async function previewIn3D(){
   if(!genSpec){toast('No building plan yet');return;}
-  const btn=document.getElementById('btn-preview-3d');btn.textContent='◉ Uploading…';btn.disabled=true;
+  var btn=document.getElementById('btn-preview-3d');btn.textContent='◉ Uploading…';btn.disabled=true;
   document.getElementById('gen-preview-status').textContent='Uploading…';
   try{
-    const res=await fetch('/api/generate/ifc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec:genSpec,upload_preview:true})});
-    const data=await res.json();
+    var res=await fetch('/api/generate/ifc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec:genSpec,upload_preview:true})});
+    var data=await res.json();
     if(data.status==='done'&&data.aps){await initGenViewer(data.aps.urn);toast('3D preview ready');}
     else{toast('APS upload failed — try Export IFC instead');}
   }catch(e){toast('Preview error');}
   btn.textContent='◉ Preview in 3D';btn.disabled=false;
 }
 
-// ── UI WIRING ─────────────────────────────────────────────────────
-document.querySelectorAll('.nav-tab').forEach(tab=>{
-  tab.onclick=()=>{
-    document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
-    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+document.querySelectorAll('.nav-tab').forEach(function(tab){
+  tab.onclick=function(){
+    document.querySelectorAll('.nav-tab').forEach(function(t){t.classList.remove('active');});
+    document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
     tab.classList.add('active');
     document.getElementById('page-'+tab.dataset.page).classList.add('active');
-    if(tab.dataset.page==='disassemble'&&viewer)setTimeout(()=>viewer.resize(),50);
-    if(tab.dataset.page==='generate'&&genViewer)setTimeout(()=>genViewer.resize(),50);
+    if(tab.dataset.page==='disassemble'&&viewer)setTimeout(function(){viewer.resize();},50);
+    if(tab.dataset.page==='generate'&&genViewer)setTimeout(function(){genViewer.resize();},50);
   };
 });
 
@@ -642,15 +594,12 @@ document.getElementById('btn-clear-lib').onclick=clearLibrary;
 document.getElementById('btn-export-ifc').onclick=exportIfc;
 document.getElementById('btn-preview-3d').onclick=previewIn3D;
 document.getElementById('gen-send').onclick=sendGenMessage;
-
-document.getElementById('gen-input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendGenMessage();}});
+document.getElementById('gen-input').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendGenMessage();}});
 document.getElementById('gen-input').addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,160)+'px';});
-document.querySelectorAll('.gen-suggestion').forEach(s=>{s.onclick=()=>{document.getElementById('gen-input').value=s.textContent;sendGenMessage();};});
+document.querySelectorAll('.gen-suggestion').forEach(function(s){s.onclick=function(){document.getElementById('gen-input').value=s.textContent;sendGenMessage();};});
 
-// ── TOAST ─────────────────────────────────────────────────────────
-function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800);}
+function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2800);}
 
-// ── INIT ──────────────────────────────────────────────────────────
 async function init(){await refreshLibrary();document.getElementById('loading').style.display='none';}
 init();
 </script>
