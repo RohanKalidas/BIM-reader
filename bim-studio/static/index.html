@@ -1164,14 +1164,26 @@ async function sendGenMessage(){
               aiMsg=addGenMessage('assistant','',true);
             }
             fullText+=data.text;
-            aiMsg.querySelector('.gen-msg-bubble').innerHTML=formatSpecText(fullText);
+            // Always append text — remove tool indicator if present so text flows cleanly
+            var bubble=aiMsg.querySelector('.gen-msg-bubble');
+            var ind=bubble.querySelector('.gen-tool-indicator');
+            if(ind)ind.remove();
+            bubble.innerHTML=formatSpecText(fullText);
+            // Re-append tool indicator at bottom if still searching
             document.getElementById('gen-chat-area').scrollTop=9999;
           }else if(data.type==='tool'){
-            // AI is searching the library
+            // AI is searching the library — show indicator but keep text visible
             setStep('think','done');
             setStep('library','active');
             var detail=data.tool==='get_library_categories'?'Browsing categories':(data.input&&data.input.query?data.input.query:(data.input&&data.input.category?data.input.category:'searching'));
             setStep('library','active',detail);
+            // Add/update subtle inline indicator at bottom of current bubble
+            if(aiMsg){
+              var bubble2=aiMsg.querySelector('.gen-msg-bubble');
+              var ind2=bubble2.querySelector('.gen-tool-indicator');
+              if(!ind2){ind2=document.createElement('div');ind2.className='gen-tool-indicator';ind2.style.cssText='font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.25);letter-spacing:0.08em;padding:6px 0 2px;margin-top:6px;border-top:1px solid var(--rule);';bubble2.appendChild(ind2);}
+              ind2.textContent='\u26ef Searching library for \u201c'+detail+'\u201d\u2026';
+            }
           }else if(data.type==='spec'&&data.spec){
             setStep('brief','done');
             setStep('spec','active','Generating...');
