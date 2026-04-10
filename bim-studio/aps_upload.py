@@ -54,27 +54,38 @@ def ensure_bucket(token):
 # ── Upload ─────────────────────────────────────────────────────────────────────
 
 def upload_file(token, filepath):
-    """Upload a file to OSS and return the object URN."""
+    """Upload a file to OSS using signed S3 upload and return the object URN."""
     filename    = os.path.basename(filepath)
     object_name = filename.replace(" ", "_")
     headers     = {"Authorization": f"Bearer {token}"}
+    file_size   = os.path.getsize(filepath)
 
-    file_size = os.path.getsize(filepath)
-
-    with open(filepath, "rb") as f:
-        res = requests.put(
-            f"{BASE_URL}/oss/v2/buckets/{APS_BUCKET}/objects/{object_name}",
-            data=f,
-            headers={
-                **headers,
-                "Content-Type":   "application/octet-stream",
-                "Content-Length": str(file_size)
-            }
-        )
+    # Step 1: Get signed S3 upload URL
+    res = requests.get(
+        f"{BASE_URL}/oss/v2/buckets/{APS_BUCKET}/objects/{object_name}/signeds3upload",
+        headers=headers,
+        params={"minutesExpiration": 60}
+    )
     res.raise_for_status()
     data       = res.json()
-    object_id  = data["objectId"]  # urn:adsk.objects:os.object:bucket/filename
-    urn        = base64.b64encode(object_id.encode()).decode().rstrip("=")
+    upload_key = data["uploadKey"]
+    upload_url = data["urls"][0]
+
+    # Step 2: Upload directly to S3 (no auth header needed)
+    with open(filepath, "rb") as f:
+        s3_res = requests.put(upload_url, data=f, headers={"Content-Type": "application/octet-stream"})
+    s3_res.raise_for_status()
+
+    # Step 3: Complete the upload
+    complete_res = requests.post(
+        f"{BASE_URL}/oss/v2/buckets/{APS_BUCKET}/objects/{object_name}/signeds3upload",
+        json={"uploadKey": upload_key},
+        headers={**headers, "Content-Type": "application/json"}
+    )
+    complete_res.raise_for_status()
+    data      = complete_res.json()
+    object_id = data["objectId"]
+    urn       = base64.b64encode(object_id.encode()).decode().rstrip("=")
     return urn
 
 
