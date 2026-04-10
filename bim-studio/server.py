@@ -215,13 +215,56 @@ def get_library():
 def save_to_library():
     data = request.json; component_id = data.get("component_id"); revit_id = data.get("revit_id"); notes = data.get("notes","")
     conn = get_db(); cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # Resolve component_id from revit_id if needed
     if not component_id and revit_id:
         cur.execute("SELECT id FROM components WHERE revit_id=%s LIMIT 1", (revit_id,))
         row = cur.fetchone()
         if not row: cur.close(); conn.close(); return jsonify({"error": "Not found"}), 404
         component_id = row["id"]
+
+    # Already in library by id?
     cur.execute("SELECT id FROM library WHERE component_id=%s", (component_id,))
     if cur.fetchone(): cur.close(); conn.close(); return jsonify({"status":"already_saved","component_id":component_id})
+
+    # Fingerprint duplicate check:
+    # A component is a duplicate if another library entry has the same
+    # category + family_name + dimensions (rounded to nearest mm to avoid float noise).
+    # If a duplicate fingerprint exists, skip — don't add to library.
+    cur.execute("""
+        SELECT c.category, c.family_name, c.width_mm, c.height_mm, c.length_mm
+        FROM components c WHERE c.id = %s
+    """, (component_id,))
+    comp = cur.fetchone()
+    if comp:
+        category    = comp["category"]
+        family_name = comp["family_name"] or ""
+        w = round(float(comp["width_mm"]))  if comp["width_mm"]  is not None else None
+        h = round(float(comp["height_mm"])) if comp["height_mm"] is not None else None
+        l = round(float(comp["length_mm"])) if comp["length_mm"] is not None else None
+
+        # Check if library already has a component with matching fingerprint
+        cur.execute("""
+            SELECT l.id FROM library l
+            JOIN components c2 ON c2.id = l.component_id
+            WHERE c2.category = %s
+              AND COALESCE(c2.family_name, '') = %s
+              AND (
+                (%s IS NULL AND c2.width_mm  IS NULL) OR ROUND(c2.width_mm::numeric)  = %s
+              )
+              AND (
+                (%s IS NULL AND c2.height_mm IS NULL) OR ROUND(c2.height_mm::numeric) = %s
+              )
+              AND (
+                (%s IS NULL AND c2.length_mm IS NULL) OR ROUND(c2.length_mm::numeric) = %s
+              )
+            LIMIT 1
+        """, (category, family_name, w, w, h, h, l, l))
+        if cur.fetchone():
+            cur.close(); conn.close()
+            return jsonify({"status":"duplicate","component_id":component_id,
+                            "message":"A component with identical characteristics already exists in the library"})
+
     cur.execute("INSERT INTO library (component_id,notes) VALUES (%s,%s) RETURNING id", (component_id, notes))
     lib_id = cur.fetchone()["id"]; conn.commit(); cur.close(); conn.close()
     return jsonify({"status":"saved","library_id":lib_id,"component_id":component_id})
