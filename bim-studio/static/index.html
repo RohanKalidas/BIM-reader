@@ -540,12 +540,19 @@ function clearScene(){
 function buildScene(components){
   clearScene();
   const S=0.001;
-  let cx=0,cy=0,cz=0,n=0;
-  components.forEach(c=>{
-    if(c.pos_x!=null){cx+=c.pos_x;cy+=c.pos_y;cz+=c.pos_z;n++;}
-  });
-  if(n>0){cx/=n;cy/=n;cz/=n;}
-  centroid.set(cx*S,cy*S,cz*S);
+
+  // Use only structural/architectural elements for centroid — ignore outliers
+  const anchor = components.filter(c =>
+    c.pos_x != null &&
+    Math.abs(c.pos_x) < 20000 &&
+    Math.abs(c.pos_y) < 20000 &&
+    (c.category.includes('Wall') || c.category.includes('Slab') || c.category.includes('Door'))
+  );
+
+  let cx=0, cy=0, cz=0, n=0;
+  anchor.forEach(c=>{ cx+=c.pos_x; cy+=c.pos_y; cz+=c.pos_z; n++; });
+  if(n>0){cx/=n; cy/=n; cz/=n;}
+  centroid.set(cx*S, cz*S, cy*S); // IFC: X→X, Z→Y(up), Y→Z(depth)
   tgt.copy(centroid);
 
   components.forEach(comp=>{
@@ -555,18 +562,27 @@ function buildScene(components){
     const mat=savedIds.has(comp.id)?savedMat.clone():getMat(color).clone();
     const mesh=new THREE.Mesh(geo,mat);
     mesh.castShadow=true; mesh.receiveShadow=true;
-    const x=comp.pos_x!=null?comp.pos_x*S:centroid.x;
-    const y=comp.pos_y!=null?comp.pos_y*S:centroid.y;
-    const z=comp.pos_z!=null?comp.pos_z*S:centroid.z;
-    mesh.rotation.y=THREE.MathUtils.degToRad(comp.rot_z||0);
-    mesh.position.set(x,y,z);
-    const orig=new THREE.Vector3(x,y,z);
-    mesh.userData={comp,origPos:orig,color,baseMat:mat};
+
+    // IFC coordinate system: X=east, Y=north, Z=up
+    // Three.js: X=right, Y=up, Z=toward camera
+    const x = comp.pos_x != null ? comp.pos_x*S : centroid.x;
+    const y = comp.pos_z != null ? comp.pos_z*S : centroid.y; // IFC Z → Three Y
+    const z = comp.pos_y != null ? comp.pos_y*S : centroid.z; // IFC Y → Three Z
+
+    mesh.rotation.y = THREE.MathUtils.degToRad(-(comp.rot_z||0));
+    mesh.position.set(x, y, z);
+
+    if(comp.category.includes('Curtain') && comp.pos_x === 0 && comp.pos_y === 0){
+      mesh.visible = false;
+    }
+
+    const orig = new THREE.Vector3(x, y, z);
+    mesh.userData = {comp, origPos:orig, color, baseMat:mat};
     scene.add(mesh);
-    meshes.push({mesh,comp,origPos:orig});
+    meshes.push({mesh, comp, origPos:orig});
   });
 
-  sph={theta:Math.PI/4,phi:Math.PI/3.5,r:28};
+  sph={theta:Math.PI/4, phi:Math.PI/3.5, r:28};
   updateCam();
   updateGroupCounts();
   applyFilters();
