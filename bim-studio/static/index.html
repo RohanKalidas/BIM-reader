@@ -272,10 +272,10 @@ async function init() {
 // ─────────────────────────────────────────────────────────────────
 // SPECKLE VIEWER
 // ─────────────────────────────────────────────────────────────────
-function loadSpeckleViewer() {
-  if (!speckleConfig) return;
+function loadSpeckleViewer(projectId, modelId) {
   const iframe = document.getElementById('speckle-iframe');
-  iframe.src = `https://speckle.xyz/embed?stream=${speckleConfig.project_id}&commit=${speckleConfig.model_id}`;
+  const server = 'https://app.speckle.systems';
+  iframe.src = `${server}/projects/${projectId}/models/${modelId}`;
 }
 
 // Listen for messages from the Speckle iframe
