@@ -1,6 +1,6 @@
 import os
 import json
-import math
+import subprocess
 import psycopg2
 import psycopg2.extras
 import anthropic
@@ -11,6 +11,9 @@ load_dotenv()
 
 app = Flask(__name__, static_folder="static")
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+SPECKLE_PROJECT_ID = os.getenv("SPECKLE_PROJECT_ID", "8cd76bca8d")
+SPECKLE_MODEL_ID   = os.getenv("SPECKLE_MODEL_ID",   "a69f7e2443")
 
 def get_db():
     return psycopg2.connect(
@@ -106,12 +109,172 @@ def get_stats(pid):
     cur.close(); conn.close()
     return jsonify({"total": total, "relationships": rels, "categories": cats})
 
+# ── Speckle / Component Lookup ─────────────────────────────────────────────
+
+@app.route("/api/component/by-revit-id/<revit_id>")
+def get_component_by_revit_id(revit_id):
+    """Look up a component by its IFC GlobalId (= Speckle applicationId)."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        SELECT c.id, c.category, c.family_name, c.type_name, c.revit_id,
+               c.width_mm, c.height_mm, c.length_mm, c.area_m2, c.volume_m3,
+               c.quality_score, c.parameters,
+               s.pos_x, s.pos_y, s.pos_z, s.level, s.elevation,
+               p.name as project_name
+        FROM components c
+        LEFT JOIN spatial_data s ON s.component_id = c.id
+        JOIN projects p ON p.id = c.project_id
+        WHERE c.revit_id = %s
+        LIMIT 1
+    """, (revit_id,))
+    row = cur.fetchone()
+    cur.close(); conn.close()
+
+    if not row:
+        return jsonify({"error": "Component not found"}), 404
+
+    d = dict(row)
+    for k in ["pos_x","pos_y","pos_z","elevation","width_mm","height_mm",
+              "length_mm","area_m2","volume_m3","quality_score"]:
+        d[k] = safe_float(d.get(k))
+    return jsonify(d)
+
+# ── Library ────────────────────────────────────────────────────────────────
+
+@app.route("/api/library", methods=["GET"])
+def get_library():
+    """Get all components saved to the library."""
+    conn = get_db()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("""
+        SELECT c.id, c.category, c.family_name, c.type_name, c.revit_id,
+               c.width_mm, c.height_mm, c.length_mm, c.area_m2, c.volume_m3,
+               c.quality_score, l.saved_at, l.notes,
+               s.level, p.name as project_name
+        FROM library l
+        JOIN components c ON c.id = l.component_id
+        LEFT JOIN spatial_data s ON s.component_id = c.id
+        JOIN projects p ON p.id = c.project_id
+        ORDER BY l.saved_at DESC
+    """)
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+
+    out = []
+    for r in rows:
+        d = dict(r)
+        for k in ["width_mm","height_mm","length_mm","area_m2","volume_m3","quality_score"]:
+            d[k] = safe_float(d.get(k))
+        out.append(d)
+    return jsonify(out)
+
+@app.route("/api/library/save", methods=["POST"])
+def save_to_library():
+    """Save a component to the library by component ID or revit_id."""
+    data = request.json
+    component_id = data.get("component_id")
+    revit_id     = data.get("revit_id")
+    notes        = data.get("notes", "")
+
+    conn = get_db()
+    cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # Look up by revit_id if component_id not provided
+    if not component_id and revit_id:
+        cur.execute("SELECT id FROM components WHERE revit_id = %s LIMIT 1", (revit_id,))
+        row = cur.fetchone()
+        if not row:
+            cur.close(); conn.close()
+            return jsonify({"error": "Component not found"}), 404
+        component_id = row["id"]
+
+    # Check if already saved
+    cur.execute("SELECT id FROM library WHERE component_id = %s", (component_id,))
+    if cur.fetchone():
+        cur.close(); conn.close()
+        return jsonify({"status": "already_saved", "component_id": component_id})
+
+    cur.execute(
+        "INSERT INTO library (component_id, notes) VALUES (%s, %s) RETURNING id",
+        (component_id, notes)
+    )
+    lib_id = cur.fetchone()["id"]
+    conn.commit()
+    cur.close(); conn.close()
+    return jsonify({"status": "saved", "library_id": lib_id, "component_id": component_id})
+
+@app.route("/api/library/remove", methods=["POST"])
+def remove_from_library():
+    """Remove a component from the library."""
+    data = request.json
+    component_id = data.get("component_id")
+    conn = get_db()
+    cur  = conn.cursor()
+    cur.execute("DELETE FROM library WHERE component_id = %s", (component_id,))
+    conn.commit()
+    cur.close(); conn.close()
+    return jsonify({"status": "removed"})
+
+@app.route("/api/library/clear", methods=["POST"])
+def clear_library():
+    """Clear the entire library."""
+    conn = get_db()
+    cur  = conn.cursor()
+    cur.execute("DELETE FROM library")
+    conn.commit()
+    cur.close(); conn.close()
+    return jsonify({"status": "cleared"})
+
+# ── Reconstruct ────────────────────────────────────────────────────────────
+
+@app.route("/api/reconstruct", methods=["POST"])
+def reconstruct():
+    """Run reconstruct.py on a given project and return the output file path."""
+    data       = request.json
+    project_id = data.get("project_id")
+
+    if not project_id:
+        return jsonify({"error": "project_id required"}), 400
+
+    try:
+        result = subprocess.run(
+            ["python3", "reconstruct.py", str(project_id)],
+            capture_output=True, text=True, timeout=120
+        )
+        if result.returncode != 0:
+            return jsonify({"error": result.stderr}), 500
+
+        # Find the output file
+        output_file = None
+        for line in result.stdout.splitlines():
+            if line.startswith("Output:"):
+                output_file = line.replace("Output:", "").strip()
+
+        return jsonify({
+            "status": "done",
+            "output": output_file,
+            "log": result.stdout
+        })
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Reconstruction timed out"}), 500
+
+# ── Speckle Config ─────────────────────────────────────────────────────────
+
+@app.route("/api/speckle/config")
+def speckle_config():
+    """Return Speckle project/model IDs for the frontend."""
+    return jsonify({
+        "project_id": SPECKLE_PROJECT_ID,
+        "model_id":   SPECKLE_MODEL_ID,
+        "viewer_url": f"https://app.speckle.systems/projects/{SPECKLE_PROJECT_ID}/models/{SPECKLE_MODEL_ID}"
+    })
+
 # ── AI Compose ─────────────────────────────────────────────────────────────
 
 def get_library_summary():
-    """Pull a compact summary of all components across all projects for the AI context."""
     conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
         SELECT
             p.id as project_id, p.name as project_name,
@@ -125,40 +288,33 @@ def get_library_summary():
         LEFT JOIN spatial_data s ON s.component_id = c.id
         WHERE p.status = 'done'
         ORDER BY p.id, c.category
-    """, )
+    """)
     rows = [dict(r) for r in cur.fetchall()]
     cur.close(); conn.close()
 
-    # Compact it — don't send full parameters JSON to Claude, just the key fields
     summary = []
     for r in rows:
         summary.append({
-            "id": r["component_id"],
+            "id":      r["component_id"],
             "project": r["project_name"],
             "category": r["category"],
-            "name": r["family_name"] or r["type_name"] or r["category"],
-            "level": r["level"],
+            "name":    r["family_name"] or r["type_name"] or r["category"],
+            "level":   r["level"],
             "dims": {
-                "w": round(r["width_mm"], 1) if r["width_mm"] else None,
-                "h": round(r["height_mm"], 1) if r["height_mm"] else None,
-                "l": round(r["length_mm"], 1) if r["length_mm"] else None,
-                "area": round(r["area_m2"], 2) if r["area_m2"] else None,
+                "w":    round(r["width_mm"],  1) if r["width_mm"]  else None,
+                "h":    round(r["height_mm"], 1) if r["height_mm"] else None,
+                "l":    round(r["length_mm"], 1) if r["length_mm"] else None,
+                "area": round(r["area_m2"],   2) if r["area_m2"]   else None,
             },
             "quality": round(r["quality_score"], 2) if r["quality_score"] else None,
-            "pos": {
-                "x": round(r["pos_x"], 2) if r["pos_x"] else None,
-                "y": round(r["pos_y"], 2) if r["pos_y"] else None,
-                "z": round(r["pos_z"], 2) if r["pos_z"] else None,
-            }
         })
     return summary
 
 def get_component_details(component_ids):
-    """Get full details for specific component IDs for the response."""
     if not component_ids:
         return []
     conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
         SELECT c.id, c.category, c.family_name, c.type_name, c.revit_id,
                c.width_mm, c.height_mm, c.length_mm, c.area_m2, c.volume_m3,
@@ -172,7 +328,8 @@ def get_component_details(component_ids):
     rows = [dict(r) for r in cur.fetchall()]
     cur.close(); conn.close()
     for r in rows:
-        for k in ["pos_x","pos_y","pos_z","width_mm","height_mm","length_mm","area_m2","volume_m3","quality_score"]:
+        for k in ["pos_x","pos_y","pos_z","width_mm","height_mm","length_mm",
+                  "area_m2","volume_m3","quality_score"]:
             r[k] = safe_float(r.get(k))
     return rows
 
@@ -207,16 +364,14 @@ Be concise but specific. This is a technical demo for an architecture firm."""
 
 @app.route("/api/compose", methods=["POST"])
 def compose():
-    data = request.json
+    data    = request.json
     message = data.get("message", "")
     history = data.get("history", [])
 
-    # Build library context
-    library = get_library_summary()
+    library      = get_library_summary()
     library_text = f"COMPONENT LIBRARY ({len(library)} components across all projects):\n"
     library_text += json.dumps(library, indent=1)
 
-    # Build messages
     messages = []
     for h in history:
         messages.append({"role": h["role"], "content": h["content"]})
@@ -237,18 +392,16 @@ def compose():
                 full_text += text
                 yield f"data: {json.dumps({'type': 'text', 'text': text})}\n\n"
 
-        # Extract selected component IDs
         selected = []
         if "<selected_components>" in full_text:
             try:
-                start = full_text.index("<selected_components>") + len("<selected_components>")
-                end = full_text.index("</selected_components>")
-                ids_str = full_text[start:end].strip()
+                start    = full_text.index("<selected_components>") + len("<selected_components>")
+                end      = full_text.index("</selected_components>")
+                ids_str  = full_text[start:end].strip()
                 selected = json.loads(ids_str)
             except:
                 pass
 
-        # Send component details for highlighting
         if selected:
             details = get_component_details(selected)
             yield f"data: {json.dumps({'type': 'components', 'components': details})}\n\n"
@@ -258,10 +411,7 @@ def compose():
     return Response(
         stream_with_context(generate()),
         mimetype="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no"
-        }
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
     )
 
 if __name__ == "__main__":
