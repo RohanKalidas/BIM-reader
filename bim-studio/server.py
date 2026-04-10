@@ -558,74 +558,98 @@ def generate_stream():
         full_text   = ""
         visible_buf = ""
         in_spec     = False
-        msgs        = list(messages)  # working copy we extend with tool results
+        msgs        = list(messages)
 
         while True:
-            response = client.messages.create(
+            # Use streaming so text appears in real time even during tool-use turns
+            tool_uses    = {}   # id -> {name, input_str}
+            tool_results = []
+            has_tool_use = False
+            response_content_blocks = []  # accumulate for next turn
+
+            with client.messages.stream(
                 model="claude-sonnet-4-20250514",
                 max_tokens=16000,
                 system=GENERATE_SYSTEM_PROMPT,
                 tools=LIBRARY_TOOLS,
                 messages=msgs
-            )
+            ) as stream:
+                for event in stream:
+                    etype = event.type
 
-            # Process content blocks
-            has_tool_use = False
-            tool_results = []
+                    # ── Text delta — stream immediately ──────────────────────
+                    if etype == "content_block_delta":
+                        delta = event.delta
+                        if hasattr(delta, "text"):
+                            chunk = delta.text
+                            full_text += chunk
+                            if not in_spec:
+                                visible_buf += chunk
+                                if "<building_spec>" in visible_buf:
+                                    before = visible_buf.split("<building_spec>")[0].rstrip()
+                                    if before:
+                                        yield f"data: {json.dumps({'type':'text','text':before})}\n\n"
+                                    in_spec     = True
+                                    visible_buf = ""
+                                else:
+                                    hold = len("<building_spec>") - 1
+                                    safe = visible_buf[:-hold] if len(visible_buf) > hold else ""
+                                    if safe:
+                                        yield f"data: {json.dumps({'type':'text','text':safe})}\n\n"
+                                    visible_buf = visible_buf[len(safe):]
+                            else:
+                                if "</building_spec>" in full_text:
+                                    in_spec     = False
+                                    visible_buf = ""
 
-            for block in response.content:
-                if block.type == "text":
-                    text = block.text
-                    full_text += text
+                        elif hasattr(delta, "partial_json"):
+                            # Tool input streaming — accumulate
+                            bid = event.index
+                            if bid in tool_uses:
+                                tool_uses[bid]["input_str"] += delta.partial_json
 
-                    # Stream visible text, suppressing <building_spec> JSON
-                    if not in_spec:
-                        visible_buf += text
-                        if "<building_spec>" in visible_buf:
-                            before = visible_buf.split("<building_spec>")[0].rstrip()
-                            if before:
-                                yield f"data: {json.dumps({'type':'text','text':before})}\n\n"
-                            in_spec     = True
-                            visible_buf = ""
-                        else:
-                            hold = len("<building_spec>") - 1
-                            safe = visible_buf[:-hold] if len(visible_buf) > hold else ""
-                            if safe:
-                                yield f"data: {json.dumps({'type':'text','text':safe})}\n\n"
-                            visible_buf = visible_buf[len(safe):]
-                    else:
-                        if "</building_spec>" in full_text:
-                            in_spec     = False
-                            visible_buf = ""
+                    # ── Block start ──────────────────────────────────────────
+                    elif etype == "content_block_start":
+                        block = event.content_block
+                        if block.type == "tool_use":
+                            has_tool_use = True
+                            tool_uses[event.index] = {
+                                "id":        block.id,
+                                "name":      block.name,
+                                "input_str": ""
+                            }
 
-                elif block.type == "tool_use":
-                    has_tool_use = True
-                    tool_name  = block.name
-                    tool_input = block.input
-                    tool_id    = block.id
-                    print(f"Tool call: {tool_name}({json.dumps(tool_input)})")
+                    # ── Block stop ───────────────────────────────────────────
+                    elif etype == "content_block_stop":
+                        bid = event.index
+                        if bid in tool_uses:
+                            tu = tool_uses[bid]
+                            try:
+                                tool_input = json.loads(tu["input_str"]) if tu["input_str"] else {}
+                            except Exception:
+                                tool_input = {}
+                            print(f"Tool call: {tu['name']}({json.dumps(tool_input)})")
+                            yield f"data: {json.dumps({'type':'tool','tool':tu['name'],'input':tool_input})}\n\n"
+                            result = process_tool_call(tu["name"], tool_input)
+                            print(f"Tool result preview: {result[:120]}")
+                            tool_results.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu["id"],
+                                "content":     result
+                            })
 
-                    # Notify frontend a search is happening
-                    yield f"data: {json.dumps({'type':'tool','tool':tool_name,'input':tool_input})}\n\n"
-
-                    result = process_tool_call(tool_name, tool_input)
-                    print(f"Tool result: {result[:200]}")
-                    tool_results.append({
-                        "type":        "tool_result",
-                        "tool_use_id": tool_id,
-                        "content":     result
-                    })
+                # Get the final message for conversation history
+                final_msg = stream.get_final_message()
+                response_content_blocks = final_msg.content
 
             if has_tool_use:
-                # Feed tool results back and continue the loop
-                msgs.append({"role": "assistant", "content": response.content})
+                msgs.append({"role": "assistant", "content": response_content_blocks})
                 msgs.append({"role": "user",      "content": tool_results})
                 continue
 
-            # No tool use — model is done
-            break
+            break  # No tool use — done
 
-        # Emit any remaining visible text
+        # Flush remaining visible text
         if visible_buf.strip():
             yield f"data: {json.dumps({'type':'text','text':visible_buf})}\n\n"
 
@@ -660,7 +684,7 @@ def generate_ifc_endpoint():
         result = {"status":"done","output":os.path.basename(path)}
         if upload_preview:
             try:
-                aps = upload_to_aps(path, model_name=spec.get("name","Generated Building"))
+                aps = upload_to_aps(path)
                 result["aps"] = aps
             except Exception as e: print(f"APS upload failed: {e}"); result["aps_error"] = str(e)
         return jsonify(result)
