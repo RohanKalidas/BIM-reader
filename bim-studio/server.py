@@ -37,11 +37,10 @@ def safe_float(v):
 def index():
     return send_from_directory("static", "index.html")
 
-# ── APS Token (for frontend viewer) ───────────────────────────────────────
+# ── APS Token ──────────────────────────────────────────────────────────────
 
 @app.route("/api/aps/token")
 def aps_token():
-    """Return a fresh APS access token for the frontend viewer."""
     try:
         token = get_token()
         return jsonify({"access_token": token, "expires_in": 3600})
@@ -72,21 +71,34 @@ def upload_ifc():
             cwd=os.path.join(os.path.dirname(__file__), '..')
         )
 
+        print("STDOUT:", result.stdout[-500:] if result.stdout else "")
+        print("STDERR:", result.stderr[-200:] if result.stderr else "")
+
         if result.returncode != 0:
             return jsonify({"error": "Pipeline failed", "log": result.stderr}), 500
 
-        # Extract project_id from output
+        # Parse project_id — run.py prints "Pipeline complete. Project id: 16"
         project_id = None
         for line in result.stdout.splitlines():
-            if line.startswith("project_id:"):
-                project_id = int(line.split(":")[1].strip())
+            if "Project id:" in line:
+                try:
+                    project_id = int(line.split("Project id:")[-1].strip())
+                    break
+                except:
+                    pass
 
+        # Fallback: query DB for latest project
         if not project_id:
             conn = get_db()
             cur  = conn.cursor()
             cur.execute("SELECT id FROM projects ORDER BY id DESC LIMIT 1")
-            project_id = cur.fetchone()[0]
+            row = cur.fetchone()
+            if row:
+                project_id = row[0]
             cur.close(); conn.close()
+
+        if not project_id:
+            return jsonify({"error": "Could not determine project_id"}), 500
 
         print(f"Pipeline done. project_id={project_id}")
 
@@ -97,10 +109,8 @@ def upload_ifc():
         # Save APS URN to DB
         conn = get_db()
         cur  = conn.cursor()
-        cur.execute(
-            "UPDATE projects SET aps_urn = %s WHERE id = %s",
-            (aps_result["urn"], project_id)
-        )
+        cur.execute("UPDATE projects SET aps_urn = %s WHERE id = %s",
+                    (aps_result["urn"], project_id))
         conn.commit()
         cur.close(); conn.close()
 
@@ -121,6 +131,8 @@ def upload_ifc():
         })
 
     except Exception as e:
+        import traceback
+        print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
 # ── Projects ───────────────────────────────────────────────────────────────
@@ -190,7 +202,7 @@ def get_stats(pid):
     cur.close(); conn.close()
     return jsonify({"total": total, "relationships": rels})
 
-# ── Component lookup by IFC GlobalId ──────────────────────────────────────
+# ── Component lookup ───────────────────────────────────────────────────────
 
 @app.route("/api/component/by-revit-id/<revit_id>")
 def get_component_by_revit_id(revit_id):
@@ -321,8 +333,8 @@ def reconstruct():
 
         output_file = None
         for line in result.stdout.splitlines():
-            if line.startswith("Output:"):
-                output_file = line.replace("Output:", "").strip()
+            if "Output:" in line:
+                output_file = line.split("Output:")[-1].strip()
 
         return jsonify({"status": "done", "output": output_file, "log": result.stdout})
     except subprocess.TimeoutExpired:
