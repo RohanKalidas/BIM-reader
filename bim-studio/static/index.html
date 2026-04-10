@@ -487,9 +487,16 @@ async function clearLibrary(){
 }
 
 function renderLibrary(){
-  const list=document.getElementById('lib-list'),empty=document.getElementById('lib-empty');
-  if(library.length===0){list.innerHTML='';empty.style.display='block';list.appendChild(empty);return;}
-  empty.style.display='none';list.innerHTML='';
+  const list=document.getElementById('lib-list');
+  if(!list)return;
+  const empty=document.getElementById('lib-empty');
+  if(library.length===0){
+    list.innerHTML='';
+    if(empty){list.appendChild(empty);}
+    else{list.innerHTML='<div id="lib-empty" style="padding:20px 10px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.18);text-align:center;line-height:1.7;">Click components or Save All to build your library</div>';}
+    return;
+  }
+  list.innerHTML='';
   library.forEach(comp=>{
     const item=document.createElement('div');item.className='lib-item';item.dataset.compId=comp.id;
     item.innerHTML='<div class="lib-cat">'+comp.category.replace('Ifc','')+'</div><div class="lib-name">'+(comp.family_name||comp.type_name||'—')+'</div><button class="lib-remove" data-comp-id="'+comp.id+'">✕</button>';
