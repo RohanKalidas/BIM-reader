@@ -543,13 +543,37 @@ async function sendGenMessage(){
             document.getElementById('generate-chat-area').scrollTop=9999;
           }else if(data.type==='spec'&&data.spec){
             genSpec=data.spec;updateSpecSidebar(genSpec);
-            if(aiMsg){var badge=document.createElement('div');badge.className='spec-ready-badge';badge.innerHTML='✓ &nbsp;Building plan generated — export IFC or ask for changes';aiMsg.querySelector('.gen-msg-bubble').appendChild(badge);}
+            if(aiMsg){var badge=document.createElement('div');badge.className='spec-ready-badge';badge.innerHTML='✓ &nbsp;Building plan ready — generating 3D preview…';aiMsg.querySelector('.gen-msg-bubble').appendChild(badge);}
+            // Auto-trigger IFC generation and 3D preview
+            autoPreview();
           }else if(data.type==='done'){genHistory.push({role:'assistant',content:fullText});}
         }catch(e){}
       }
     }
   }catch(err){var ti=document.getElementById('gen-typing');if(ti)ti.remove();addGenMessage('assistant','Connection error.',false);}
   genStreaming=false;document.getElementById('gen-send').disabled=false;
+}
+
+async function autoPreview(){
+  if(!genSpec)return;
+  try{
+    document.getElementById('gen-preview-status').textContent='Generating IFC…';
+    var res=await fetch('/api/generate/ifc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec:genSpec,upload_preview:true})});
+    var data=await res.json();
+    if(data.status==='done'&&data.aps){
+      await initGenViewer(data.aps.urn);
+      // Update the badge
+      var badges=document.querySelectorAll('.spec-ready-badge');
+      if(badges.length>0)badges[badges.length-1].innerHTML='✓ &nbsp;3D preview ready — ask for changes or export IFC';
+    }else if(data.aps_error){
+      document.getElementById('gen-preview-status').textContent='Preview failed';
+      var badges=document.querySelectorAll('.spec-ready-badge');
+      if(badges.length>0)badges[badges.length-1].innerHTML='✓ &nbsp;Plan ready — export IFC to download';
+    }
+  }catch(e){
+    console.error('autoPreview error',e);
+    document.getElementById('gen-preview-status').textContent='—';
+  }
 }
 
 async function exportIfc(){
