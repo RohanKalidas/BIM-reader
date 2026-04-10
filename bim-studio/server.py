@@ -329,29 +329,322 @@ def reconstruct():
         return jsonify({"status":"done","output":output_file,"log":result.stdout})
     except subprocess.TimeoutExpired: return jsonify({"error":"Timed out"}), 500
 
-# ── AI Generate ───────────────────────────────────────────────────────────────
-def get_component_library_for_ai():
+# ── Library tool functions (called by AI during generation) ───────────────────
+
+def library_get_categories():
+    """Return a summary of what categories exist in the library and how many of each."""
     conn = get_db(); cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""SELECT c.id,c.category,c.family_name,c.type_name,
-        c.width_mm,c.height_mm,c.length_mm,c.area_m2,
-        c.parameters->>'_material' as material, p.name as project_name
-        FROM components c JOIN projects p ON p.id=c.project_id
-        WHERE p.status='done' ORDER BY c.category,c.id""")
-    rows = [dict(r) for r in cur.fetchall()]; cur.close(); conn.close()
-    by_cat = {}
+    cur.execute("""
+        SELECT c.category, COUNT(*) as count
+        FROM library l JOIN components c ON c.id = l.component_id
+        GROUP BY c.category ORDER BY count DESC
+    """)
+    rows = cur.fetchall(); cur.close(); conn.close()
+    return [{"category": r["category"], "count": r["count"]} for r in rows]
+
+def library_search(query="", category="", limit=12):
+    """Search the library by name and/or category. Returns matching components with IDs."""
+    conn = get_db(); cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    q = f"%{query.lower()}%" if query else "%"
+    cat = f"%{category}%" if category else "%"
+    cur.execute("""
+        SELECT c.id, c.category, c.family_name, c.type_name,
+               c.width_mm, c.height_mm, c.length_mm,
+               c.parameters->>'_material' as material
+        FROM library l JOIN components c ON c.id = l.component_id
+        WHERE (LOWER(COALESCE(c.family_name,'')) LIKE %s
+               OR LOWER(COALESCE(c.type_name,'')) LIKE %s
+               OR LOWER(c.category) LIKE %s)
+          AND LOWER(c.category) LIKE %s
+        ORDER BY c.category, c.family_name
+        LIMIT %s
+    """, (q, q, q, cat, limit))
+    rows = cur.fetchall(); cur.close(); conn.close()
+    results = []
     for r in rows:
-        cat = r["category"]
-        if cat not in by_cat: by_cat[cat] = []
-        by_cat[cat].append({"id":r["id"],"name":r["family_name"] or r["type_name"] or cat,
-            "w_mm":r["width_mm"],"h_mm":r["height_mm"],"l_mm":r["length_mm"],
-            "material":r["material"],"project":r["project_name"]})
-    summary = {}
-    for cat, items in by_cat.items():
-        seen = set(); unique = []
-        for item in items:
-            if item["name"] not in seen: seen.add(item["name"]); unique.append(item)
-        summary[cat] = unique[:15]
-    return summary
+        results.append({
+            "id":       r["id"],
+            "category": r["category"],
+            "name":     r["family_name"] or r["type_name"] or r["category"],
+            "w_mm":     round(r["width_mm"])  if r["width_mm"]  else None,
+            "h_mm":     round(r["height_mm"]) if r["height_mm"] else None,
+            "l_mm":     round(r["length_mm"]) if r["length_mm"] else None,
+            "material": r["material"],
+        })
+    return results
+
+# Tool definitions for the API
+LIBRARY_TOOLS = [
+    {
+        "name": "get_library_categories",
+        "description": "Get a list of all component categories available in the library with counts. Call this first to understand what's available before searching.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "search_library",
+        "description": "Search the component library by name and/or category. Returns real IFC components with their IDs. Use library_component_id in the spec to reference them. Call multiple times for different component types.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Name to search for, e.g. 'dining table', 'refrigerator', 'sofa', 'toilet', 'duct', 'light'. Leave empty to browse all in a category."
+                },
+                "category": {
+                    "type": "string",
+                    "description": "IFC category to filter by, e.g. 'IfcFurniture', 'IfcElectricAppliance', 'IfcSanitaryTerminal', 'IfcLightFixture'. Leave empty to search all categories."
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results to return. Default 12, max 25.",
+                    "default": 12
+                }
+            },
+            "required": []
+        }
+    }
+]
+
+def process_tool_call(tool_name, tool_input):
+    """Execute a library tool call and return the result as a string."""
+    if tool_name == "get_library_categories":
+        cats = library_get_categories()
+        if not cats:
+            return "Library is empty — no components saved yet. Generate parametrically."
+        return json.dumps(cats)
+    elif tool_name == "search_library":
+        query    = tool_input.get("query", "")
+        category = tool_input.get("category", "")
+        limit    = min(int(tool_input.get("limit", 12)), 25)
+        results  = library_search(query, category, limit)
+        if not results:
+            return f"No results for query='{query}' category='{category}'. Generate parametrically for this component."
+        return json.dumps(results)
+    return "Unknown tool"
+
+GENERATE_SYSTEM_PROMPT = """You are an expert AI architect, structural engineer, MEP engineer, and quantity surveyor — integrated into BIM Studio.
+
+You can design any building type: houses, apartments, offices, warehouses, gyms, basketball courts, hospitals, schools, hotels, retail, industrial, or anything else. You think like a real design team.
+
+You have access to a component library of real IFC elements via tools. ALWAYS search the library before generating furniture, fixtures, appliances, or specialist equipment parametrically.
+
+CONVERSATION BEHAVIOUR
+When the request is vague, ask ONE focused message covering:
+- What is it? (type, purpose, who uses it)
+- Where? (city/country — affects codes, climate, costs, seismic zone)
+- How big? (size, floors, capacity, or area)
+- Budget? (ballpark)
+- Timeline?
+- Special requirements? (sustainability, accessibility, aesthetics)
+
+Do NOT generate a spec until you have enough to make real engineering decisions.
+
+When you have enough information:
+1. Call get_library_categories to see what's available.
+2. Call search_library for each type of furniture/fixture/equipment the building needs.
+3. Write a thorough conversational briefing — site analysis, all systems, cost breakdown by trade, timeline, risks, code concerns.
+4. Tell the user their plan is being generated.
+5. Silently append the spec inside <building_spec> tags. The user NEVER sees the JSON.
+
+BUILDING SYSTEMS — DESIGN ALL THAT APPLY
+
+STRUCTURE
+- Foundations: pad footings, strip footings, raft slab, or piles based on soil/loads
+- Frame: columns and beams sized to spans (beam depth = span/15, columns 300-600mm sq residential)
+- Floor slabs: 200-250mm RC for most uses, 300mm+ for heavy loads
+- Roof: flat RC slab, pitched timber, or steel portal — match building type
+- Shear walls for seismic zones or tall buildings
+
+ENVELOPE
+- Exterior walls: thickness and material based on climate and structure
+- Windows: 15-25% of floor area residential, 40-60% office
+- Curtain walls for commercial glazed facades
+
+INTERIOR
+- Partition walls: 100-140mm stud or blockwork
+- Interior doors per room (820mm min residential, 900mm accessible)
+- Ceilings at correct height (2400mm min residential, 2700mm+ commercial)
+- Stairs: rise 150-180mm, run 250-300mm, width 900mm min residential, 1200mm commercial
+- Railings on all stairs and elevated edges
+
+MECHANICAL (HVAC)
+- Cooling/heating load: residential 50-80W/m2, office 80-120W/m2, sports 60-100W/m2
+- Supply ducts: 400x200mm main runs, 200x100mm branches, pos_z = floor_height - 400
+- Return ducts: ~60% of supply size. Diffusers: 1 per 15-20m2
+- Mechanical room: 3-5% of GFA
+
+PLUMBING
+- Cold water main: 32-50mm residential, 63-100mm commercial
+- Drainage: 100mm soil stacks, 50mm branches, pos_z = floor_height - 600
+- Fixtures: 1 WC per 10 persons commercial, 1 per bedroom residential
+
+ELECTRICAL
+- Main distribution board, sub-boards per floor
+- Lighting: 1 fixture per 15-20m2. Outlets: 1 per 10m2 residential
+
+FIRE PROTECTION
+- Sprinklers: 1 per 12m2 light hazard, pos_z = floor_height - 100
+- Fire alarm detectors: 1 per 60-80m2
+
+VERTICAL TRANSPORT
+- Elevators if 4+ floors residential or 3+ floors commercial
+
+FURNITURE AND FF&E
+- Search the library first for every furniture and fixture type
+- Use library_component_id when found, generate parametrically when not
+- Place at realistic positions based on room layout
+
+COST REFERENCE (USD/m2)
+Basic residential $800-1,400 | Mid residential $1,400-2,200 | High-end $2,200-4,000+
+Commercial office $1,800-3,500 | Retail $1,200-2,500 | Industrial $400-900
+Sports/gym $1,500-3,000 | Hospital $4,000-8,000+ | School $2,000-4,000
+
+TRADE BREAKDOWN
+Structure 25-35% | Envelope 20-25% | Fit-out 15-25% | HVAC 8-15% | Plumbing 5-10% | Electrical 8-12% | Fire 2-4% | Site 5-10%
+
+COORDINATE SYSTEM
+All positions in mm. Origin (0,0,0) = SW corner of ground floor.
+South wall: pos_x=0, pos_y=0, rot_z=0 | North wall: pos_x=0, pos_y=D, rot_z=0
+West wall: pos_x=0, pos_y=0, rot_z=90 | East wall: pos_x=W, pos_y=0, rot_z=90
+Ducts at pos_z = floor_height-400 | Pipes at pos_z = floor_height-600 | Sprinklers at pos_z = floor_height-100
+
+SPEC FORMAT — hidden from user, processed automatically.
+
+<building_spec>
+{
+  "name": "Building Name",
+  "floors": [
+    {
+      "name": "Ground Floor", "elevation": 0.0, "height": 3000,
+      "components": [
+        {"category":"IfcWall","name":"South Wall","material":"Brick","pos_x":0,"pos_y":0,"pos_z":0,"rot_z":0,"width_mm":290,"height_mm":3000,"length_mm":12000},
+        {"category":"IfcFurniture","name":"Dining Table","library_component_id":70,"pos_x":3000,"pos_y":3000,"pos_z":0,"rot_z":0}
+      ]
+    }
+  ],
+  "metadata": {
+    "location": "City, Country", "building_type": "Residential",
+    "estimated_cost_usd": 350000, "gross_floor_area_m2": 150,
+    "floors_above_ground": 2, "estimated_duration_months": 8,
+    "structural_system": "Timber frame", "primary_material": "Brick exterior",
+    "site_concerns": "...", "building_code": "IBC 2021",
+    "cost_breakdown": {"structure_usd":87500,"envelope_usd":70000,"fitout_usd":52500,"hvac_usd":35000,"plumbing_usd":21000,"electrical_usd":35000,"fire_usd":10500,"site_prelim_usd":38500}
+  }
+}
+</building_spec>
+"""
+
+@app.route("/api/generate/stream", methods=["POST"])
+def generate_stream():
+    data         = request.json
+    message      = data.get("message", "")
+    history      = data.get("history", [])
+    session_spec = data.get("session_spec")
+
+    session_context = ""
+    if session_spec:
+        session_context = f"\n\nCURRENT SPEC (user is refining):\n{json.dumps(session_spec, indent=1)}"
+
+    messages = []
+    for h in history:
+        messages.append({"role": h["role"], "content": h["content"]})
+    messages.append({"role": "user", "content": message + session_context})
+
+    def generate():
+        full_text   = ""
+        visible_buf = ""
+        in_spec     = False
+        msgs        = list(messages)  # working copy we extend with tool results
+
+        while True:
+            response = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=16000,
+                system=GENERATE_SYSTEM_PROMPT,
+                tools=LIBRARY_TOOLS,
+                messages=msgs
+            )
+
+            # Process content blocks
+            has_tool_use = False
+            tool_results = []
+
+            for block in response.content:
+                if block.type == "text":
+                    text = block.text
+                    full_text += text
+
+                    # Stream visible text, suppressing <building_spec> JSON
+                    if not in_spec:
+                        visible_buf += text
+                        if "<building_spec>" in visible_buf:
+                            before = visible_buf.split("<building_spec>")[0].rstrip()
+                            if before:
+                                yield f"data: {json.dumps({'type':'text','text':before})}\n\n"
+                            in_spec     = True
+                            visible_buf = ""
+                        else:
+                            hold = len("<building_spec>") - 1
+                            safe = visible_buf[:-hold] if len(visible_buf) > hold else ""
+                            if safe:
+                                yield f"data: {json.dumps({'type':'text','text':safe})}\n\n"
+                            visible_buf = visible_buf[len(safe):]
+                    else:
+                        if "</building_spec>" in full_text:
+                            in_spec     = False
+                            visible_buf = ""
+
+                elif block.type == "tool_use":
+                    has_tool_use = True
+                    tool_name  = block.name
+                    tool_input = block.input
+                    tool_id    = block.id
+                    print(f"Tool call: {tool_name}({json.dumps(tool_input)})")
+
+                    # Notify frontend a search is happening
+                    yield f"data: {json.dumps({'type':'tool','tool':tool_name,'input':tool_input})}\n\n"
+
+                    result = process_tool_call(tool_name, tool_input)
+                    print(f"Tool result: {result[:200]}")
+                    tool_results.append({
+                        "type":        "tool_result",
+                        "tool_use_id": tool_id,
+                        "content":     result
+                    })
+
+            if has_tool_use:
+                # Feed tool results back and continue the loop
+                msgs.append({"role": "assistant", "content": response.content})
+                msgs.append({"role": "user",      "content": tool_results})
+                continue
+
+            # No tool use — model is done
+            break
+
+        # Emit any remaining visible text
+        if visible_buf.strip():
+            yield f"data: {json.dumps({'type':'text','text':visible_buf})}\n\n"
+
+        # Extract spec
+        spec = None
+        if "<building_spec>" in full_text and "</building_spec>" in full_text:
+            try:
+                start = full_text.index("<building_spec>") + len("<building_spec>")
+                end   = full_text.index("</building_spec>")
+                spec  = json.loads(full_text[start:end].strip())
+                print(f"Spec parsed: {spec.get('name')} | {len(spec.get('floors',[]))} floors")
+            except Exception as e:
+                print(f"Spec parse error: {e}")
+
+        yield f"data: {json.dumps({'type':'spec','spec':spec})}\n\n"
+        yield f"data: {json.dumps({'type':'done'})}\n\n"
+
+    return Response(stream_with_context(generate()), mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 GENERATE_SYSTEM_PROMPT = """You are an expert AI architect, structural engineer, MEP engineer, and quantity surveyor — integrated into BIM Studio.
 
