@@ -59,8 +59,8 @@ body { background:var(--ink); color:var(--text); font-family:var(--sans); height
 .lib-item { background:rgba(255,255,255,0.03); border:1px solid var(--rule); border-left:2px solid var(--accent); padding:7px 9px; margin-bottom:3px; cursor:pointer; transition:all 0.12s; position:relative; }
 .lib-item:hover { background:rgba(255,255,255,0.06); }
 .lib-cat { font-family:var(--mono); font-size:8px; color:rgba(255,255,255,0.3); letter-spacing:0.1em; text-transform:uppercase; }
-.lib-name { font-size:11px; margin-top:2px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:300; }
-.lib-remove { position:absolute; top:5px; right:6px; background:none; border:none; color:rgba(255,255,255,0.15); cursor:pointer; font-size:9px; transition:color 0.1s; }
+.lib-name { font-size:11px; margin-top:2px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:300; padding-right:16px; }
+.lib-remove { position:absolute; top:5px; right:6px; background:none; border:none; color:rgba(255,255,255,0.2); cursor:pointer; font-size:9px; transition:color 0.1s; padding:2px 4px; }
 .lib-remove:hover { color:var(--accent); }
 .sidebar-actions { padding:8px; border-top:1px solid var(--rule); display:flex; flex-direction:column; gap:5px; }
 .sidebar-btn { background:none; border:1px solid var(--rule2); color:rgba(255,255,255,0.4); font-family:var(--mono); font-size:8px; padding:7px 8px; cursor:pointer; transition:all 0.12s; letter-spacing:0.1em; text-transform:uppercase; width:100%; text-align:left; }
@@ -97,24 +97,18 @@ body { background:var(--ink); color:var(--text); font-family:var(--sans); height
 #comp-filters { display:flex; border-bottom:1px solid var(--rule2); flex-shrink:0; overflow-x:auto; }
 #comp-filters::-webkit-scrollbar { height:2px; }
 #comp-filters::-webkit-scrollbar-thumb { background:var(--rule2); }
-.comp-filter { flex-shrink:0; font-family:var(--mono); font-size:8px; letter-spacing:0.08em; text-transform:uppercase; padding:9px 12px; color:rgba(255,255,255,0.25); cursor:pointer; border:none; background:none; border-right:1px solid var(--rule); transition:all 0.12s; white-space:nowrap; position:relative; }
+.comp-filter { flex-shrink:0; font-family:var(--mono); font-size:8px; letter-spacing:0.08em; text-transform:uppercase; padding:9px 10px; color:rgba(255,255,255,0.25); cursor:pointer; border:none; background:none; border-right:1px solid var(--rule); transition:all 0.12s; white-space:nowrap; position:relative; }
 .comp-filter:last-child { border-right:none; }
 .comp-filter:hover { color:rgba(255,255,255,0.6); background:rgba(255,255,255,0.03); }
 .comp-filter.active { color:#fff; background:rgba(255,255,255,0.05); }
-.comp-filter.active::after { content:''; position:absolute; bottom:0; left:0; right:0; height:2px; }
-.comp-filter[data-filter="all"].active::after    { background:#888; }
-.comp-filter[data-filter="arch"].active::after   { background:#8ecae6; }
-.comp-filter[data-filter="struct"].active::after { background:#80b918; }
-.comp-filter[data-filter="mep"].active::after    { background:#ff6b6b; }
-.comp-filter[data-filter="other"].active::after  { background:#888; }
-.filter-count { font-size:7px; opacity:0.5; margin-left:4px; }
+.comp-filter.active::after { content:''; position:absolute; bottom:0; left:0; right:0; height:2px; background:var(--accent); }
+.filter-count { font-size:7px; opacity:0.4; margin-left:3px; }
 
 /* Component list */
 #comp-list { flex:1; overflow-y:auto; padding:6px; }
 #comp-list::-webkit-scrollbar { width:2px; }
 #comp-list::-webkit-scrollbar-thumb { background:var(--rule2); }
 #comp-empty-msg { padding:24px 12px; font-family:var(--display); font-size:12px; font-style:italic; color:rgba(255,255,255,0.15); text-align:center; line-height:1.7; }
-
 .comp-item { border:1px solid var(--rule); margin-bottom:3px; transition:border-color 0.12s; }
 .comp-item.selected { border-color:var(--accent); }
 .comp-item.in-library { border-left:2px solid var(--gold); }
@@ -136,7 +130,7 @@ body { background:var(--ink); color:var(--text); font-family:var(--sans); height
 .comp-stat-v { font-family:var(--mono); font-size:10px; color:var(--text); }
 .comp-stat-v.hi { color:var(--accent); }
 
-/* Category colors */
+/* Category dot colors */
 .dot-arch   { background:#8ecae6; }
 .dot-struct { background:#80b918; }
 .dot-mep    { background:#ff6b6b; }
@@ -254,7 +248,6 @@ body { background:var(--ink); color:var(--text); font-family:var(--sans); height
       <button id="btn-save-all">Save All</button>
     </div>
     <div id="comp-filters">
-      <!-- Built dynamically after upload -->
       <button class="comp-filter active" data-filter="all">All</button>
     </div>
     <div id="comp-list">
@@ -303,12 +296,30 @@ body { background:var(--ink); color:var(--text); font-family:var(--sans); height
 // ─────────────────────────────────────────────────────────────────
 // CATEGORY HELPERS
 // ─────────────────────────────────────────────────────────────────
-const ARCH   = new Set(['IfcWall','IfcWallStandardCase','IfcWallElementedCase','IfcSlab','IfcRoof','IfcDoor','IfcWindow','IfcStair','IfcStairFlight','IfcRailing','IfcCurtainWall','IfcCovering','IfcFurnishingElement','IfcFurniture','IfcOpeningElement']);
-const STRUCT = new Set(['IfcColumn','IfcColumnStandardCase','IfcBeam','IfcBeamStandardCase','IfcPlate','IfcMember']);
-const MEP    = new Set(['IfcDuctSegment','IfcDuctFitting','IfcPipeSegment','IfcPipeFitting','IfcAirTerminal','IfcValve','IfcPump','IfcFan','IfcFlowSegment','IfcFlowFitting','IfcFlowTerminal','IfcFlowController','IfcFlowMovingDevice','IfcFlowStorageDevice','IfcElectricAppliance','IfcLightFixture','IfcOutlet']);
+// IfcMember and IfcPlate moved to ARCH — in practice they are
+// roof/curtain wall framing, not structural columns/beams
+const ARCH = new Set([
+  'IfcWall','IfcWallStandardCase','IfcWallElementedCase',
+  'IfcSlab','IfcRoof','IfcDoor','IfcWindow',
+  'IfcStair','IfcStairFlight','IfcRailing',
+  'IfcCurtainWall','IfcCovering',
+  'IfcFurnishingElement','IfcFurniture','IfcOpeningElement',
+  'IfcPlate','IfcMember'
+]);
+const STRUCT = new Set([
+  'IfcColumn','IfcColumnStandardCase',
+  'IfcBeam','IfcBeamStandardCase'
+]);
+const MEP = new Set([
+  'IfcDuctSegment','IfcDuctFitting','IfcPipeSegment','IfcPipeFitting',
+  'IfcAirTerminal','IfcValve','IfcPump','IfcFan',
+  'IfcFlowSegment','IfcFlowFitting','IfcFlowTerminal',
+  'IfcFlowController','IfcFlowMovingDevice','IfcFlowStorageDevice',
+  'IfcElectricAppliance','IfcLightFixture','IfcOutlet'
+]);
 
 const GROUP_LABELS = { all:'All', arch:'Architecture', struct:'Structure', mep:'MEP', other:'Other' };
-const GROUP_COLORS = { all:'#888', arch:'#8ecae6', struct:'#80b918', mep:'#ff6b6b', other:'#666' };
+const GROUP_COLORS = { all:'#888', arch:'#8ecae6', struct:'#80b918', mep:'#ff6b6b', other:'#888' };
 
 function groupOf(cat) {
   if (ARCH.has(cat))   return 'arch';
@@ -316,27 +327,25 @@ function groupOf(cat) {
   if (MEP.has(cat))    return 'mep';
   return 'other';
 }
-
 function dotClass(cat) { return 'dot-' + groupOf(cat); }
 
 // ─────────────────────────────────────────────────────────────────
 // STATE
 // ─────────────────────────────────────────────────────────────────
-let currentProjectId  = null;
-let allComponents     = [];
-let library           = [];
-let chatHistory       = [];
-let isStreaming       = false;
-let viewer            = null;
-let activeFilter      = 'all';
-let globalIdToDbId    = {};   // APS globalId → { dbId, compId }
-let groupDbIds        = {};   // group → [dbId, ...]  for isolation
+let currentProjectId = null;
+let allComponents    = [];
+let library          = [];
+let chatHistory      = [];
+let isStreaming      = false;
+let viewer           = null;
+let activeFilter     = 'all';
+let globalIdToDbId   = {};
+let groupDbIds       = {};
 
 // ─────────────────────────────────────────────────────────────────
 // DYNAMIC FILTER TABS
 // ─────────────────────────────────────────────────────────────────
 function buildDynamicFilters() {
-  // Determine which groups are present
   const groupCounts = { all: allComponents.length };
   allComponents.forEach(c => {
     const g = groupOf(c.category);
@@ -346,17 +355,13 @@ function buildDynamicFilters() {
   const filterBar = document.getElementById('comp-filters');
   filterBar.innerHTML = '';
 
-  // Always show All
-  const order = ['all', 'arch', 'struct', 'mep', 'other'];
-  order.forEach(g => {
-    if (!groupCounts[g] || (g !== 'all' && groupCounts[g] === 0)) return;
+  ['all','arch','struct','mep','other'].forEach(g => {
+    if (g !== 'all' && !groupCounts[g]) return;
 
     const btn = document.createElement('button');
     btn.className = `comp-filter${g === activeFilter ? ' active' : ''}`;
     btn.dataset.filter = g;
-    btn.style.setProperty('--group-color', GROUP_COLORS[g]);
-
-    btn.innerHTML = `${GROUP_LABELS[g]}<span class="filter-count">${groupCounts[g]}</span>`;
+    btn.innerHTML = `${GROUP_LABELS[g]}<span class="filter-count">${groupCounts[g] || 0}</span>`;
 
     btn.onclick = () => {
       document.querySelectorAll('.comp-filter').forEach(b => b.classList.remove('active'));
@@ -394,7 +399,6 @@ async function initViewer(urn) {
     Autodesk.Viewing.Document.load(`urn:${urn}`, (doc) => {
       viewer.loadDocumentNode(doc, doc.getRoot().getDefaultGeometry()).then(() => {
         viewer.addEventListener(Autodesk.Viewing.SELECTION_CHANGED_EVENT, onSelectionChanged);
-        // Build the globalId → dbId map for isolation
         buildGlobalIdMap();
       });
     }, (code, msg) => { console.error(code, msg); toast('Failed to load model'); });
@@ -402,14 +406,12 @@ async function initViewer(urn) {
 }
 
 function buildGlobalIdMap() {
-  // Get all leaf dbIds and map their GLOBALID to our component data
   viewer.getObjectTree(tree => {
     const dbIds = [];
     tree.enumNodeChildren(tree.getRootId(), id => {
       if (tree.getChildCount(id) === 0) dbIds.push(id);
     }, true);
 
-    // Reset maps
     globalIdToDbId = {};
     groupDbIds = { all: dbIds };
 
@@ -437,7 +439,7 @@ function buildGlobalIdMap() {
 
         processed++;
         if (processed === dbIds.length) {
-          console.log(`Mapped ${Object.keys(globalIdToDbId).length} components to APS dbIds`);
+          console.log(`Mapped ${Object.keys(globalIdToDbId).length} of ${dbIds.length} elements`);
         }
       });
     });
@@ -446,19 +448,9 @@ function buildGlobalIdMap() {
 
 function isolateGroup(group) {
   if (!viewer) return;
-
-  if (group === 'all') {
-    viewer.showAll();
-    viewer.clearSelection();
-    return;
-  }
-
+  if (group === 'all') { viewer.showAll(); viewer.clearSelection(); return; }
   const ids = groupDbIds[group];
-  if (!ids || ids.length === 0) {
-    viewer.showAll();
-    return;
-  }
-
+  if (!ids || ids.length === 0) { viewer.showAll(); return; }
   viewer.isolate(ids);
   viewer.fitToView(ids);
 }
@@ -680,20 +672,30 @@ function renderLibrary() {
 
   empty.style.display = 'none';
   list.innerHTML = '';
+
   library.forEach(comp => {
     const item = document.createElement('div');
     item.className = 'lib-item';
+    item.dataset.compId = comp.id;
     item.innerHTML = `
       <div class="lib-cat">${comp.category.replace('Ifc','')}</div>
       <div class="lib-name">${comp.family_name || comp.type_name || '—'}</div>
-      <button class="lib-remove">✕</button>
+      <button class="lib-remove" data-comp-id="${comp.id}">✕</button>
     `;
-    item.querySelector('.lib-remove').onclick = e => { e.stopPropagation(); removeFromLibrary(comp.id); };
     list.appendChild(item);
   });
 
   syncComposeLib();
 }
+
+// Event delegation for library remove — survives re-renders
+document.getElementById('lib-list').addEventListener('click', e => {
+  const btn = e.target.closest('.lib-remove');
+  if (btn) {
+    e.stopPropagation();
+    removeFromLibrary(parseInt(btn.dataset.compId));
+  }
+});
 
 function syncComposeLib() {
   const list = document.getElementById('compose-lib-list');
