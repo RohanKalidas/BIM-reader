@@ -882,16 +882,41 @@ async function saveAll(){
 }
 async function removeFromLibrary(id){await fetch('/api/library/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:id})});await refreshLibrary();}
 async function clearLibrary(){if(!confirm('Clear the entire library?'))return;await fetch('/api/library/clear',{method:'POST'});await refreshLibrary();toast('Library cleared');}
+var libSearchTimer=null;
 function renderLibrary(){
   var list=document.getElementById('lib-list');if(!list)return;
+  var searchEl=document.getElementById('lib-search');
+  var q=searchEl?searchEl.value.trim().toLowerCase():'';
+  var countEl=document.getElementById('lib-count');
+  if(!library.length){
+    list.innerHTML='<div id="lib-empty-msg" style="padding:20px 10px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.18);text-align:center;line-height:1.7;">Save components to build your library</div>';
+    if(countEl)countEl.textContent='';
+    return;
+  }
+  var filtered=q?library.filter(function(c){
+    var name=(c.family_name||c.type_name||c.category||'').toLowerCase();
+    return name.includes(q)||c.category.toLowerCase().includes(q);
+  }):library;
+  if(countEl)countEl.textContent=filtered.length+(q?' of '+library.length:'')+' components';
   list.innerHTML='';
-  if(!library.length){list.innerHTML='<div id="lib-empty-msg" style="padding:20px 10px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.18);text-align:center;line-height:1.7;">Save components to build your library</div>';return;}
-  library.forEach(function(comp){
+  if(!filtered.length){
+    list.innerHTML='<div style="padding:16px 10px;font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.2);text-align:center;letter-spacing:0.06em;">No matches</div>';
+    return;
+  }
+  filtered.forEach(function(comp){
     var item=document.createElement('div');item.className='lib-item';
     item.innerHTML='<div class="lib-cat">'+comp.category.replace('Ifc','')+'</div><div class="lib-name">'+(comp.family_name||comp.type_name||'&#8212;')+'</div><button class="lib-remove" data-comp-id="'+comp.id+'">\u2715</button>';
     list.appendChild(item);
   });
 }
+// Wire search input
+(function(){
+  var el=document.getElementById('lib-search');
+  if(el)el.addEventListener('input',function(){
+    clearTimeout(libSearchTimer);
+    libSearchTimer=setTimeout(renderLibrary,120);
+  });
+})();
 document.getElementById('lib-list').addEventListener('click',function(e){
   var btn=e.target.closest('.lib-remove');if(!btn)return;
   e.stopPropagation();removeFromLibrary(parseInt(btn.dataset.compId));
@@ -1071,13 +1096,6 @@ document.querySelectorAll('.gen-suggestion').forEach(function(s){s.onclick=funct
     dragging=false;document.body.style.cursor='';document.body.style.userSelect='';
   });
 })();
-
-// ── Library search wiring ────────────────────────────────────────────────────
-var libSrchEl=document.getElementById('lib-search');
-if(libSrchEl){libSrchEl.addEventListener('input',function(){
-  clearTimeout(libSearchTimer);
-  libSearchTimer=setTimeout(renderLibrary,120);
-});}
 
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2800);}
 async function init(){await refreshLibrary();document.getElementById('loading').style.display='none';}
