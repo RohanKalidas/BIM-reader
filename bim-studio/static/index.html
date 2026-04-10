@@ -313,26 +313,41 @@ async function initViewer(urn) {
 async function onSelectionChanged(event) {
   const ids = event.dbIdArray;
   if (!ids || ids.length === 0) return;
-
   const dbId = ids[0];
 
-  // Get the external ID (= IFC GlobalId = our revit_id)
   viewer.getProperties(dbId, async (props) => {
-    const externalId = props.externalId;
-    if (!externalId) return;
+    // Try to find the IFC GlobalId in the properties
+    let globalId = null;
+    if (props.properties) {
+      for (const prop of props.properties) {
+        if (prop.attributeName === 'GlobalId' || 
+            prop.attributeName === 'IFCGuid' ||
+            prop.attributeName === 'IfcGUID') {
+          globalId = prop.displayValue;
+          break;
+        }
+      }
+    }
+
+    // Fall back to externalId
+    if (!globalId) globalId = props.externalId;
+
+    if (!globalId) {
+      showRawInspector(props);
+      return;
+    }
 
     try {
-      const res = await fetch(`/api/component/by-revit-id/${externalId}`);
+      const res = await fetch(`/api/component/by-revit-id/${globalId}`);
       if (res.ok) {
         const comp = await res.json();
         selectedComponent = comp;
         showInspector(comp);
       } else {
-        // Show raw APS properties
         showRawInspector(props);
       }
     } catch(e) {
-      console.error('Lookup failed:', e);
+      showRawInspector(props);
     }
   });
 }
