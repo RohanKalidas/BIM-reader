@@ -513,7 +513,58 @@ async function initGenViewer(filename){
     model.on('loaded',function(){
       document.getElementById('xeokit-loading').style.display='none';
       document.getElementById('view-status').textContent='Ready';
-      xeokitViewer.cameraFlight.flyTo(model);
+
+      // Color by IFC type using xeokit metaobjects
+      var colorMap={
+        'IfcWall':[0.90,0.88,0.82],'IfcWallStandardCase':[0.90,0.88,0.82],
+        'IfcWallElementedCase':[0.90,0.88,0.82],
+        'IfcSlab':[0.75,0.73,0.68],'IfcRoof':[0.62,0.55,0.48],
+        'IfcColumn':[0.55,0.65,0.78],'IfcColumnStandardCase':[0.55,0.65,0.78],
+        'IfcBeam':[0.50,0.60,0.75],'IfcBeamStandardCase':[0.50,0.60,0.75],
+        'IfcDoor':[0.65,0.42,0.22],'IfcWindow':[0.60,0.82,0.95],
+        'IfcStair':[0.78,0.72,0.58],'IfcRailing':[0.38,0.38,0.40],
+        'IfcCovering':[0.80,0.76,0.68],
+        'IfcFurniture':[0.78,0.60,0.38],'IfcFurnishingElement':[0.78,0.60,0.38],
+        'IfcDuctSegment':[0.28,0.62,0.82],'IfcDuctFitting':[0.28,0.62,0.82],
+        'IfcPipeSegment':[0.82,0.38,0.28],'IfcPipeFitting':[0.82,0.38,0.28],
+        'IfcLightFixture':[0.98,0.95,0.65],
+        'IfcElectricAppliance':[0.48,0.50,0.62],
+        'IfcSanitaryTerminal':[0.72,0.88,0.92],
+        'IfcFireSuppressionTerminal':[0.90,0.28,0.28],
+        'IfcBuildingElementProxy':[0.70,0.70,0.70],
+      };
+      var defaultColor=[0.82,0.82,0.82];
+      var scene=xeokitViewer.scene;
+      var metaScene=xeokitViewer.metaScene;
+      Object.values(scene.objects).forEach(function(obj){
+        var col=defaultColor;
+        if(metaScene){
+          var meta=metaScene.metaObjects[obj.id];
+          if(meta&&meta.type&&colorMap[meta.type]){col=colorMap[meta.type];}
+        }
+        obj.colorize=col;
+        obj.opacity=1.0;
+      });
+
+      // Fit camera with good isometric angle
+      var aabb=model.aabb;
+      var cx=(aabb[0]+aabb[3])/2;
+      var cy=(aabb[1]+aabb[4])/2;
+      var cz=(aabb[2]+aabb[5])/2;
+      var dx=aabb[3]-aabb[0];
+      var dy=aabb[4]-aabb[1];
+      var dz=aabb[5]-aabb[2];
+      var size=Math.max(dx,dy,dz);
+      scene.camera.perspective.far=size*200;
+      scene.camera.perspective.near=size*0.001;
+      xeokitViewer.cameraFlight.flyTo({
+        eye:[cx+size*1.5, cy+size*1.2, cz+size*1.5],
+        look:[cx, cy*0.3, cz],
+        up:[0,1,0],
+        duration:0.8
+      });
+      setStep('ifc','done','Ready');
+      setTimeout(function(){var card=document.getElementById('gen-steps-card');if(card)card.style.display='none';},2000);
     });
 
     model.on('error',function(e){
