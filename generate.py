@@ -141,11 +141,31 @@ def _copy_attr(target, attr):
     if hasattr(attr, "is_a"): return _copy_entity(target, attr)
     return attr
 
+def get_source_unit_scale(src):
+    """Return scale factor to convert source units to metres."""
+    try:
+        for unit in src.by_type("IfcSIUnit"):
+            if unit.UnitType == "LENGTHUNIT":
+                if unit.Name == "METRE" and not unit.Prefix:
+                    return 1.0
+                if unit.Name == "METRE" and unit.Prefix == "MILLI":
+                    return 0.001
+        for unit in src.by_type("IfcConversionBasedUnit"):
+            if unit.UnitType == "LENGTHUNIT":
+                if hasattr(unit, "ConversionFactor") and unit.ConversionFactor:
+                    return float(unit.ConversionFactor.ValueComponent) * 0.001
+    except Exception:
+        pass
+    return 0.001  # default assume mm
+
 def transplant_geometry(target, body_ctx, revit_id, filename):
     src = get_source_ifc(filename)
     if not src: return None
     src_el = next((e for e in src.by_type("IfcProduct") if e.GlobalId == revit_id), None)
     if not src_el or not src_el.Representation: return None
+
+    scale = get_source_unit_scale(src)
+
     try:
         new_reps = []
         for rep in src_el.Representation.Representations:
@@ -153,10 +173,35 @@ def transplant_geometry(target, body_ctx, revit_id, filename):
             items = [_copy_entity(target, it) for it in rep.Items]
             items = [i for i in items if i]
             if items:
-                new_reps.append(target.createIfcShapeRepresentation(
-                    body_ctx, rep.RepresentationIdentifier or "Body",
-                    rep.RepresentationType or "Brep", items))
-        return target.createIfcProductDefinitionShape(None,None,new_reps) if new_reps else None
+                # Wrap in a scale transform if source is not already in metres
+                if abs(scale - 1.0) > 0.0001:
+                    cart_op = target.createIfcCartesianTransformationOperator3D(
+                        None, None,
+                        target.createIfcCartesianPoint((0.0, 0.0, 0.0)),
+                        scale, None, None, None)
+                    mapped_rep = target.createIfcShapeRepresentation(
+                        body_ctx,
+                        rep.RepresentationIdentifier or "Body",
+                        rep.RepresentationType or "Brep",
+                        items)
+                    rep_map = target.createIfcRepresentationMap(
+                        target.createIfcAxis2Placement3D(
+                            target.createIfcCartesianPoint((0.0,0.0,0.0)), None, None),
+                        mapped_rep)
+                    mapped_item = target.createIfcMappedItem(rep_map, cart_op)
+                    final_rep = target.createIfcShapeRepresentation(
+                        body_ctx,
+                        rep.RepresentationIdentifier or "Body",
+                        "MappedRepresentation",
+                        [mapped_item])
+                    new_reps.append(final_rep)
+                else:
+                    new_reps.append(target.createIfcShapeRepresentation(
+                        body_ctx,
+                        rep.RepresentationIdentifier or "Body",
+                        rep.RepresentationType or "Brep",
+                        items))
+        return target.createIfcProductDefinitionShape(None, None, new_reps) if new_reps else None
     except Exception as e:
         print(f"  Transplant failed: {e}"); return None
 
