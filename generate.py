@@ -261,123 +261,123 @@ def find_library_component(query):
     except Exception: pass
     return None, None, None
 
-def build_room(m, oh, body_ctx, room, storey_pl, floor_elev, elements, ceil_h=CEIL_H):
-    """
-    Build a complete room from a room descriptor dict:
-      {name, x, y, width, depth, height?, is_exterior?, has_door_north/south/east/west?}
-    Adds walls, floor slab, ceiling, windows (exterior only), door openings, fixtures.
-    All coords in metres.
-    """
-    rx  = float(room.get("x", 0))
-    ry  = float(room.get("y", 0))
-    rw  = float(room.get("width",  4.0))
-    rd  = float(room.get("depth",  3.0))
-    rh  = float(room.get("height", ceil_h))
-    rname = room.get("name", "Room")
-    ext = room.get("exterior", True)
-    wt  = WALL_T if ext else INT_WALL_T
+def make_wall(m, oh, body_ctx, name, x, y, z, length, thickness, height, storey_pl, material="Concrete"):
+    """Create a single wall element with correct extruded geometry."""
+    # Profile: rectangle in XY plane, extruded in Z
+    prof = rect_prof(m, length, thickness)
+    solid = m.createIfcExtrudedAreaSolid(prof, ax3(m), d3(m,0,0,1), float(height))
+    rep = m.createIfcShapeRepresentation(body_ctx, "Body", "SweptSolid", [solid])
+    prod_rep = m.createIfcProductDefinitionShape(None, None, [rep])
+    pl = make_placement(m, x, y, z, rel=storey_pl)
+    el = make_element(m, "IfcWall", oh, name, pl, prod_rep)
+    attach_material(m, oh, el, material)
+    return el
 
+def make_slab(m, oh, body_ctx, name, x, y, z, width, depth, thickness, storey_pl, material="Concrete"):
+    """Create a slab element."""
+    prof = rect_prof(m, width, depth)
+    solid = m.createIfcExtrudedAreaSolid(prof, ax3(m), d3(m,0,0,1), float(thickness))
+    rep = m.createIfcShapeRepresentation(body_ctx, "Body", "SweptSolid", [solid])
+    prod_rep = m.createIfcProductDefinitionShape(None, None, [rep])
+    pl = make_placement(m, x, y, z, rel=storey_pl)
+    el = make_element(m, "IfcSlab", oh, name, pl, prod_rep)
+    attach_material(m, oh, el, material)
+    return el
+
+def build_room(m, oh, body_ctx, room, storey_pl, floor_elev, elements, ceil_h=CEIL_H):
+    rx    = float(room.get("x", 0))
+    ry    = float(room.get("y", 0))
+    rw    = float(room.get("width",  4.0))
+    rd    = float(room.get("depth",  3.0))
+    rh    = float(room.get("height", ceil_h))
+    rname = room.get("name", "Room")
+    ext   = room.get("exterior", True)
+    wt    = WALL_T if ext else INT_WALL_T
+    wall_mat = "CMU" if ext else "Drywall"
     rtype = get_room_type(rname)
 
-    # ── Floor slab ────────────────────────────────────────────────────────────
-    fl_pl  = make_placement(m, rx, ry, -FLOOR_T, rel=storey_pl)
-    fl_rep = box_rep(m, body_ctx, rw, rd, FLOOR_T)
-    fl_el  = make_element(m,"IfcSlab",oh,f"{rname} Floor",fl_pl,fl_rep)
-    attach_material(m,oh,fl_el,"Concrete")
-    elements.append(fl_el)
+    # Floor slab
+    elements.append(make_slab(m, oh, body_ctx, f"{rname} Floor",
+        rx, ry, -FLOOR_T, rw, rd, FLOOR_T, storey_pl, "Concrete"))
 
-    # ── Ceiling ───────────────────────────────────────────────────────────────
-    cl_pl  = make_placement(m, rx, ry, rh, rel=storey_pl)
-    cl_rep = box_rep(m, body_ctx, rw, rd, FLOOR_T)
-    cl_el  = make_element(m,"IfcSlab",oh,f"{rname} Ceiling",cl_pl,cl_rep)
-    attach_material(m,oh,cl_el,"Concrete")
-    elements.append(cl_el)
+    # Ceiling
+    elements.append(make_slab(m, oh, body_ctx, f"{rname} Ceiling",
+        rx, ry, rh, rw, rd, FLOOR_T, storey_pl, "Concrete"))
 
-    # ── Walls ─────────────────────────────────────────────────────────────────
-    wall_mat = "CMU" if ext else "Drywall"
+    # South wall
+    elements.append(make_wall(m, oh, body_ctx, f"{rname} South Wall",
+        rx, ry, 0, rw, wt, rh, storey_pl, wall_mat))
+    # North wall
+    elements.append(make_wall(m, oh, body_ctx, f"{rname} North Wall",
+        rx, ry+rd-wt, 0, rw, wt, rh, storey_pl, wall_mat))
+    # West wall (between S and N walls)
+    elements.append(make_wall(m, oh, body_ctx, f"{rname} West Wall",
+        rx, ry+wt, 0, wt, rd-2*wt, rh, storey_pl, wall_mat))
+    # East wall
+    elements.append(make_wall(m, oh, body_ctx, f"{rname} East Wall",
+        rx+rw-wt, ry+wt, 0, wt, rd-2*wt, rh, storey_pl, wall_mat))
 
-    # South wall (y=ry)
-    sw_pl  = make_placement(m, rx, ry, 0, rel=storey_pl)
-    sw_rep = box_rep(m, body_ctx, rw, wt, rh)
-    sw_el  = make_element(m,"IfcWall",oh,f"{rname} South Wall",sw_pl,sw_rep)
-    attach_material(m,oh,sw_el,wall_mat); elements.append(sw_el)
-
-    # North wall (y=ry+rd-wt)
-    nw_pl  = make_placement(m, rx, ry+rd-wt, 0, rel=storey_pl)
-    nw_rep = box_rep(m, body_ctx, rw, wt, rh)
-    nw_el  = make_element(m,"IfcWall",oh,f"{rname} North Wall",nw_pl,nw_rep)
-    attach_material(m,oh,nw_el,wall_mat); elements.append(nw_el)
-
-    # West wall (x=rx)
-    ww_pl  = make_placement(m, rx, ry+wt, 0, rel=storey_pl)
-    ww_rep = box_rep(m, body_ctx, wt, rd-2*wt, rh)
-    ww_el  = make_element(m,"IfcWall",oh,f"{rname} West Wall",ww_pl,ww_rep)
-    attach_material(m,oh,ww_el,wall_mat); elements.append(ww_el)
-
-    # East wall (x=rx+rw-wt)
-    ew_pl  = make_placement(m, rx+rw-wt, ry+wt, 0, rel=storey_pl)
-    ew_rep = box_rep(m, body_ctx, wt, rd-2*wt, rh)
-    ew_el  = make_element(m,"IfcWall",oh,f"{rname} East Wall",ew_pl,ew_rep)
-    attach_material(m,oh,ew_el,wall_mat); elements.append(ew_el)
-
-    # ── Door ─────────────────────────────────────────────────────────────────
-    # Place door on south wall by default, or specified wall
-    door_wall = room.get("door_wall","south")
-    door_offset = 0.3  # from corner
+    # Door
+    door_wall = room.get("door_wall", "south")
+    door_offset = max(wt + 0.1, 0.3)
     if door_wall == "south":
-        d_pl = make_placement(m, rx+door_offset, ry, 0, rel=storey_pl)
+        dx, dy, dw, dd = rx+door_offset, ry, DOOR_W, wt
     elif door_wall == "north":
-        d_pl = make_placement(m, rx+door_offset, ry+rd-wt, 0, rel=storey_pl)
+        dx, dy, dw, dd = rx+door_offset, ry+rd-wt, DOOR_W, wt
     elif door_wall == "west":
-        d_pl = make_placement(m, rx, ry+door_offset, 0, rel=storey_pl)
-    else:  # east
-        d_pl = make_placement(m, rx+rw-wt, ry+door_offset, 0, rel=storey_pl)
+        dx, dy, dw, dd = rx, ry+door_offset, wt, DOOR_W
+    else:
+        dx, dy, dw, dd = rx+rw-wt, ry+door_offset, wt, DOOR_W
 
-    d_rep  = box_rep(m, body_ctx, DOOR_W, wt, DOOR_H)
-    d_el   = make_element(m,"IfcDoor",oh,f"{rname} Door",d_pl,d_rep)
-    attach_material(m,oh,d_el,"Wood"); elements.append(d_el)
+    d_prof  = rect_prof(m, dw, dd)
+    d_solid = m.createIfcExtrudedAreaSolid(d_prof, ax3(m), d3(m,0,0,1), DOOR_H)
+    d_rep   = m.createIfcShapeRepresentation(body_ctx, "Body", "SweptSolid", [d_solid])
+    d_prod  = m.createIfcProductDefinitionShape(None, None, [d_rep])
+    d_el    = make_element(m, "IfcDoor", oh, f"{rname} Door",
+                           make_placement(m, dx, dy, 0, rel=storey_pl), d_prod)
+    attach_material(m, oh, d_el, "Wood")
+    elements.append(d_el)
 
-    # ── Windows (exterior rooms only, on south and west walls) ────────────────
-    if ext:
-        # South window
-        sw_win_x = rx + rw/2 - WIN_W/2
-        w1_pl  = make_placement(m, sw_win_x, ry, WIN_SILL, rel=storey_pl)
-        w1_rep = box_rep(m, body_ctx, WIN_W, wt+0.02, WIN_H)
-        w1_el  = make_element(m,"IfcWindow",oh,f"{rname} South Window",w1_pl,w1_rep)
-        attach_material(m,oh,w1_el,"Aluminium"); elements.append(w1_el)
+    # Window (exterior rooms only)
+    if ext and rw >= 2.0:
+        wx     = rx + rw/2 - WIN_W/2
+        w_prof = rect_prof(m, WIN_W, wt+0.02)
+        w_solid= m.createIfcExtrudedAreaSolid(w_prof, ax3(m), d3(m,0,0,1), WIN_H)
+        w_rep  = m.createIfcShapeRepresentation(body_ctx, "Body", "SweptSolid", [w_solid])
+        w_prod = m.createIfcProductDefinitionShape(None, None, [w_rep])
+        w_el   = make_element(m, "IfcWindow", oh, f"{rname} Window",
+                              make_placement(m, wx, ry, WIN_SILL, rel=storey_pl), w_prod)
+        attach_material(m, oh, w_el, "Aluminium")
+        elements.append(w_el)
 
-    # ── Fixtures ──────────────────────────────────────────────────────────────
+    # Fixtures
     fixtures = ROOM_FIXTURES.get(rtype, [])
-    inner_w  = rw - 2*wt
-    inner_d  = rd - 2*wt
+    inner_w  = max(rw - 2*wt, 0.5)
+    inner_d  = max(rd - 2*wt, 0.5)
 
     for fname, ftype, fx, fy, fw, fd, fh, fquery in fixtures:
-        # Position relative to room interior
-        abs_x = rx + wt + fx*inner_w - fw/2
-        abs_y = ry + wt + fy*inner_d - fd/2
-        abs_z = 0.0
-        if "Light" in fname or "light" in fname:
-            abs_z = rh - 0.05  # ceiling mount
+        abs_x = rx + wt + max(0, fx*inner_w - fw/2)
+        abs_y = ry + wt + max(0, fy*inner_d - fd/2)
+        abs_x = min(abs_x, rx + rw - wt - fw)
+        abs_y = min(abs_y, ry + rd - wt - fd)
+        abs_z = (rh - 0.05) if "Light" in fname else 0.0
 
-        # Try library transplant first
         lib_id, src_filename, revit_id = find_library_component(fquery)
         f_rep = None
         if lib_id and src_filename and revit_id:
-            if not hasattr(_copy_entity, "_cache"):
-                _copy_entity._cache = {}
+            if not hasattr(_copy_entity, "_cache"): _copy_entity._cache = {}
             f_rep = transplant_geometry(m, body_ctx, revit_id, src_filename)
 
         if not f_rep:
-            # Generate parametric box
             fw_s = max(fw, 0.1); fd_s = max(fd, 0.1); fh_s = max(fh, 0.05)
-            f_pl_box = make_placement(m, abs_x, abs_y, abs_z, rel=storey_pl)
-            f_rep = box_rep(m, body_ctx, fw_s, fd_s, fh_s)
-            f_el  = make_element(m, ftype, oh, f"{rname} {fname}", f_pl_box, f_rep)
-            elements.append(f_el)
-        else:
-            f_pl = make_placement(m, abs_x, abs_y, abs_z, rel=storey_pl)
-            f_el = make_element(m, ftype, oh, f"{rname} {fname}", f_pl, f_rep)
-            elements.append(f_el)
+            f_prof  = rect_prof(m, fw_s, fd_s)
+            f_solid = m.createIfcExtrudedAreaSolid(f_prof, ax3(m), d3(m,0,0,1), fh_s)
+            f_shape = m.createIfcShapeRepresentation(body_ctx, "Body", "SweptSolid", [f_solid])
+            f_rep   = m.createIfcProductDefinitionShape(None, None, [f_shape])
+
+        f_el = make_element(m, ftype, oh, f"{rname} {fname}",
+                            make_placement(m, abs_x, abs_y, abs_z, rel=storey_pl), f_rep)
+        elements.append(f_el)
 
 
 def build_from_rooms(m, oh, body_ctx, spec, bldg, wp, storey):
