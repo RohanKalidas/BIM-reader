@@ -487,13 +487,19 @@ async function initGenViewer(filename){
       backgroundColor:[0.05,0.05,0.05],
     });
 
-    // Nice camera
     xeokitViewer.camera.eye=[10,10,10];
     xeokitViewer.camera.look=[0,0,0];
     xeokitViewer.camera.up=[0,1,0];
 
+    // Load web-ifc WASM and pass the IfcAPI instance explicitly
+    var WebIFC=await import('https://cdn.jsdelivr.net/npm/web-ifc@0.0.51/web-ifc-api-browser.js');
+    var ifcAPI=new WebIFC.IfcAPI();
+    ifcAPI.SetWasmPath('https://cdn.jsdelivr.net/npm/web-ifc@0.0.51/');
+    await ifcAPI.Init();
+
     var ifcLoader=new WebIFCLoaderPlugin(xeokitViewer,{
-      wasmPath:'https://cdn.jsdelivr.net/npm/web-ifc@0.0.51/'
+      WebIFC: WebIFC,
+      IfcAPI: ifcAPI
     });
 
     var url='/api/generate/download?file='+encodeURIComponent(filename);
