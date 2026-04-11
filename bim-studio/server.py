@@ -349,23 +349,74 @@ def library_get_categories():
     rows = cur.fetchall(); cur.close(); conn.close()
     return [{"category": r["category"], "count": r["count"]} for r in rows]
 
+SEARCH_SYNONYMS = {
+    "toilet":    ["toilet","wc","water closet","sanitary","lavatory","commode"],
+    "wc":        ["wc","toilet","water closet","lavatory"],
+    "sink":      ["sink","basin","washbasin","lavatory","wash hand"],
+    "bath":      ["bath","bathtub","tub","shower"],
+    "shower":    ["shower","bath","tub"],
+    "fridge":    ["fridge","refrigerator","refrigeration"],
+    "refrigerator":["refrigerator","fridge","refrigeration"],
+    "sofa":      ["sofa","couch","settee","lounge"],
+    "couch":     ["couch","sofa","settee"],
+    "table":     ["table","desk","worktop","counter"],
+    "chair":     ["chair","seat","stool"],
+    "bed":       ["bed","bunk","mattress"],
+    "wardrobe":  ["wardrobe","closet","cupboard","cabinet"],
+    "door":      ["door","entry","entrance"],
+    "window":    ["window","glazing","glass"],
+    "light":     ["light","lamp","luminaire","fixture","downlight"],
+    "duct":      ["duct","ducting","hvac","air","vent"],
+    "pipe":      ["pipe","piping","plumbing","water","drain"],
+    "boiler":    ["boiler","heater","water heater","hot water"],
+    "radiator":  ["radiator","heater","panel"],
+    "fan":       ["fan","ventilator","extract"],
+    "stove":     ["stove","oven","cooker","hob","range"],
+    "microwave": ["microwave","oven"],
+    "dishwasher":["dishwasher","dish"],
+}
+
 def library_search(query="", category="", limit=12):
     """Search the library by name and/or category. Returns matching components with IDs."""
     conn = get_db(); cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    q = f"%{query.lower()}%" if query else "%"
-    cat = f"%{category}%" if category else "%"
-    cur.execute("""
+    cat = f"%{category.lower()}%" if category else "%"
+
+    # Expand query with synonyms
+    q_lower = query.lower()
+    terms = [q_lower] if q_lower else []
+    if q_lower in SEARCH_SYNONYMS:
+        terms = SEARCH_SYNONYMS[q_lower]
+    # Also check if query matches any synonym key
+    for key, syns in SEARCH_SYNONYMS.items():
+        if q_lower in syns and key not in terms:
+            terms.append(key)
+            terms.extend(syns)
+
+    terms = list(set(terms)) if terms else [""]
+
+    # Build OR clause for all terms
+    like_clauses = []
+    params = []
+    for term in terms:
+        t = f"%{term}%"
+        like_clauses.append(
+            "(LOWER(COALESCE(c.family_name,'')) LIKE %s OR LOWER(COALESCE(c.type_name,'')) LIKE %s OR LOWER(c.category) LIKE %s)"
+        )
+        params.extend([t, t, t])
+
+    where_names = " OR ".join(like_clauses) if like_clauses else "1=1"
+    params.extend([cat, limit])
+
+    cur.execute(f"""
         SELECT c.id, c.category, c.family_name, c.type_name,
                c.width_mm, c.height_mm, c.length_mm,
                c.parameters->>'_material' as material
         FROM library l JOIN components c ON c.id = l.component_id
-        WHERE (LOWER(COALESCE(c.family_name,'')) LIKE %s
-               OR LOWER(COALESCE(c.type_name,'')) LIKE %s
-               OR LOWER(c.category) LIKE %s)
+        WHERE ({where_names})
           AND LOWER(c.category) LIKE %s
         ORDER BY c.category, c.family_name
         LIMIT %s
-    """, (q, q, q, cat, limit))
+    """, params)
     rows = cur.fetchall(); cur.close(); conn.close()
     results = []
     for r in rows:
