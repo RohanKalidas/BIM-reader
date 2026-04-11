@@ -289,7 +289,8 @@ def _copy_attr(target, attr):
 # ── Placement ─────────────────────────────────────────────────────────────────
 
 def make_placement(model, px, py, pz, rot_z_deg=0.0, relative_to=None):
-    x, y, z = float(px or 0), float(py or 0), float(pz or 0)
+    # AI outputs positions in mm, IFC uses metres
+    x, y, z = float(px or 0)/1000, float(py or 0)/1000, float(pz or 0)/1000
     rz = math.radians(float(rot_z_deg or 0))
     cz, sz = math.cos(rz), math.sin(rz)
     a = ax3(model, x, y, z, d3(model,0,0,1), d3(model,cz,sz,0))
