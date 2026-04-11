@@ -1,9 +1,14 @@
 """
 generate.py — BIM Studio
-Writes a valid IFC4 file with:
- - Real extruded geometry for structural elements (walls, slabs, columns, beams)
- - Transplanted real geometry for library components (furniture, fixtures, etc.)
-   by opening the source IFC file and copying the element's actual shape.
+Two-mode IFC generator:
+
+MODE 1 — PROCEDURAL (new): spec contains "rooms" array.
+  generate.py builds the full building from room descriptions:
+  walls, doors, windows, floor slab, ceiling, and room-appropriate fixtures.
+  The AI only needs to describe rooms; all component placement is handled here.
+
+MODE 2 — COMPONENT (legacy): spec contains "floors" with "components" arrays.
+  Used as fallback if "rooms" key is absent.
 """
 
 import math, json, os, sys
@@ -32,513 +37,617 @@ def get_db():
     )
 
 def get_component_source(component_id):
-    """Return (revit_id, filename) for a library component."""
     try:
         conn = get_db()
         cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute("""
             SELECT c.revit_id, p.filename
-            FROM components c
-            JOIN projects p ON p.id = c.project_id
+            FROM components c JOIN projects p ON p.id = c.project_id
             WHERE c.id = %s
         """, (component_id,))
-        row = cur.fetchone()
-        cur.close(); conn.close()
+        row = cur.fetchone(); cur.close(); conn.close()
         return (row["revit_id"], row["filename"]) if row else (None, None)
     except Exception as e:
         print(f"  DB lookup failed: {e}")
         return None, None
 
-# ── Category map ──────────────────────────────────────────────────────────────
+# ── IFC helpers ───────────────────────────────────────────────────────────────
 
-CATEGORY_MAP = {
-    "IfcWall":"IfcWall","IfcWallStandardCase":"IfcWallStandardCase",
-    "IfcSlab":"IfcSlab","IfcRoof":"IfcRoof",
-    "IfcDoor":"IfcDoor","IfcWindow":"IfcWindow",
-    "IfcColumn":"IfcColumn","IfcColumnStandardCase":"IfcColumnStandardCase",
-    "IfcBeam":"IfcBeam","IfcBeamStandardCase":"IfcBeamStandardCase",
-    "IfcStair":"IfcStair","IfcStairFlight":"IfcStairFlight",
-    "IfcRailing":"IfcRailing","IfcCurtainWall":"IfcCurtainWall",
-    "IfcCovering":"IfcCovering","IfcPlate":"IfcPlate","IfcMember":"IfcMember",
-    "IfcDuctSegment":"IfcDuctSegment","IfcPipeSegment":"IfcPipeSegment",
-    "IfcFurniture":"IfcFurniture","IfcFurnishingElement":"IfcFurnishingElement",
-}
+def pt3(m, x, y, z): return m.createIfcCartesianPoint((float(x),float(y),float(z)))
+def pt2(m, x, y):    return m.createIfcCartesianPoint((float(x),float(y)))
+def d3(m, x, y, z):  return m.createIfcDirection((float(x),float(y),float(z)))
+def d2(m, x, y):     return m.createIfcDirection((float(x),float(y)))
 
-# ── Geometry helpers ──────────────────────────────────────────────────────────
+def ax3(m, ox=0, oy=0, oz=0, az=None, rx=None):
+    return m.createIfcAxis2Placement3D(
+        pt3(m,ox,oy,oz), az or d3(m,0,0,1), rx or d3(m,1,0,0))
 
-def pt3(model, x, y, z): return model.createIfcCartesianPoint((float(x),float(y),float(z)))
-def pt2(model, x, y):    return model.createIfcCartesianPoint((float(x),float(y)))
-def d3(model, x, y, z):  return model.createIfcDirection((float(x),float(y),float(z)))
-def d2(model, x, y):     return model.createIfcDirection((float(x),float(y)))
+def local_pl(m, rel=None, ox=0, oy=0, oz=0, az=None, rx=None):
+    return m.createIfcLocalPlacement(rel, ax3(m,ox,oy,oz,az,rx))
 
-def ax3(model, ox=0, oy=0, oz=0, az=None, rx=None):
-    return model.createIfcAxis2Placement3D(
-        pt3(model,ox,oy,oz),
-        az or d3(model,0,0,1),
-        rx or d3(model,1,0,0)
-    )
-
-def local_pl(model, rel=None, ox=0, oy=0, oz=0, az=None, rx=None):
-    return model.createIfcLocalPlacement(rel, ax3(model,ox,oy,oz,az,rx))
-
-def make_context(model):
-    ctx  = model.createIfcGeometricRepresentationContext(
-        None,"Model",3,1e-5, ax3(model), None)
-    body = model.createIfcGeometricRepresentationSubContext(
+def make_context(m):
+    ctx  = m.createIfcGeometricRepresentationContext(None,"Model",3,1e-5,ax3(m),None)
+    body = m.createIfcGeometricRepresentationSubContext(
         "Body","Model",None,None,None,None,ctx,None,"MODEL_VIEW",None)
     return ctx, body
 
-def rect_prof(model, w, d, ox=0, oy=0):
-    return model.createIfcRectangleProfileDef(
-        "AREA", None,
-        model.createIfcAxis2Placement2D(pt2(model,ox,oy), d2(model,1,0)),
-        float(w), float(d)
-    )
+def rect_prof(m, w, d, ox=0, oy=0):
+    return m.createIfcRectangleProfileDef(
+        "AREA",None,
+        m.createIfcAxis2Placement2D(pt2(m,ox,oy), d2(m,1,0)),
+        float(w), float(d))
 
-def extrude(model, body_ctx, profile, depth, dx=0, dy=0, dz=1):
-    solid = model.createIfcExtrudedAreaSolid(
-        profile, ax3(model), d3(model,dx,dy,dz), float(depth))
-    return model.createIfcShapeRepresentation(body_ctx,"Body","SweptSolid",[solid])
+def extrude(m, ctx, profile, depth, dx=0, dy=0, dz=1):
+    solid = m.createIfcExtrudedAreaSolid(profile, ax3(m), d3(m,dx,dy,dz), float(depth))
+    return m.createIfcShapeRepresentation(ctx,"Body","SweptSolid",[solid])
 
-# ── Geometry per category ─────────────────────────────────────────────────────
+def box_rep(m, ctx, lx, ly, lz, ox=0, oy=0):
+    p = rect_prof(m, lx, ly, ox, oy)
+    return m.createIfcProductDefinitionShape(None,None,[extrude(m,ctx,p,lz)])
 
-def wall_geom(model, ctx, w_mm, h_mm, l_mm):
-    p = rect_prof(model, l_mm/1000, w_mm/1000, (l_mm/1000)/2, (w_mm/1000)/2)
-    return extrude(model, ctx, p, h_mm/1000)
+def make_placement(m, x, y, z, rz_deg=0, rel=None):
+    rz = math.radians(float(rz_deg or 0))
+    cz, sz = math.cos(rz), math.sin(rz)
+    a = ax3(m, x, y, z, d3(m,0,0,1), d3(m,cz,sz,0))
+    return m.createIfcLocalPlacement(rel, a)
 
-def slab_geom(model, ctx, w_mm, h_mm, l_mm):
-    # w=thickness, l=X span, h=Y span
-    thick = max(w_mm, 150)/1000
-    sx    = max(l_mm, 1000)/1000
-    sy    = max(h_mm, 1000)/1000
-    p = rect_prof(model, sx, sy, sx/2, sy/2)
-    return extrude(model, ctx, p, thick)
+def make_element(m, ifc_type, oh, name, placement, rep):
+    try:
+        return m.create_entity(ifc_type,
+            GlobalId=ifcopenshell.guid.new(), OwnerHistory=oh,
+            Name=name, ObjectPlacement=placement, Representation=rep)
+    except Exception:
+        return m.createIfcBuildingElementProxy(
+            ifcopenshell.guid.new(),oh,name,None,None,placement,rep,None,"ELEMENT")
 
-def col_geom(model, ctx, w_mm, h_mm):
-    s = max(w_mm,200)/1000
-    p = rect_prof(model, s, s, s/2, s/2)
-    return extrude(model, ctx, p, h_mm/1000)
-
-def beam_geom(model, ctx, w_mm, h_mm, l_mm):
-    p = rect_prof(model, w_mm/1000, h_mm/1000, (w_mm/1000)/2, (h_mm/1000)/2)
-    return extrude(model, ctx, p, l_mm/1000, dx=1, dy=0, dz=0)
-
-def door_geom(model, ctx, w_mm, h_mm):
-    w,h,t = max(w_mm,800)/1000, max(h_mm,2100)/1000, 0.05
-    p = rect_prof(model, w, t, w/2, t/2)
-    return extrude(model, ctx, p, h)
-
-def window_geom(model, ctx, w_mm, h_mm):
-    w,h,t = max(w_mm,1000)/1000, max(h_mm,1200)/1000, 0.05
-    p = rect_prof(model, w, t, w/2, t/2)
-    return extrude(model, ctx, p, h)
-
-def box_geom(model, ctx, w_mm, h_mm, l_mm):
-    w = max(w_mm or 500, 100)/1000
-    h = max(h_mm or 500, 100)/1000
-    l = max(l_mm or 500, 100)/1000
-    p = rect_prof(model, l, w, l/2, w/2)
-    return extrude(model, ctx, p, h)
-
-def make_geometry(model, ctx, category, comp):
-    w = float(comp.get("width_mm")  or 200)
-    h = float(comp.get("height_mm") or 3000)
-    l = float(comp.get("length_mm") or 1000)
-    if category in ("IfcWall","IfcWallStandardCase","IfcWallElementedCase",
-                    "IfcCurtainWall","IfcCovering","IfcPlate","IfcMember","IfcRailing"):
-        return wall_geom(model, ctx, w, h, l)
-    if category in ("IfcSlab","IfcRoof"):
-        return slab_geom(model, ctx, w, h, l)
-    if category in ("IfcColumn","IfcColumnStandardCase"):
-        return col_geom(model, ctx, w, h)
-    if category in ("IfcBeam","IfcBeamStandardCase"):
-        return beam_geom(model, ctx, w, h, l)
-    if category == "IfcDoor":
-        return door_geom(model, ctx, l, h)
-    if category == "IfcWindow":
-        return window_geom(model, ctx, l, h)
-    return box_geom(model, ctx, w, h, l)
+def attach_material(m, oh, el, mat_name):
+    if not mat_name: return
+    try:
+        mat = m.createIfcMaterial(str(mat_name),None,None)
+        m.createIfcRelAssociatesMaterial(
+            ifcopenshell.guid.new(),oh,None,None,[el],mat)
+    except Exception: pass
 
 # ── Geometry transplant ───────────────────────────────────────────────────────
 
-# Cache open IFC files so we don't re-open the same file for every component
 _ifc_cache = {}
 
 def get_source_ifc(filename):
     if filename not in _ifc_cache:
         path = os.path.join(UPLOAD_FOLDER, filename)
-        if not os.path.exists(path):
-            print(f"  Source IFC not found: {path}")
-            return None
-        try:
-            _ifc_cache[filename] = ifcopenshell.open(path)
-        except Exception as e:
-            print(f"  Failed to open {path}: {e}")
-            return None
+        if not os.path.exists(path): return None
+        try: _ifc_cache[filename] = ifcopenshell.open(path)
+        except Exception: return None
     return _ifc_cache[filename]
 
-
-def transplant_geometry(target_model, body_ctx, revit_id, filename):
-    """
-    Open the source IFC file, find the element by GlobalId,
-    and copy its shape representations into the target model.
-    Returns an IfcProductDefinitionShape or None on failure.
-    """
-    src = get_source_ifc(filename)
-    if not src:
-        return None
-
-    # Find source element by GlobalId
-    src_element = None
-    for el in src.by_type("IfcProduct"):
-        if el.GlobalId == revit_id:
-            src_element = el
-            break
-
-    if not src_element:
-        print(f"  Element {revit_id} not found in {filename}")
-        return None
-
-    if not src_element.Representation:
-        return None
-
-    try:
-        # Collect all items we need to copy (walk the graph)
-        # We serialise the source element's representation to a string
-        # then parse it back into the target model.
-        # The simplest safe approach: extract each representation item's
-        # geometry by iterating IfcRepresentationItem subtypes.
-
-        new_reps = []
-        for rep in src_element.Representation.Representations:
-            if rep.RepresentationIdentifier not in ("Body", "Facetation", "Brep", None):
-                continue
-            new_items = []
-            for item in rep.Items:
-                try:
-                    # Deep-copy the item into the target model
-                    new_item = _copy_entity(target_model, item)
-                    if new_item:
-                        new_items.append(new_item)
-                except Exception as e:
-                    print(f"    Item copy failed: {e}")
-                    continue
-
-            if new_items:
-                new_rep = target_model.createIfcShapeRepresentation(
-                    body_ctx,
-                    rep.RepresentationIdentifier or "Body",
-                    rep.RepresentationType or "Brep",
-                    new_items
-                )
-                new_reps.append(new_rep)
-
-        if not new_reps:
-            return None
-
-        return target_model.createIfcProductDefinitionShape(None, None, new_reps)
-
-    except Exception as e:
-        print(f"  Transplant failed for {revit_id}: {e}")
-        return None
-
-
 def _copy_entity(target, entity):
-    """
-    Recursively copy an IFC entity and all its attributes into the target model.
-    Handles cycles via a per-call cache stored on the function itself.
-    """
-    if not hasattr(_copy_entity, "_cache"):
-        _copy_entity._cache = {}
-
+    if not hasattr(_copy_entity, "_cache"): _copy_entity._cache = {}
     eid = entity.id()
-    if eid in _copy_entity._cache:
-        return _copy_entity._cache[eid]
-
-    # Placeholder to break cycles
+    if eid in _copy_entity._cache: return _copy_entity._cache[eid]
     _copy_entity._cache[eid] = None
-
-    schema_name = entity.is_a()
-    new_attrs = []
-
-    for i, attr in enumerate(entity):
-        new_attrs.append(_copy_attr(target, attr))
-
+    new_attrs = [_copy_attr(target, a) for a in entity]
     try:
-        new_entity = target.create_entity(schema_name, *new_attrs)
-        _copy_entity._cache[eid] = new_entity
-        return new_entity
-    except Exception as e:
-        return None
-
+        ne = target.create_entity(entity.is_a(), *new_attrs)
+        _copy_entity._cache[eid] = ne
+        return ne
+    except Exception: return None
 
 def _copy_attr(target, attr):
-    """Recursively copy an attribute value into the target model."""
-    if attr is None:
-        return None
-    if isinstance(attr, (bool, int, float, str)):
-        return attr
+    if attr is None: return None
+    if isinstance(attr, (bool, int, float, str)): return attr
     if isinstance(attr, (list, tuple)):
         copied = [_copy_attr(target, a) for a in attr]
         return type(attr)(copied) if isinstance(attr, tuple) else copied
-    if hasattr(attr, "is_a"):
-        # It's an IFC entity
-        return _copy_entity(target, attr)
+    if hasattr(attr, "is_a"): return _copy_entity(target, attr)
     return attr
 
-# ── Placement ─────────────────────────────────────────────────────────────────
+def transplant_geometry(target, body_ctx, revit_id, filename):
+    src = get_source_ifc(filename)
+    if not src: return None
+    src_el = next((e for e in src.by_type("IfcProduct") if e.GlobalId == revit_id), None)
+    if not src_el or not src_el.Representation: return None
+    try:
+        new_reps = []
+        for rep in src_el.Representation.Representations:
+            if rep.RepresentationIdentifier not in ("Body","Facetation","Brep",None): continue
+            items = [_copy_entity(target, it) for it in rep.Items]
+            items = [i for i in items if i]
+            if items:
+                new_reps.append(target.createIfcShapeRepresentation(
+                    body_ctx, rep.RepresentationIdentifier or "Body",
+                    rep.RepresentationType or "Brep", items))
+        return target.createIfcProductDefinitionShape(None,None,new_reps) if new_reps else None
+    except Exception as e:
+        print(f"  Transplant failed: {e}"); return None
 
-def make_placement(model, px, py, pz, rot_z_deg=0.0, relative_to=None):
-    # AI outputs positions in mm, IFC uses metres
-    x, y, z = float(px or 0)/1000, float(py or 0)/1000, float(pz or 0)/1000
-    rz = math.radians(float(rot_z_deg or 0))
-    cz, sz = math.cos(rz), math.sin(rz)
-    a = ax3(model, x, y, z, d3(model,0,0,1), d3(model,cz,sz,0))
-    return model.createIfcLocalPlacement(relative_to, a)
+# ═══════════════════════════════════════════════════════════════════════════════
+# PROCEDURAL ROOM BUILDER
+# ═══════════════════════════════════════════════════════════════════════════════
 
-# ── Psets & material ──────────────────────────────────────────────────────────
+WALL_T     = 0.20   # exterior wall thickness m
+INT_WALL_T = 0.12   # interior wall thickness m
+FLOOR_T    = 0.20   # slab thickness m
+CEIL_H     = 2.70   # default ceiling height m
+DOOR_W     = 0.90   # door width m
+DOOR_H     = 2.10   # door height m
+WIN_W      = 1.20   # window width m
+WIN_H      = 1.10   # window height m
+WIN_SILL   = 0.90   # window sill height m
 
-def attach_psets(model, oh, element, properties):
-    if not properties:
-        return
+# Room type → list of fixture specs
+# Each fixture: (name, ifc_type, rel_x, rel_y, w, d, h, search_query)
+# rel_x/y as fraction of room width/depth (0=left/bottom, 1=right/top)
+
+ROOM_FIXTURES = {
+    "bathroom": [
+        ("Toilet",       "IfcSanitaryTerminal", 0.15, 0.20, 0.38, 0.65, 0.82, "toilet"),
+        ("Sink",         "IfcSanitaryTerminal", 0.60, 0.15, 0.50, 0.45, 0.85, "sink"),
+        ("Shower",       "IfcSanitaryTerminal", 0.55, 0.55, 0.90, 0.90, 2.10, "shower"),
+        ("Light",        "IfcLightFixture",     0.50, 0.50, 0.20, 0.20, 0.05, "light"),
+    ],
+    "kitchen": [
+        ("Counter",      "IfcFurnishingElement",0.10, 0.08, 0.60, 0.60, 0.90, "counter"),
+        ("Sink",         "IfcSanitaryTerminal", 0.40, 0.08, 0.60, 0.55, 0.90, "sink"),
+        ("Stove",        "IfcElectricAppliance",0.65, 0.08, 0.60, 0.60, 0.90, "stove"),
+        ("Refrigerator", "IfcElectricAppliance",0.85, 0.12, 0.70, 0.70, 1.80, "refrigerator"),
+        ("Light",        "IfcLightFixture",     0.50, 0.50, 0.20, 0.20, 0.05, "light"),
+    ],
+    "bedroom": [
+        ("Bed",          "IfcFurniture",        0.50, 0.60, 1.60, 2.00, 0.60, "bed"),
+        ("Wardrobe",     "IfcFurniture",        0.15, 0.10, 1.20, 0.60, 2.10, "wardrobe"),
+        ("Nightstand",   "IfcFurniture",        0.20, 0.60, 0.50, 0.45, 0.55, "table"),
+        ("Light",        "IfcLightFixture",     0.50, 0.50, 0.20, 0.20, 0.05, "light"),
+    ],
+    "living": [
+        ("Sofa",         "IfcFurniture",        0.30, 0.65, 2.20, 0.90, 0.85, "sofa"),
+        ("Coffee Table", "IfcFurniture",        0.30, 0.45, 1.10, 0.55, 0.45, "table"),
+        ("TV Stand",     "IfcFurniture",        0.30, 0.10, 1.50, 0.45, 0.55, "table"),
+        ("Light",        "IfcLightFixture",     0.50, 0.50, 0.20, 0.20, 0.05, "light"),
+    ],
+    "dining": [
+        ("Dining Table", "IfcFurniture",        0.50, 0.50, 1.60, 0.90, 0.75, "dining table"),
+        ("Chair 1",      "IfcFurniture",        0.20, 0.50, 0.50, 0.50, 0.90, "chair"),
+        ("Chair 2",      "IfcFurniture",        0.80, 0.50, 0.50, 0.50, 0.90, "chair"),
+        ("Light",        "IfcLightFixture",     0.50, 0.50, 0.20, 0.20, 0.05, "light"),
+    ],
+    "office": [
+        ("Desk",         "IfcFurniture",        0.50, 0.20, 1.40, 0.70, 0.75, "table"),
+        ("Chair",        "IfcFurniture",        0.50, 0.35, 0.60, 0.60, 1.10, "chair"),
+        ("Light",        "IfcLightFixture",     0.50, 0.50, 0.20, 0.20, 0.05, "light"),
+    ],
+    "hallway": [
+        ("Light",        "IfcLightFixture",     0.50, 0.50, 0.20, 0.20, 0.05, "light"),
+    ],
+    "utility": [
+        ("Water Heater", "IfcElectricAppliance",0.20, 0.20, 0.55, 0.55, 1.60, "boiler"),
+        ("Light",        "IfcLightFixture",     0.50, 0.50, 0.20, 0.20, 0.05, "light"),
+    ],
+    "garage": [
+        ("Light",        "IfcLightFixture",     0.50, 0.80, 0.20, 0.20, 0.05, "light"),
+    ],
+}
+
+def get_room_type(name):
+    """Classify a room name into a fixture template key."""
+    n = name.lower()
+    if any(x in n for x in ["bath","wc","toilet","shower","lavatory"]): return "bathroom"
+    if any(x in n for x in ["kitchen","cook","culinary"]):               return "kitchen"
+    if any(x in n for x in ["bed","master","guest","sleep"]):            return "bedroom"
+    if any(x in n for x in ["living","lounge","family","great"]):        return "living"
+    if any(x in n for x in ["dining","eat","breakfast"]):                return "dining"
+    if any(x in n for x in ["office","study","work"]):                   return "office"
+    if any(x in n for x in ["hall","corridor","foyer","entry","lobby"]): return "hallway"
+    if any(x in n for x in ["utility","laundry","storage","plant","mech"]): return "utility"
+    if any(x in n for x in ["garage","parking","car"]):                  return "garage"
+    return "living"  # default
+
+def find_library_component(query):
+    """Search library for a component matching the query. Returns (id, filename, revit_id) or None."""
+    try:
+        conn = get_db()
+        cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        q = f"%{query.lower()}%"
+        cur.execute("""
+            SELECT c.id, c.revit_id, p.filename
+            FROM library l
+            JOIN components c ON c.id = l.component_id
+            JOIN projects p ON p.id = c.project_id
+            WHERE LOWER(COALESCE(c.family_name,'')) LIKE %s
+               OR LOWER(COALESCE(c.type_name,'')) LIKE %s
+            LIMIT 1
+        """, (q, q))
+        row = cur.fetchone(); cur.close(); conn.close()
+        if row: return row["id"], row["filename"], row["revit_id"]
+    except Exception: pass
+    return None, None, None
+
+def build_room(m, oh, body_ctx, room, storey_pl, floor_elev, elements, ceil_h=CEIL_H):
+    """
+    Build a complete room from a room descriptor dict:
+      {name, x, y, width, depth, height?, is_exterior?, has_door_north/south/east/west?}
+    Adds walls, floor slab, ceiling, windows (exterior only), door openings, fixtures.
+    All coords in metres.
+    """
+    rx  = float(room.get("x", 0))
+    ry  = float(room.get("y", 0))
+    rw  = float(room.get("width",  4.0))
+    rd  = float(room.get("depth",  3.0))
+    rh  = float(room.get("height", ceil_h))
+    rname = room.get("name", "Room")
+    ext = room.get("exterior", True)
+    wt  = WALL_T if ext else INT_WALL_T
+
+    rtype = get_room_type(rname)
+
+    # ── Floor slab ────────────────────────────────────────────────────────────
+    fl_pl  = make_placement(m, rx, ry, -FLOOR_T, rel=storey_pl)
+    fl_rep = box_rep(m, body_ctx, rw, rd, FLOOR_T)
+    fl_el  = make_element(m,"IfcSlab",oh,f"{rname} Floor",fl_pl,fl_rep)
+    attach_material(m,oh,fl_el,"Concrete")
+    elements.append(fl_el)
+
+    # ── Ceiling ───────────────────────────────────────────────────────────────
+    cl_pl  = make_placement(m, rx, ry, rh, rel=storey_pl)
+    cl_rep = box_rep(m, body_ctx, rw, rd, FLOOR_T)
+    cl_el  = make_element(m,"IfcSlab",oh,f"{rname} Ceiling",cl_pl,cl_rep)
+    attach_material(m,oh,cl_el,"Concrete")
+    elements.append(cl_el)
+
+    # ── Walls ─────────────────────────────────────────────────────────────────
+    wall_mat = "CMU" if ext else "Drywall"
+
+    # South wall (y=ry)
+    sw_pl  = make_placement(m, rx, ry, 0, rel=storey_pl)
+    sw_rep = box_rep(m, body_ctx, rw, wt, rh)
+    sw_el  = make_element(m,"IfcWall",oh,f"{rname} South Wall",sw_pl,sw_rep)
+    attach_material(m,oh,sw_el,wall_mat); elements.append(sw_el)
+
+    # North wall (y=ry+rd-wt)
+    nw_pl  = make_placement(m, rx, ry+rd-wt, 0, rel=storey_pl)
+    nw_rep = box_rep(m, body_ctx, rw, wt, rh)
+    nw_el  = make_element(m,"IfcWall",oh,f"{rname} North Wall",nw_pl,nw_rep)
+    attach_material(m,oh,nw_el,wall_mat); elements.append(nw_el)
+
+    # West wall (x=rx)
+    ww_pl  = make_placement(m, rx, ry+wt, 0, rel=storey_pl)
+    ww_rep = box_rep(m, body_ctx, wt, rd-2*wt, rh)
+    ww_el  = make_element(m,"IfcWall",oh,f"{rname} West Wall",ww_pl,ww_rep)
+    attach_material(m,oh,ww_el,wall_mat); elements.append(ww_el)
+
+    # East wall (x=rx+rw-wt)
+    ew_pl  = make_placement(m, rx+rw-wt, ry+wt, 0, rel=storey_pl)
+    ew_rep = box_rep(m, body_ctx, wt, rd-2*wt, rh)
+    ew_el  = make_element(m,"IfcWall",oh,f"{rname} East Wall",ew_pl,ew_rep)
+    attach_material(m,oh,ew_el,wall_mat); elements.append(ew_el)
+
+    # ── Door ─────────────────────────────────────────────────────────────────
+    # Place door on south wall by default, or specified wall
+    door_wall = room.get("door_wall","south")
+    door_offset = 0.3  # from corner
+    if door_wall == "south":
+        d_pl = make_placement(m, rx+door_offset, ry, 0, rel=storey_pl)
+    elif door_wall == "north":
+        d_pl = make_placement(m, rx+door_offset, ry+rd-wt, 0, rel=storey_pl)
+    elif door_wall == "west":
+        d_pl = make_placement(m, rx, ry+door_offset, 0, rel=storey_pl)
+    else:  # east
+        d_pl = make_placement(m, rx+rw-wt, ry+door_offset, 0, rel=storey_pl)
+
+    d_rep  = box_rep(m, body_ctx, DOOR_W, wt, DOOR_H)
+    d_el   = make_element(m,"IfcDoor",oh,f"{rname} Door",d_pl,d_rep)
+    attach_material(m,oh,d_el,"Wood"); elements.append(d_el)
+
+    # ── Windows (exterior rooms only, on south and west walls) ────────────────
+    if ext:
+        # South window
+        sw_win_x = rx + rw/2 - WIN_W/2
+        w1_pl  = make_placement(m, sw_win_x, ry, WIN_SILL, rel=storey_pl)
+        w1_rep = box_rep(m, body_ctx, WIN_W, wt+0.02, WIN_H)
+        w1_el  = make_element(m,"IfcWindow",oh,f"{rname} South Window",w1_pl,w1_rep)
+        attach_material(m,oh,w1_el,"Aluminium"); elements.append(w1_el)
+
+    # ── Fixtures ──────────────────────────────────────────────────────────────
+    fixtures = ROOM_FIXTURES.get(rtype, [])
+    inner_w  = rw - 2*wt
+    inner_d  = rd - 2*wt
+
+    for fname, ftype, fx, fy, fw, fd, fh, fquery in fixtures:
+        # Position relative to room interior
+        abs_x = rx + wt + fx*inner_w - fw/2
+        abs_y = ry + wt + fy*inner_d - fd/2
+        abs_z = 0.0
+        if "Light" in fname or "light" in fname:
+            abs_z = rh - 0.05  # ceiling mount
+
+        # Try library transplant first
+        lib_id, src_filename, revit_id = find_library_component(fquery)
+        f_rep = None
+        if lib_id and src_filename and revit_id:
+            if not hasattr(_copy_entity, "_cache"):
+                _copy_entity._cache = {}
+            f_rep = transplant_geometry(m, body_ctx, revit_id, src_filename)
+
+        if not f_rep:
+            # Generate parametric box
+            fw_s = max(fw, 0.1); fd_s = max(fd, 0.1); fh_s = max(fh, 0.05)
+            f_pl_box = make_placement(m, abs_x, abs_y, abs_z, rel=storey_pl)
+            f_rep = box_rep(m, body_ctx, fw_s, fd_s, fh_s)
+            f_el  = make_element(m, ftype, oh, f"{rname} {fname}", f_pl_box, f_rep)
+            elements.append(f_el)
+        else:
+            f_pl = make_placement(m, abs_x, abs_y, abs_z, rel=storey_pl)
+            f_el = make_element(m, ftype, oh, f"{rname} {fname}", f_pl, f_rep)
+            elements.append(f_el)
+
+
+def build_from_rooms(m, oh, body_ctx, spec, bldg, wp, storey):
+    """Build procedurally from rooms array."""
+    floors_data = spec.get("floors", [])
+    if not floors_data:
+        return []
+
+    # Use first floor for now (multi-storey can be added later)
+    floor_data = floors_data[0]
+    rooms = floor_data.get("rooms", [])
+    ceil_h = float(floor_data.get("height", 2700)) / 1000 if floor_data.get("height",0) > 10 else float(floor_data.get("height", 2.7))
+    elev   = float(floor_data.get("elevation", 0))
+
+    storey_pl = storey.ObjectPlacement
+    elements  = []
+
+    for room in rooms:
+        build_room(m, oh, body_ctx, room, storey_pl, elev, elements, ceil_h)
+
+    return elements
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LEGACY COMPONENT MODE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+CATEGORY_MAP = {
+    "IfcWall":"IfcWall","IfcWallStandardCase":"IfcWallStandardCase",
+    "IfcSlab":"IfcSlab","IfcRoof":"IfcRoof",
+    "IfcDoor":"IfcDoor","IfcWindow":"IfcWindow",
+    "IfcColumn":"IfcColumn","IfcBeam":"IfcBeam",
+    "IfcStair":"IfcStair","IfcRailing":"IfcRailing",
+    "IfcCurtainWall":"IfcCurtainWall","IfcCovering":"IfcCovering",
+    "IfcDuctSegment":"IfcDuctSegment","IfcPipeSegment":"IfcPipeSegment",
+    "IfcFurniture":"IfcFurniture","IfcFurnishingElement":"IfcFurnishingElement",
+    "IfcSanitaryTerminal":"IfcSanitaryTerminal",
+    "IfcElectricAppliance":"IfcElectricAppliance",
+    "IfcLightFixture":"IfcLightFixture",
+    "IfcFlowSegment":"IfcFlowSegment","IfcFlowFitting":"IfcFlowFitting",
+    "IfcFlowTerminal":"IfcFlowTerminal",
+}
+
+def wall_geom(m, ctx, w_mm, h_mm, l_mm):
+    p = rect_prof(m, l_mm/1000, w_mm/1000, (l_mm/1000)/2, (w_mm/1000)/2)
+    return extrude(m, ctx, p, h_mm/1000)
+
+def slab_geom(m, ctx, w_mm, h_mm, l_mm):
+    thick = max(w_mm,150)/1000; sx = max(l_mm,1000)/1000; sy = max(h_mm,1000)/1000
+    p = rect_prof(m, sx, sy, sx/2, sy/2)
+    return extrude(m, ctx, p, thick)
+
+def col_geom(m, ctx, w_mm, h_mm):
+    s = max(w_mm,200)/1000; p = rect_prof(m, s, s, s/2, s/2)
+    return extrude(m, ctx, p, h_mm/1000)
+
+def beam_geom(m, ctx, w_mm, h_mm, l_mm):
+    p = rect_prof(m, w_mm/1000, h_mm/1000, (w_mm/1000)/2, (h_mm/1000)/2)
+    return extrude(m, ctx, p, l_mm/1000, dx=1, dy=0, dz=0)
+
+def make_geometry_legacy(m, ctx, category, comp):
+    w = float(comp.get("width_mm") or 200)
+    h = float(comp.get("height_mm") or 3000)
+    l = float(comp.get("length_mm") or 1000)
+    if category in ("IfcWall","IfcWallStandardCase","IfcWallElementedCase",
+                    "IfcCurtainWall","IfcCovering","IfcPlate","IfcMember","IfcRailing"):
+        return wall_geom(m, ctx, w, h, l)
+    if category in ("IfcSlab","IfcRoof"):
+        return slab_geom(m, ctx, w, h, l)
+    if category in ("IfcColumn","IfcColumnStandardCase"):
+        return col_geom(m, ctx, w, h)
+    if category in ("IfcBeam","IfcBeamStandardCase"):
+        return beam_geom(m, ctx, w, h, l)
+    w2 = max(w,100)/1000; h2 = max(h,100)/1000; l2 = max(l,100)/1000
+    p = rect_prof(m, l2, w2, l2/2, w2/2)
+    return extrude(m, ctx, p, h2)
+
+def attach_psets(m, oh, element, properties):
+    if not properties: return
     for pset_name, pset_data in properties.items():
-        if not isinstance(pset_data, dict):
-            continue
+        if not isinstance(pset_data, dict): continue
         props = []
         for k, v in pset_data.items():
-            if v is None:
-                continue
+            if v is None: continue
             try:
-                props.append(model.createIfcPropertySingleValue(
-                    str(k), None,
-                    model.create_entity("IfcLabel", wrappedValue=str(v)), None))
-            except Exception:
-                continue
-        if not props:
-            continue
+                props.append(m.createIfcPropertySingleValue(
+                    str(k),None,m.create_entity("IfcLabel",wrappedValue=str(v)),None))
+            except Exception: continue
+        if not props: continue
         try:
-            pset = model.createIfcPropertySet(
-                ifcopenshell.guid.new(), oh, pset_name, None, props)
-            model.createIfcRelDefinesByProperties(
-                ifcopenshell.guid.new(), oh, None, None, [element], pset)
-        except Exception:
-            continue
+            pset = m.createIfcPropertySet(ifcopenshell.guid.new(),oh,pset_name,None,props)
+            m.createIfcRelDefinesByProperties(
+                ifcopenshell.guid.new(),oh,None,None,[element],pset)
+        except Exception: continue
 
-def attach_material(model, oh, element, material_name):
-    if not material_name:
-        return
-    try:
-        mat = model.createIfcMaterial(str(material_name), None, None)
-        model.createIfcRelAssociatesMaterial(
-            ifcopenshell.guid.new(), oh, None, None, [element], mat)
-    except Exception:
-        pass
+def build_from_components(m, oh, body_ctx, floors, ifc_storeys):
+    """Legacy mode: build from floors→components spec."""
+    storey_elements = [[] for _ in ifc_storeys]
+    for fi, floor in enumerate(floors):
+        storey = ifc_storeys[fi]
+        elems  = storey_elements[fi]
+        for comp in floor.get("components", []):
+            category = comp.get("category","IfcBuildingElementProxy")
+            ifc_type = CATEGORY_MAP.get(category,"IfcBuildingElementProxy")
+            cname    = comp.get("name", category)
+            material = comp.get("material","")
+            lib_id   = comp.get("library_component_id")
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+            px = float(comp.get("pos_x",0))/1000
+            py = float(comp.get("pos_y",0))/1000
+            pz = float(comp.get("pos_z",0))/1000
+            rz = float(comp.get("rot_z",0))
+            placement = make_placement(m, px, py, pz, rz, rel=storey.ObjectPlacement)
+
+            prod_rep = None
+            if lib_id:
+                revit_id, filename = get_component_source(lib_id)
+                if revit_id and filename:
+                    prod_rep = transplant_geometry(m, body_ctx, revit_id, filename)
+
+            if not prod_rep:
+                try:
+                    sr = make_geometry_legacy(m, body_ctx, category, comp)
+                    prod_rep = m.createIfcProductDefinitionShape(None,None,[sr])
+                except Exception: prod_rep = None
+
+            try:
+                el = m.create_entity(ifc_type,
+                    GlobalId=ifcopenshell.guid.new(), OwnerHistory=oh,
+                    Name=cname, ObjectPlacement=placement, Representation=prod_rep)
+            except Exception:
+                el = m.createIfcBuildingElementProxy(
+                    ifcopenshell.guid.new(),oh,cname,None,None,placement,prod_rep,None,"ELEMENT")
+
+            props = {}
+            for k,dk in [("width_mm","Width"),("height_mm","Height"),("length_mm","Length")]:
+                if comp.get(k) is not None: props[dk] = comp[k]
+            if props: attach_psets(m, oh, el, {"BIM_Studio_Dimensions": props})
+            if lib_id: attach_psets(m, oh, el, {"BIM_Studio_Library":{"source":str(lib_id)}})
+            attach_material(m, oh, el, material)
+            elems.append(el)
+    return storey_elements
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MAIN ENTRY POINT
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def generate_ifc(spec: dict, output_path: str = None) -> str:
-    # Clear transplant cache between runs
-    if hasattr(_copy_entity, "_cache"):
-        _copy_entity._cache = {}
+    if hasattr(_copy_entity, "_cache"): _copy_entity._cache = {}
     _ifc_cache.clear()
 
     name     = spec.get("name", "Generated Building")
-    floors   = spec.get("floors", [])
     metadata = spec.get("metadata", {})
+    floors   = spec.get("floors", [])
 
-    total_comps = sum(len(f.get("components", [])) for f in floors)
-    print(f"Generating IFC: {name} | {len(floors)} floors | {total_comps} components")
+    # Detect mode
+    has_rooms = any(f.get("rooms") for f in floors)
+    mode = "procedural" if has_rooms else "component"
+    print(f"Generating IFC [{mode} mode]: {name}")
 
-    model = ifcopenshell.file(schema="IFC4")
+    m = ifcopenshell.file(schema="IFC4")
 
     # Owner history
-    app_ent = model.createIfcApplication(
-        model.createIfcOrganization(None,"BIM Studio",None,None,None),
+    app_ent = m.createIfcApplication(
+        m.createIfcOrganization(None,"BIM Studio",None,None,None),
         "1.0","BIM Studio AI Generator","BIM-STUDIO-GEN")
-    person  = model.createIfcPerson(None,"AI Architect",None,None,None,None,None,None)
-    org     = model.createIfcOrganization(None,"BIM Studio",None,None,None)
-    pao     = model.createIfcPersonAndOrganization(person,org,None)
-    oh      = model.createIfcOwnerHistory(
+    person  = m.createIfcPerson(None,"AI Architect",None,None,None,None,None,None)
+    org     = m.createIfcOrganization(None,"BIM Studio",None,None,None)
+    pao     = m.createIfcPersonAndOrganization(person,org,None)
+    oh      = m.createIfcOwnerHistory(
         pao,app_ent,None,"ADDED",None,pao,app_ent,int(datetime.now().timestamp()))
 
-    # Units
-    units = model.createIfcUnitAssignment([
-        model.createIfcSIUnit(None,"LENGTHUNIT",   None,"METRE"),
-        model.createIfcSIUnit(None,"AREAUNIT",     None,"SQUARE_METRE"),
-        model.createIfcSIUnit(None,"VOLUMEUNIT",   None,"CUBIC_METRE"),
-        model.createIfcSIUnit(None,"PLANEANGLEUNIT",None,"RADIAN"),
+    units = m.createIfcUnitAssignment([
+        m.createIfcSIUnit(None,"LENGTHUNIT",   None,"METRE"),
+        m.createIfcSIUnit(None,"AREAUNIT",     None,"SQUARE_METRE"),
+        m.createIfcSIUnit(None,"VOLUMEUNIT",   None,"CUBIC_METRE"),
+        m.createIfcSIUnit(None,"PLANEANGLEUNIT",None,"RADIAN"),
     ])
 
-    geom_ctx, body_ctx = make_context(model)
-    wp = local_pl(model)
+    geom_ctx, body_ctx = make_context(m)
+    wp = local_pl(m)
 
-    # Project → Site → Building
-    proj = model.createIfcProject(
+    proj = m.createIfcProject(
         ifcopenshell.guid.new(),oh,name,None,None,None,None,[geom_ctx],units)
-    site = model.createIfcSite(
+    site = m.createIfcSite(
         ifcopenshell.guid.new(),oh,metadata.get("location","Site"),
         None,None,wp,None,None,"ELEMENT",None,None,None,None,None)
-    bldg = model.createIfcBuilding(
+    bldg = m.createIfcBuilding(
         ifcopenshell.guid.new(),oh,name,None,None,wp,None,None,"ELEMENT",None,None,None)
 
-    model.createIfcRelAggregates(ifcopenshell.guid.new(),oh,None,None,proj,[site])
-    model.createIfcRelAggregates(ifcopenshell.guid.new(),oh,None,None,site,[bldg])
+    m.createIfcRelAggregates(ifcopenshell.guid.new(),oh,None,None,proj,[site])
+    m.createIfcRelAggregates(ifcopenshell.guid.new(),oh,None,None,site,[bldg])
 
-    # Storeys
-    ifc_storeys     = []
-    storey_elements = []
+    # Build storeys
+    ifc_storeys = []
     for floor in floors:
         elev = float(floor.get("elevation", 0.0))
-        sp   = local_pl(model, wp, 0, 0, elev)
-        st   = model.createIfcBuildingStorey(
+        sp   = local_pl(m, wp, 0, 0, elev)
+        st   = m.createIfcBuildingStorey(
             ifcopenshell.guid.new(),oh,
             floor.get("name", f"Level {len(ifc_storeys)+1}"),
             None,None,sp,None,None,"ELEMENT",elev)
         ifc_storeys.append(st)
-        storey_elements.append([])
 
     if ifc_storeys:
-        model.createIfcRelAggregates(
-            ifcopenshell.guid.new(),oh,None,None,bldg,ifc_storeys)
+        m.createIfcRelAggregates(ifcopenshell.guid.new(),oh,None,None,bldg,ifc_storeys)
 
-    # Components
-    for fi, floor in enumerate(floors):
-        storey = ifc_storeys[fi]
-        elems  = storey_elements[fi]
+    # Generate elements
+    if mode == "procedural":
+        for fi, floor in enumerate(floors):
+            if not floor.get("rooms"): continue
+            storey = ifc_storeys[fi]
+            ceil_h_raw = floor.get("height", 2.7)
+            ceil_h = float(ceil_h_raw)/1000 if float(ceil_h_raw) > 10 else float(ceil_h_raw)
+            elev   = float(floor.get("elevation", 0))
+            elements = []
+            for room in floor.get("rooms", []):
+                build_room(m, oh, body_ctx, room, storey.ObjectPlacement, elev, elements, ceil_h)
+            if elements:
+                m.createIfcRelContainedInSpatialStructure(
+                    ifcopenshell.guid.new(),oh,None,None,elements,storey)
+            print(f"  Floor '{floor.get('name')}': {len(elements)} elements from {len(floor.get('rooms',[]))} rooms")
+    else:
+        storey_elements = build_from_components(m, oh, body_ctx, floors, ifc_storeys)
+        for fi, elems in enumerate(storey_elements):
+            if elems:
+                m.createIfcRelContainedInSpatialStructure(
+                    ifcopenshell.guid.new(),oh,None,None,elems,ifc_storeys[fi])
+        total = sum(len(e) for e in storey_elements)
+        print(f"  {total} components generated")
 
-        for comp in floor.get("components", []):
-            category = comp.get("category", "IfcBuildingElementProxy")
-            ifc_type = CATEGORY_MAP.get(category, "IfcBuildingElementProxy")
-            cname    = comp.get("name", category)
-            material = comp.get("material", "")
-            lib_id   = comp.get("library_component_id")  # set by AI for library items
-
-            placement = make_placement(
-                model,
-                comp.get("pos_x",0), comp.get("pos_y",0), comp.get("pos_z",0),
-                comp.get("rot_z",0),
-                relative_to=storey.ObjectPlacement
-            )
-
-            # ── Geometry: transplant from library if available, else generate ──
-            prod_rep = None
-
-            if lib_id:
-                # Try to get real geometry from the source IFC
-                revit_id, filename = get_component_source(lib_id)
-                if revit_id and filename:
-                    print(f"  Transplanting {cname} from {filename} (GlobalId={revit_id})")
-                    prod_rep = transplant_geometry(model, body_ctx, revit_id, filename)
-                    if not prod_rep:
-                        print(f"    Transplant failed — falling back to generated geometry")
-
-            if not prod_rep:
-                # Generate parametric geometry
-                try:
-                    shape_rep = make_geometry(model, body_ctx, category, comp)
-                    prod_rep  = model.createIfcProductDefinitionShape(None,None,[shape_rep])
-                except Exception as e:
-                    print(f"  Geometry generation failed for {cname}: {e}")
-                    prod_rep = None
-
-            # Create element
-            try:
-                element = model.create_entity(
-                    ifc_type,
-                    GlobalId=ifcopenshell.guid.new(),
-                    OwnerHistory=oh,
-                    Name=cname,
-                    ObjectPlacement=placement,
-                    Representation=prod_rep
-                )
-            except Exception:
-                element = model.createIfcBuildingElementProxy(
-                    ifcopenshell.guid.new(),oh,cname,None,None,
-                    placement,prod_rep,None,"ELEMENT")
-
-            # Psets
-            dim = {}
-            for k,dk in [("width_mm","Width"),("height_mm","Height"),("length_mm","Length")]:
-                if comp.get(k) is not None:
-                    dim[dk] = comp[k]
-            all_props = {}
-            if dim:
-                all_props["BIM_Studio_Dimensions"] = dim
-            if lib_id:
-                all_props["BIM_Studio_Library"] = {"source_component_id": str(lib_id)}
-            if comp.get("properties"):
-                all_props.update(comp["properties"])
-
-            attach_psets(model, oh, element, all_props)
-            attach_material(model, oh, element, material)
-            elems.append(element)
-
-        if elems:
-            model.createIfcRelContainedInSpatialStructure(
-                ifcopenshell.guid.new(),oh,None,None,elems,storey)
-
-    # Metadata pset on building
+    # Metadata
     if metadata:
         meta_props = []
         for k,v in metadata.items():
             if v is None: continue
             try:
-                meta_props.append(model.createIfcPropertySingleValue(
-                    str(k),None,
-                    model.create_entity("IfcLabel",wrappedValue=str(v)),None))
-            except Exception:
-                pass
+                meta_props.append(m.createIfcPropertySingleValue(
+                    str(k),None,m.create_entity("IfcLabel",wrappedValue=str(v)),None))
+            except Exception: pass
         if meta_props:
-            pset = model.createIfcPropertySet(
+            pset = m.createIfcPropertySet(
                 ifcopenshell.guid.new(),oh,"BIM_Studio_Project_Info",None,meta_props)
-            model.createIfcRelDefinesByProperties(
+            m.createIfcRelDefinesByProperties(
                 ifcopenshell.guid.new(),oh,None,None,[bldg],pset)
 
     if not output_path:
-        ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe = name.replace(" ","_").replace("/","-")
-        output_path = f"generated_{safe}_{ts}.ifc"
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = f"generated_{name.replace(' ','_')}_{ts}.ifc"
 
-    model.write(output_path)
+    m.write(output_path)
     print(f"  Written: {output_path}")
     return output_path
 
 
 if __name__ == "__main__":
-    # Test with a library component (dining table id=70 from Ifc4_SampleHouse.ifc)
     test_spec = {
-        "name": "Test House with Furniture",
+        "name": "Test 1BR Apartment",
         "floors": [{
-            "name": "Ground Floor", "elevation": 0.0, "height": 3000,
-            "components": [
-                {"category":"IfcWall","name":"South Wall","material":"Brick",
-                 "pos_x":0,"pos_y":0,"pos_z":0,"rot_z":0,
-                 "width_mm":290,"height_mm":3000,"length_mm":10000},
-                {"category":"IfcWall","name":"North Wall","material":"Brick",
-                 "pos_x":0,"pos_y":8000,"pos_z":0,"rot_z":0,
-                 "width_mm":290,"height_mm":3000,"length_mm":10000},
-                {"category":"IfcWall","name":"West Wall","material":"Brick",
-                 "pos_x":0,"pos_y":0,"pos_z":0,"rot_z":90,
-                 "width_mm":290,"height_mm":3000,"length_mm":8000},
-                {"category":"IfcWall","name":"East Wall","material":"Brick",
-                 "pos_x":10000,"pos_y":0,"pos_z":0,"rot_z":90,
-                 "width_mm":290,"height_mm":3000,"length_mm":8000},
-                {"category":"IfcSlab","name":"Floor Slab","material":"Concrete",
-                 "pos_x":0,"pos_y":0,"pos_z":0,"rot_z":0,
-                 "width_mm":200,"height_mm":8000,"length_mm":10000},
-                {"category":"IfcSlab","name":"Roof","material":"Concrete",
-                 "pos_x":0,"pos_y":0,"pos_z":3000,"rot_z":0,
-                 "width_mm":200,"height_mm":8000,"length_mm":10000},
-                # Library furniture — real geometry from source IFC
-                {"category":"IfcFurniture","name":"Dining Table","material":"Wood",
-                 "pos_x":3000,"pos_y":3000,"pos_z":0,"rot_z":0,
-                 "library_component_id": 70},
-                {"category":"IfcFurniture","name":"Dining Chair 1","material":"Wood",
-                 "pos_x":2000,"pos_y":3000,"pos_z":0,"rot_z":0,
-                 "library_component_id": 71},
+            "name": "Ground Floor", "elevation": 0.0, "height": 2.7,
+            "rooms": [
+                {"name":"Living Room",  "x":0.0, "y":0.0, "width":5.0, "depth":4.0, "exterior":True,  "door_wall":"east"},
+                {"name":"Kitchen",      "x":5.0, "y":0.0, "width":3.0, "depth":4.0, "exterior":True,  "door_wall":"west"},
+                {"name":"Bedroom",      "x":0.0, "y":4.0, "width":4.0, "depth":3.5, "exterior":True,  "door_wall":"south"},
+                {"name":"Bathroom",     "x":4.0, "y":4.0, "width":2.5, "depth":2.0, "exterior":False, "door_wall":"south"},
+                {"name":"Hallway",      "x":4.0, "y":6.0, "width":4.0, "depth":1.5, "exterior":False, "door_wall":"west"},
             ]
         }],
-        "metadata": {"location":"Test City","estimated_cost_usd":100000}
+        "metadata": {"location":"Test City","building_type":"Residential","estimated_cost_usd":300000}
     }
-    path = generate_ifc(test_spec, "/tmp/test_house_furniture.ifc")
+    path = generate_ifc(test_spec, "/tmp/test_procedural.ifc")
     print(f"Output: {path}")
