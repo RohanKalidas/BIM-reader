@@ -1163,7 +1163,6 @@ async function autoGenerateAndView(){
   if(!genSpec)return;
   document.getElementById('view-status').textContent='Generating IFC\u2026';
   try{
-    // Step 1: Generate the IFC file
     var res=await fetch('/api/generate/ifc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec:genSpec,upload_preview:false})});
     var data=await res.json();
     if(data.status!=='done'||!data.output){
@@ -1172,33 +1171,13 @@ async function autoGenerateAndView(){
       return;
     }
     genIfcFilename=data.output;
-    document.getElementById('view-status').textContent='Uploading to viewer\u2026';
-
-    // Step 2: Fetch the generated IFC and re-upload through the normal pipeline
-    // This gets an APS URN via the same flow that works for uploaded files
-    var ifc=await fetch('/api/generate/download?file='+encodeURIComponent(data.output));
-    var blob=await ifc.blob();
-    var file=new File([blob],data.output,{type:'application/octet-stream'});
-    var fd=new FormData();fd.append('file',file);
-    var upRes=await fetch('/api/upload',{method:'POST',body:fd});
-    var upData=await upRes.json();
-
-    if(upData.status==='done'&&upData.aps&&upData.aps.urn){
-      await initGenViewer(upData.aps.urn);
-      setStep('ifc','done','Ready');
-      setTimeout(function(){var card=document.getElementById('gen-steps-card');if(card)card.style.display='none';},2000);
-      var badge=document.getElementById('gen-ready-badge');
-      if(badge){badge.style.opacity='1';badge.style.cursor='pointer';badge.innerHTML='\u2713 &nbsp;3D model ready \u2014 <strong>click to view</strong>';badge.onclick=function(){switchToView();};}
-      document.getElementById('view-tab').style.display='flex';
-      toast('3D model ready');
-    }else{
-      // APS failed — offer download
-      setStep('ifc','done','Download ready');
-      setTimeout(function(){var card=document.getElementById('gen-steps-card');if(card)card.style.display='none';},2000);
-      var badge=document.getElementById('gen-ready-badge');
-      if(badge){badge.style.opacity='1';badge.style.cursor='pointer';badge.style.borderColor='rgba(184,149,58,0.4)';badge.style.color='var(--gold)';badge.innerHTML='\u2193 &nbsp;IFC ready \u2014 <strong>click to download</strong>';badge.onclick=function(){window.location.href='/api/generate/download?file='+encodeURIComponent(genIfcFilename);};}
-      toast('IFC ready \u2014 click badge to download');
-    }
+    // Load directly into xeokit — no APS
+    initGenViewer(data.output);
+    setStep('ifc','active','Loading viewer\u2026');
+    var badge=document.getElementById('gen-ready-badge');
+    if(badge){badge.style.opacity='1';badge.style.cursor='pointer';badge.innerHTML='\u2713 &nbsp;3D model ready \u2014 <strong>click to view</strong>';badge.onclick=function(){switchToView();};}
+    document.getElementById('view-tab').style.display='flex';
+    toast('3D model ready \u2014 click to view');
   }catch(e){console.error(e);setStep('ifc','error','Error');}
 }
 
