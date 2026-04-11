@@ -87,11 +87,9 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 
 /* ══ SINGLE FILE MODE ══ */
 #single-mode{flex:1;display:flex;overflow:hidden;}
-#aps-viewer{flex:1;position:relative;background:#111;}
-#viewer-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:none;}
-.empty-headline{font-family:var(--display);font-size:26px;font-style:italic;color:rgba(255,255,255,0.1);text-align:center;}
-.empty-sub{font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.15);letter-spacing:0.15em;text-transform:uppercase;}
-#component-panel{width:280px;background:var(--ink);border-left:1px solid var(--rule2);display:flex;flex-direction:column;flex-shrink:0;}
+
+
+#component-panel{flex:1;background:var(--ink);display:flex;flex-direction:column;overflow:hidden;}
 #comp-panel-head{padding:14px 14px 10px;border-bottom:1px solid var(--rule2);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
 .comp-panel-title{font-family:var(--display);font-size:15px;color:#fff;font-style:italic;}
 #btn-save-all{font-family:var(--mono);font-size:8px;letter-spacing:0.1em;text-transform:uppercase;padding:6px 12px;background:var(--accent);color:#fff;border:none;cursor:pointer;transition:background 0.12s;}
@@ -257,10 +255,7 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 .view-bar-title{font-family:var(--display);font-size:14px;font-style:italic;color:#fff;flex:1;}
 #view-status{font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.3);}
 #gen-aps-viewer{flex:1;position:relative;background:#0d0d0d;}
-#ifc-canvas-wrap{flex:1;position:relative;background:#0d0d0d;display:none;}
-#ifc-canvas{width:100%;height:100%;display:block;}
-#ifc-loading{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;pointer-events:none;}
-#ifc-loading-text{font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.3);letter-spacing:0.1em;}
+
 #gen-viewer-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:none;}
 .gen-empty-headline{font-family:var(--display);font-size:22px;font-style:italic;color:rgba(255,255,255,0.08);}
 .gen-empty-sub{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.1);letter-spacing:0.15em;text-transform:uppercase;}
@@ -321,11 +316,8 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
       <span id="upload-status"></span>
     </div>
 
-    <!-- SINGLE FILE MODE -->
+    <!-- SINGLE FILE MODE — component panel only, no viewer -->
     <div id="single-mode">
-      <div id="aps-viewer">
-        <div id="viewer-empty"><div class="empty-headline">No model loaded</div><div class="empty-sub">Upload an IFC file to begin</div></div>
-      </div>
       <div id="component-panel">
         <div id="comp-panel-head">
           <div><span class="sidebar-label">All</span><span class="comp-panel-title">Components</span></div>
@@ -361,7 +353,7 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
         <button id="bulk-save-all-btn">Save All</button>
         <button id="bulk-save-selected-btn">Save Selected</button>
         <span id="bulk-count"></span>
-        <button id="bulk-done-btn">&#8592; Back to Viewer</button>
+        <button id="bulk-done-btn">&#8592; Back to Components</button>
       </div>
       <!-- Component grid -->
       <div id="bulk-comp-area">
@@ -410,16 +402,11 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
       <span id="view-status">&#8212;</span>
     </div>
     <div id="gen-aps-viewer"><div id="gen-viewer-empty"><div class="gen-empty-headline">Awaiting generation</div><div class="gen-empty-sub">Describe a building in the Generate tab</div></div></div>
-    <div id="ifc-canvas-wrap"><canvas id="ifc-canvas"></canvas><div id="ifc-loading"><div class="loading-bar" style="width:80px"><div class="loading-progress"></div></div><div id="ifc-loading-text">Loading model…</div></div></div>
   </div>
 </div>
 
 <div id="toast"></div>
 <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
-<script src="https://unpkg.com/web-ifc@0.0.44/web-ifc-api.js"></script>
-<script src="https://unpkg.com/web-ifc-three@0.0.126/IFCLoader.js"></script>
-<script src="https://unpkg.com/three@0.133.0/build/three.min.js"></script>
-<script src="https://unpkg.com/three@0.133.0/examples/js/controls/OrbitControls.js"></script>
 <script>
 const ARCH=new Set(['IfcWall','IfcWallStandardCase','IfcWallElementedCase','IfcSlab','IfcRoof','IfcDoor','IfcWindow','IfcStair','IfcStairFlight','IfcRailing','IfcCurtainWall','IfcCovering','IfcFurnishingElement','IfcFurniture','IfcOpeningElement','IfcPlate','IfcMember']);
 const STRUCT=new Set(['IfcColumn','IfcColumnStandardCase','IfcBeam','IfcBeamStandardCase']);
@@ -452,116 +439,21 @@ async function ensureApsInit(){
 }
 
 async function initViewer(urn){
-  document.getElementById('viewer-empty').style.display='none';
-  await ensureApsInit();
-  if(viewer){viewer.finish();viewer=null;}
-  viewer=new Autodesk.Viewing.GuiViewer3D(document.getElementById('aps-viewer'),{extensions:['Autodesk.DocumentBrowser']});
-  viewer.start();
-  Autodesk.Viewing.Document.load('urn:'+urn,function(doc){
-    viewer.loadDocumentNode(doc,doc.getRoot().getDefaultGeometry()).then(function(){
-      viewer.addEventListener(Autodesk.Viewing.SELECTION_CHANGED_EVENT,onSelectionChanged);
-      buildGlobalIdMap();
-    });
-  },function(c,m){console.error(c,m);toast('Failed to load model');});
+  // No viewer in disassemble tab
 }
 
-// IFC.js Three.js scene state
-var ifcScene=null,ifcCamera=null,ifcRenderer=null,ifcControls=null,ifcAnimFrame=null;
-
-function disposeIfcViewer(){
-  if(ifcAnimFrame){cancelAnimationFrame(ifcAnimFrame);ifcAnimFrame=null;}
-  if(ifcRenderer){ifcRenderer.dispose();ifcRenderer=null;}
-  ifcScene=null;ifcCamera=null;ifcControls=null;
-}
-
-async function initIfcViewer(filename){
-  document.getElementById('gen-viewer-empty').style.display='none';
-  document.getElementById('gen-aps-viewer').style.display='none';
-  var wrap=document.getElementById('ifc-canvas-wrap');
-  var canvas=document.getElementById('ifc-canvas');
-  wrap.style.display='block';
-  document.getElementById('view-status').textContent='Loading model…';
-  disposeIfcViewer();
-
-  var W=wrap.clientWidth,H=wrap.clientHeight;
-  canvas.width=W;canvas.height=H;
-
-  // Three.js setup
-  var scene=new THREE.Scene();
-  scene.background=new THREE.Color(0x0d0d0d);
-  ifcScene=scene;
-
-  var camera=new THREE.PerspectiveCamera(45,W/H,0.1,10000);
-  camera.position.set(30,20,30);
-  ifcCamera=camera;
-
-  var renderer=new THREE.WebGLRenderer({canvas:canvas,antialias:true});
-  renderer.setSize(W,H);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
-  ifcRenderer=renderer;
-
-  var controls=new THREE.OrbitControls(camera,canvas);
-  controls.enableDamping=true;controls.dampingFactor=0.05;
-  ifcControls=controls;
-
-  // Lighting
-  scene.add(new THREE.AmbientLight(0xffffff,0.6));
-  var dirLight=new THREE.DirectionalLight(0xffffff,0.8);
-  dirLight.position.set(50,100,50);
-  scene.add(dirLight);
-  var dirLight2=new THREE.DirectionalLight(0x8888ff,0.3);
-  dirLight2.position.set(-50,50,-50);
-  scene.add(dirLight2);
-
-  // Load IFC via fetch + IFCLoader
-  try{
-    var url='/api/generate/download?file='+encodeURIComponent(filename);
-    var response=await fetch(url);
-    var buffer=await response.arrayBuffer();
-    var data=new Uint8Array(buffer);
-
-    var ifcLoader=new IFCLoader();
-    await ifcLoader.ifcManager.setWasmPath('https://unpkg.com/web-ifc@0.0.44/');
-    var model=await ifcLoader.parse(data);
-    scene.add(model);
-
-    // Fit camera to model
-    var box=new THREE.Box3().setFromObject(model);
-    var center=box.getCenter(new THREE.Vector3());
-    var size=box.getSize(new THREE.Vector3());
-    var maxDim=Math.max(size.x,size.y,size.z);
-    camera.position.set(center.x+maxDim*1.2,center.y+maxDim*0.8,center.z+maxDim*1.2);
-    controls.target.copy(center);
-    controls.update();
-
-    document.getElementById('ifc-loading').style.display='none';
-    document.getElementById('view-status').textContent='Ready';
-  }catch(e){
-    console.error('IFC load error:',e);
-    document.getElementById('view-status').textContent='Load failed';
-    document.getElementById('ifc-loading-text').textContent='Failed to load model';
-  }
-
-  // Animate
-  function animate(){
-    ifcAnimFrame=requestAnimationFrame(animate);
-    controls.update();
-    renderer.render(scene,camera);
-  }
-  animate();
-
-  // Resize handler
-  window.addEventListener('resize',function(){
-    var W2=wrap.clientWidth,H2=wrap.clientHeight;
-    camera.aspect=W2/H2;camera.updateProjectionMatrix();
-    renderer.setSize(W2,H2);
-  });
-}
-
-// Keep old initGenViewer as no-op for APS path (not used for generated files)
 async function initGenViewer(urn){
-  // APS path — not used since we switched to IFC.js
-  console.log('APS viewer not used — using IFC.js');
+  document.getElementById('gen-viewer-empty').style.display='none';
+  document.getElementById('view-status').textContent='Loading…';
+  await ensureApsInit();
+  if(genViewer){genViewer.finish();genViewer=null;}
+  genViewer=new Autodesk.Viewing.GuiViewer3D(document.getElementById('gen-aps-viewer'),{});
+  genViewer.start();
+  Autodesk.Viewing.Document.load('urn:'+urn,function(doc){
+    genViewer.loadDocumentNode(doc,doc.getRoot().getDefaultGeometry()).then(function(){
+      document.getElementById('view-status').textContent='Ready';
+    });
+  },function(code,msg){document.getElementById('view-status').textContent='Load failed';console.error(code,msg);});
 }
 
 function buildGlobalIdMap(){
@@ -655,9 +547,8 @@ async function doSingleUpload(){
       document.getElementById('nav-stat').textContent=data.stats.components+' components';
       var comps=await fetch('/api/projects/'+data.project_id+'/components').then(function(r){return r.json();});
       allComponents=comps;activeFilter='all';buildDynamicFilters();renderCompPanel();
-      await initViewer(data.aps.urn);
       await refreshLibrary();
-      toast('Loaded: '+file.name);
+      toast('Loaded: '+file.name+' \u2014 '+data.stats.components+' components');
     }else{status.textContent='\u2715 '+(data.error||'Error');}
   }catch(e){
     if(e.name==='AbortError'){status.textContent='\u2715 Cancelled';}
@@ -777,7 +668,6 @@ async function doBulkUpload(files){
 function showSingleMode(){
   document.getElementById('single-mode').style.display='flex';
   document.getElementById('bulk-mode').classList.remove('active');
-  // Show browse button if bulk data exists
   var hasBulk=Object.keys(bulkProjects).length>0;
   document.getElementById('btn-browse-uploads').style.display=hasBulk?'inline-flex':'none';
 }
@@ -1204,24 +1094,43 @@ var genIfcFilename=null;
 
 async function autoGenerateAndView(){
   if(!genSpec)return;
-  document.getElementById('view-status').textContent='Generating IFC…';
+  document.getElementById('view-status').textContent='Generating IFC\u2026';
   try{
-    // Generate IFC only — no APS upload needed
+    // Step 1: Generate the IFC file
     var res=await fetch('/api/generate/ifc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec:genSpec,upload_preview:false})});
     var data=await res.json();
-    if(data.status==='done'&&data.output){
-      genIfcFilename=data.output;
-      // Load into IFC.js viewer
-      await initIfcViewer(data.output);
+    if(data.status!=='done'||!data.output){
+      setStep('ifc','error','Failed');
+      document.getElementById('view-status').textContent='Generation failed';
+      return;
+    }
+    genIfcFilename=data.output;
+    document.getElementById('view-status').textContent='Uploading to viewer\u2026';
+
+    // Step 2: Fetch the generated IFC and re-upload through the normal pipeline
+    // This gets an APS URN via the same flow that works for uploaded files
+    var ifc=await fetch('/api/generate/download?file='+encodeURIComponent(data.output));
+    var blob=await ifc.blob();
+    var file=new File([blob],data.output,{type:'application/octet-stream'});
+    var fd=new FormData();fd.append('file',file);
+    var upRes=await fetch('/api/upload',{method:'POST',body:fd});
+    var upData=await upRes.json();
+
+    if(upData.status==='done'&&upData.aps&&upData.aps.urn){
+      await initGenViewer(upData.aps.urn);
       setStep('ifc','done','Ready');
       setTimeout(function(){var card=document.getElementById('gen-steps-card');if(card)card.style.display='none';},2000);
       var badge=document.getElementById('gen-ready-badge');
-      if(badge){badge.style.opacity='1';badge.style.cursor='pointer';badge.innerHTML='✓ &nbsp;3D model ready — <strong>click to view</strong>';badge.onclick=function(){switchToView();};}
+      if(badge){badge.style.opacity='1';badge.style.cursor='pointer';badge.innerHTML='\u2713 &nbsp;3D model ready \u2014 <strong>click to view</strong>';badge.onclick=function(){switchToView();};}
       document.getElementById('view-tab').style.display='flex';
       toast('3D model ready');
     }else{
-      setStep('ifc','error','Failed');
-      document.getElementById('view-status').textContent='Generation failed';
+      // APS failed — offer download
+      setStep('ifc','done','Download ready');
+      setTimeout(function(){var card=document.getElementById('gen-steps-card');if(card)card.style.display='none';},2000);
+      var badge=document.getElementById('gen-ready-badge');
+      if(badge){badge.style.opacity='1';badge.style.cursor='pointer';badge.style.borderColor='rgba(184,149,58,0.4)';badge.style.color='var(--gold)';badge.innerHTML='\u2193 &nbsp;IFC ready \u2014 <strong>click to download</strong>';badge.onclick=function(){window.location.href='/api/generate/download?file='+encodeURIComponent(genIfcFilename);};}
+      toast('IFC ready \u2014 click badge to download');
     }
   }catch(e){console.error(e);setStep('ifc','error','Error');}
 }
@@ -1232,15 +1141,7 @@ function switchToView(){
   document.getElementById('view-tab').classList.add('active');
   document.getElementById('page-view').classList.add('active');
   if(genViewer)setTimeout(function(){genViewer.resize();},50);
-  // Trigger canvas resize for IFC.js
-  if(ifcRenderer){
-    var wrap=document.getElementById('ifc-canvas-wrap');
-    setTimeout(function(){
-      var W=wrap.clientWidth,H=wrap.clientHeight;
-      if(ifcCamera){ifcCamera.aspect=W/H;ifcCamera.updateProjectionMatrix();}
-      ifcRenderer.setSize(W,H);
-    },60);
-  }
+
 }
 
 async function exportIfc(){
