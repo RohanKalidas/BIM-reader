@@ -1,4 +1,5 @@
 import os, json, subprocess, psycopg2, psycopg2.extras, anthropic
+from datetime import datetime
 from flask import Flask, jsonify, send_from_directory, send_file, request, Response, stream_with_context
 from dotenv import load_dotenv
 from aps_upload import upload_to_aps, get_token
@@ -727,7 +728,8 @@ def generate_ifc_endpoint():
         import sys; sys.path.insert(0, REPO_DIR)
         from generate import generate_ifc
         safe_name = spec.get("name","building").replace(" ","_").replace("/","-")
-        output_path = os.path.abspath(os.path.join(GENERATED_FOLDER, f"generated_{safe_name}.ifc"))
+        ts = datetime.now().strftime("%H%M%S")
+        output_path = os.path.abspath(os.path.join(GENERATED_FOLDER, f"generated_{safe_name}_{ts}.ifc"))
         path = generate_ifc(spec, output_path)
         print(f"Generated IFC: {path}")
         result = {"status":"done","output":os.path.basename(path)}
