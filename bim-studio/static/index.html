@@ -255,6 +255,12 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 .view-bar-title{font-family:var(--display);font-size:14px;font-style:italic;color:#fff;flex:1;}
 #view-status{font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.3);}
 #gen-aps-viewer{flex:1;position:relative;background:#0d0d0d;}
+#xeokit-wrap{flex:1;position:relative;background:#0d0d0d;display:none;}
+#xeokit-canvas{width:100%;height:100%;display:block;outline:none;}
+#xeokit-loading{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(13,13,13,0.85);}
+#xeokit-loading-bar{width:80px;height:1px;background:rgba(255,255,255,0.08);position:relative;overflow:hidden;}
+#xeokit-loading-bar-fill{position:absolute;top:0;left:-100%;width:100%;height:100%;background:var(--green);animation:load 1.2s ease-in-out infinite;}
+#xeokit-loading-text{font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.3);letter-spacing:0.1em;}
 
 #gen-viewer-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:none;}
 .gen-empty-headline{font-family:var(--display);font-size:22px;font-style:italic;color:rgba(255,255,255,0.08);}
@@ -402,11 +408,25 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
       <span id="view-status">&#8212;</span>
     </div>
     <div id="gen-aps-viewer"><div id="gen-viewer-empty"><div class="gen-empty-headline">Awaiting generation</div><div class="gen-empty-sub">Describe a building in the Generate tab</div></div></div>
+    <div id="xeokit-wrap">
+      <canvas id="xeokit-canvas"></canvas>
+      <div id="xeokit-loading">
+        <div id="xeokit-loading-bar"><div id="xeokit-loading-bar-fill"></div></div>
+        <div id="xeokit-loading-text">Loading model…</div>
+      </div>
+    </div>
   </div>
 </div>
 
 <div id="toast"></div>
 <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "@xeokit/xeokit-sdk": "https://cdn.jsdelivr.net/npm/@xeokit/xeokit-sdk@2.6.0/dist/xeokit-sdk.min.es.js"
+  }
+}
+</script>
 <script>
 const ARCH=new Set(['IfcWall','IfcWallStandardCase','IfcWallElementedCase','IfcSlab','IfcRoof','IfcDoor','IfcWindow','IfcStair','IfcStairFlight','IfcRailing','IfcCurtainWall','IfcCovering','IfcFurnishingElement','IfcFurniture','IfcOpeningElement','IfcPlate','IfcMember']);
 const STRUCT=new Set(['IfcColumn','IfcColumnStandardCase','IfcBeam','IfcBeamStandardCase']);
@@ -442,18 +462,65 @@ async function initViewer(urn){
   // No viewer in disassemble tab
 }
 
-async function initGenViewer(urn){
+var xeokitViewer=null;
+
+async function initGenViewer(filename){
+  // filename = the generated IFC filename, served from /api/generate/download
   document.getElementById('gen-viewer-empty').style.display='none';
+  document.getElementById('gen-aps-viewer').style.display='none';
+  var wrap=document.getElementById('xeokit-wrap');
+  wrap.style.display='block';
+  document.getElementById('xeokit-loading').style.display='flex';
+  document.getElementById('xeokit-loading-text').textContent='Loading model…';
   document.getElementById('view-status').textContent='Loading…';
-  await ensureApsInit();
-  if(genViewer){genViewer.finish();genViewer=null;}
-  genViewer=new Autodesk.Viewing.GuiViewer3D(document.getElementById('gen-aps-viewer'),{});
-  genViewer.start();
-  Autodesk.Viewing.Document.load('urn:'+urn,function(doc){
-    genViewer.loadDocumentNode(doc,doc.getRoot().getDefaultGeometry()).then(function(){
-      document.getElementById('view-status').textContent='Ready';
+
+  try{
+    // Dynamically import xeokit
+    var xk=await import('https://cdn.jsdelivr.net/npm/@xeokit/xeokit-sdk@2.6.0/dist/xeokit-sdk.min.es.js');
+    var {Viewer,WebIFCLoaderPlugin}=xk;
+
+    if(xeokitViewer){xeokitViewer.destroy();xeokitViewer=null;}
+
+    xeokitViewer=new Viewer({
+      canvasId:'xeokit-canvas',
+      transparent:true,
+      backgroundColor:[0.05,0.05,0.05],
     });
-  },function(code,msg){document.getElementById('view-status').textContent='Load failed';console.error(code,msg);});
+
+    // Nice camera
+    xeokitViewer.camera.eye=[10,10,10];
+    xeokitViewer.camera.look=[0,0,0];
+    xeokitViewer.camera.up=[0,1,0];
+
+    var ifcLoader=new WebIFCLoaderPlugin(xeokitViewer,{
+      wasmPath:'https://cdn.jsdelivr.net/npm/web-ifc@0.0.51/'
+    });
+
+    var url='/api/generate/download?file='+encodeURIComponent(filename);
+    var model=ifcLoader.load({
+      id:'generated',
+      src:url,
+      loadMetadata:true,
+      edges:true
+    });
+
+    model.on('loaded',function(){
+      document.getElementById('xeokit-loading').style.display='none';
+      document.getElementById('view-status').textContent='Ready';
+      xeokitViewer.cameraFlight.flyTo(model);
+    });
+
+    model.on('error',function(e){
+      console.error('xeokit load error:',e);
+      document.getElementById('xeokit-loading-text').textContent='Failed to load model';
+      document.getElementById('view-status').textContent='Load failed';
+    });
+
+  }catch(e){
+    console.error('xeokit init error:',e);
+    document.getElementById('xeokit-loading-text').textContent='Viewer error: '+e.message;
+    document.getElementById('view-status').textContent='Error';
+  }
 }
 
 function buildGlobalIdMap(){
@@ -1141,7 +1208,7 @@ function switchToView(){
   document.getElementById('view-tab').classList.add('active');
   document.getElementById('page-view').classList.add('active');
   if(genViewer)setTimeout(function(){genViewer.resize();},50);
-
+  if(xeokitViewer)setTimeout(function(){xeokitViewer.scene.canvas.resolutionScale=1;},60);
 }
 
 async function exportIfc(){
