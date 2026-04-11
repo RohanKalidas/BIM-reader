@@ -100,10 +100,14 @@ def upload_ifc():
                 return jsonify({"status": "done", "cached": True, "project_id": project_id,
                                 "aps": {"urn": row["aps_urn"]}, "stats": stats})
 
-        aps_result = upload_to_aps(filepath)
-        conn = get_db(); cur = conn.cursor()
-        cur.execute("UPDATE projects SET aps_urn=%s WHERE id=%s", (aps_result["urn"], project_id))
-        conn.commit(); cur.close(); conn.close()
+        aps_result = {"urn": None}
+        try:
+            aps_result = upload_to_aps(filepath)
+            conn = get_db(); cur = conn.cursor()
+            cur.execute("UPDATE projects SET aps_urn=%s WHERE id=%s", (aps_result["urn"], project_id))
+            conn.commit(); cur.close(); conn.close()
+        except Exception as aps_err:
+            print(f"APS upload failed (non-fatal): {aps_err}")
         return jsonify({"status": "done", "project_id": project_id, "aps": aps_result, "stats": stats})
     except Exception as e:
         import traceback; print(traceback.format_exc())
@@ -156,11 +160,14 @@ def upload_bulk():
                     processed += 1
                     yield f"data: {json.dumps({'type':'done','file':filename,'project_id':project_id,'stats':stats,'aps':aps_result,'cached':True})}\n\n"
                 else:
-                    yield f"data: {json.dumps({'type':'step','file':filename,'step':'aps','message':'Uploading to APS…'})}\n\n"
-                    aps_result = upload_to_aps(filepath)
-                    conn = get_db(); cur = conn.cursor()
-                    cur.execute("UPDATE projects SET aps_urn=%s WHERE id=%s", (aps_result["urn"], project_id))
-                    conn.commit(); cur.close(); conn.close()
+                    aps_result = {}
+                    try:
+                        aps_result = upload_to_aps(filepath)
+                        conn = get_db(); cur = conn.cursor()
+                        cur.execute("UPDATE projects SET aps_urn=%s WHERE id=%s", (aps_result["urn"], project_id))
+                        conn.commit(); cur.close(); conn.close()
+                    except Exception as aps_err:
+                        print(f"APS upload failed (non-fatal): {aps_err}")
                     processed += 1
                     yield f"data: {json.dumps({'type':'done','file':filename,'project_id':project_id,'stats':stats,'aps':aps_result})}\n\n"
 
