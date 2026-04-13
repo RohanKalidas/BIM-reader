@@ -1,13 +1,12 @@
 """
 extractor/geometry_transplant.py — Transplants real IFC geometry from library components.
 
-Uses ifcopenshell.util.element.copy_deep() to deep-copy geometry items
-between IFC files, with exclude to skip context entities. Then remaps
-any ContextOfItems references inside MappedRepresentations to the target
-file's body context.
+Uses copy_deep to copy geometry items between files, then wraps them in a
+MappedItem with a scale factor from CartesianTransformationOperator3D to
+handle unit conversion (e.g. source in mm, target in m → scale 0.001).
 
-Excludes generated_*.ifc files.
-Strict category matching.
+Also remaps ContextOfItems references to the target file's body context.
+Excludes generated_*.ifc files. Strict category matching.
 """
 
 import os
@@ -15,6 +14,7 @@ import logging
 import psycopg2.extras
 import ifcopenshell
 import ifcopenshell.util.element
+import ifcopenshell.util.unit
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,8 @@ class GeometryLibrary:
     def __init__(self, db_connection_func, upload_folder=None):
         self._get_db = db_connection_func
         self._upload_folder = upload_folder or UPLOAD_FOLDER
-        self._ifc_cache = {}
+        self._ifc_cache = {}           # filename -> ifcopenshell model
+        self._unit_scale_cache = {}    # filename -> unit scale factor
         self._match_cache = {}
         self._component_index = None
 
@@ -96,10 +97,34 @@ class GeometryLibrary:
         try:
             model = ifcopenshell.open(filepath)
             self._ifc_cache[filename] = model
+            # Cache the unit scale for this file
+            try:
+                self._unit_scale_cache[filename] = ifcopenshell.util.unit.calculate_unit_scale(model)
+            except Exception:
+                self._unit_scale_cache[filename] = 1.0
             return model
         except Exception as e:
             logger.error("Failed to open %s: %s", filename, e)
             return None
+
+    def _get_unit_factor(self, source_filename, target_model):
+        """
+        Calculate the scale factor to convert geometry from source file units
+        to target file units.
+        
+        E.g. source in mm (scale=0.001), target in m (scale=1.0) → factor = 0.001
+        """
+        src_scale = self._unit_scale_cache.get(source_filename, 1.0)
+        try:
+            tgt_scale = ifcopenshell.util.unit.calculate_unit_scale(target_model)
+        except Exception:
+            tgt_scale = 1.0
+
+        if tgt_scale == 0:
+            tgt_scale = 1.0
+
+        factor = src_scale / tgt_scale
+        return factor
 
     def find_component(self, name, category=None, target_w=None, target_d=None, target_h=None):
         cache_key = (name.lower(), category)
@@ -181,8 +206,11 @@ class GeometryLibrary:
         if not source_element or not source_element.Representation:
             return None
 
+        # Get unit conversion factor
+        unit_factor = self._get_unit_factor(source_component["filename"], target_model)
+
         try:
-            return self._copy_geometry(target_model, source_element, body_ctx)
+            return self._copy_geometry(target_model, source_element, body_ctx, unit_factor)
         except Exception as e:
             logger.warning("Transplant failed for %s: %s",
                           source_component.get("family_name", "?"), e)
@@ -201,18 +229,24 @@ class GeometryLibrary:
             pass
         return None
 
-    def _copy_geometry(self, target, source_element, body_ctx):
+    def _copy_geometry(self, target, source_element, body_ctx, unit_factor):
         """
-        Core geometry copy. For each representation item:
-        1. copy_deep with context exclusion
-        2. Remap any ContextOfItems inside MappedRepresentations to target's body_ctx
-        3. Wrap in fresh ShapeRepresentation with target's body_ctx
+        Copy geometry from source element into target model.
+        
+        1. copy_deep each representation item (excluding context refs)
+        2. Remap context references inside MappedItems
+        3. Wrap everything in a new MappedItem with scale factor for unit conversion
+        4. Return ProductDefinitionShape
         """
         source_rep = source_element.Representation
-        copied_reps = []
+        all_copied_items = []
 
         for rep in source_rep.Representations:
-            copied_items = []
+            # Only copy Body representations (skip Axis, BoundingBox, etc.)
+            rep_id = rep.RepresentationIdentifier or ""
+            if rep_id not in ("Body", "body", ""):
+                continue
+
             for item in rep.Items:
                 try:
                     copied_item = ifcopenshell.util.element.copy_deep(
@@ -220,45 +254,51 @@ class GeometryLibrary:
                         exclude=["IfcGeometricRepresentationContext",
                                  "IfcGeometricRepresentationSubContext"]
                     )
-
-                    # FIX: Remap context references inside MappedItems
-                    # copy_deep excludes creating new context entities but leaves
-                    # dangling references in MappedRepresentation.ContextOfItems.
-                    # We need to point these to our target's body context.
+                    # Fix dangling context refs inside MappedItems
                     self._remap_contexts(copied_item, body_ctx)
-
-                    copied_items.append(copied_item)
+                    all_copied_items.append(copied_item)
                 except Exception as e:
                     logger.debug("Failed to copy item %s: %s", item.is_a(), e)
                     continue
 
-            if not copied_items:
-                continue
-
-            new_rep = target.createIfcShapeRepresentation(
-                body_ctx,
-                rep.RepresentationIdentifier or "Body",
-                rep.RepresentationType or "SweptSolid",
-                copied_items
-            )
-            copied_reps.append(new_rep)
-
-        if not copied_reps:
+        if not all_copied_items:
             return None
 
-        return target.createIfcProductDefinitionShape(None, None, copied_reps)
+        # Create an inner ShapeRepresentation holding the raw geometry
+        inner_rep = target.createIfcShapeRepresentation(
+            body_ctx, "Body", "SweptSolid", all_copied_items
+        )
+
+        # Wrap in a RepresentationMap + MappedItem with unit scale factor
+        origin = target.createIfcCartesianPoint((0.0, 0.0, 0.0))
+        map_origin = target.createIfcAxis2Placement3D(origin, None, None)
+        rep_map = target.createIfcRepresentationMap(map_origin, inner_rep)
+
+        # Apply unit conversion scale via the MappingTarget transform
+        needs_scale = abs(unit_factor - 1.0) > 1e-6
+        if needs_scale:
+            mapping_target = target.createIfcCartesianTransformationOperator3D(
+                None, None, origin, unit_factor, None
+            )
+        else:
+            mapping_target = target.createIfcCartesianTransformationOperator3D(
+                None, None, origin, 1.0, None
+            )
+
+        mapped_item = target.createIfcMappedItem(rep_map, mapping_target)
+
+        # Outer representation
+        outer_rep = target.createIfcShapeRepresentation(
+            body_ctx, "Body", "MappedRepresentation", [mapped_item]
+        )
+
+        return target.createIfcProductDefinitionShape(None, None, [outer_rep])
 
     def _remap_contexts(self, entity, body_ctx):
-        """
-        Recursively find and fix any ContextOfItems references inside
-        a copied entity tree. This is needed because copy_deep with
-        exclude=["IfcGeometricRepresentationContext"] leaves dangling
-        references that point to stale/wrong context entities.
-        """
+        """Fix dangling ContextOfItems references in copied entities."""
         if entity is None:
             return
 
-        # MappedItem -> MappingSource -> MappedRepresentation has ContextOfItems
         if entity.is_a("IfcMappedItem"):
             try:
                 mapped_rep = entity.MappingSource.MappedRepresentation
@@ -267,7 +307,6 @@ class GeometryLibrary:
             except Exception:
                 pass
 
-        # Also check if entity itself has ContextOfItems (ShapeRepresentation)
         if hasattr(entity, "ContextOfItems"):
             try:
                 entity.ContextOfItems = body_ctx
@@ -305,5 +344,6 @@ class GeometryLibrary:
 
     def clear_cache(self):
         self._ifc_cache.clear()
+        self._unit_scale_cache.clear()
         self._match_cache.clear()
         self._component_index = None
