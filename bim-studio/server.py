@@ -511,20 +511,16 @@ When you have enough information:
 SPEC FORMAT — room-based (procedural mode). The system will automatically generate all walls, doors, windows, floors, ceilings, and fixtures for each room. You only need to describe rooms.
 
 ROOM LAYOUT RULES:
-- x, y are the SW corner of each room's OUTER boundary (including walls) in metres
-- width and depth include the wall thickness on all sides
-- Rooms that share a wall must be placed so their outer boundaries touch exactly — no gaps
-  Example: Living Room x=0 width=6, Kitchen x=6 width=3.5 (they share the wall at x=6)
-- Exterior wall thickness is 0.20m, interior wall thickness is 0.12m
-- For rooms stacked north-south: room2.y = room1.y + room1.depth (no gap)
-- For rooms side by side east-west: room2.x = room1.x + room1.width (no gap)
-- Hallways connect rooms — make them 1.5-2.0m wide minimum
-- Minimum room sizes: bathroom 2.5×2.0m, bedroom 3.5×3.5m, living 4.5×4.0m, kitchen 3.0×3.5m
-- height = floor-to-ceiling in metres (use 2.7 for residential, 3.0 for commercial)
-- exterior: true for rooms on the building perimeter (get windows), false for interior rooms
-- door_wall: which wall the door is on — "south", "north", "east", "west"
-- All rooms on the same floor must form a connected, gap-free layout
-- Patio/terrace rooms should be adjacent to living areas on the south or east side
+- DO NOT include x or y coordinates — the system places rooms automatically with zero gaps
+- Specify only: name, width, depth, height, exterior (optional), door_wall (optional)
+- width = east-west dimension in metres, depth = north-south dimension in metres
+- height = floor-to-ceiling in metres (2.7 residential, 3.0+ commercial)
+- exterior: true if the room is on the building perimeter (gets windows). Omit to auto-detect.
+- door_wall: "south", "north", "east", or "west". Omit to auto-assign.
+- Minimum sizes: bathroom 2.5×2.0, bedroom 3.5×3.5, living 4.5×4.0, kitchen 3.0×3.5, hallway width=total_building_width depth=1.5
+- The system automatically groups public rooms (living, kitchen, dining) on one side, hallways in the middle, private rooms (bedroom, bathroom) on the other side
+- List rooms in logical order: public → hallway → private
+- Include a hallway/corridor if the building has both public and private zones
 
 ROOM TYPES (system auto-populates fixtures):
 - "Living Room" / "Lounge" — sofa, coffee table, TV stand, light
@@ -571,12 +567,13 @@ House <200m²: 6-12mo | House 200-500m²: 12-18mo | Commercial <2000m²: 12-24mo
       "elevation": 0.0,
       "height": 2.7,
       "rooms": [
-        {"name":"Living Room",  "x":0.0, "y":0.0, "width":5.5, "depth":4.5, "exterior":true,  "door_wall":"north"},
-        {"name":"Kitchen",      "x":5.5, "y":0.0, "width":3.5, "depth":4.5, "exterior":true,  "door_wall":"north"},
-        {"name":"Hallway",      "x":0.0, "y":4.5, "width":9.0, "depth":1.5, "exterior":false, "door_wall":"east"},
-        {"name":"Bedroom",      "x":0.0, "y":6.0, "width":4.5, "depth":3.5, "exterior":true,  "door_wall":"south"},
-        {"name":"Bathroom",     "x":4.5, "y":6.0, "width":2.5, "depth":2.0, "exterior":false, "door_wall":"south"},
-        {"name":"Patio",        "x":7.0, "y":6.0, "width":2.0, "depth":3.5, "exterior":true,  "door_wall":"south"}
+        {"name":"Living Room",  "width":5.5, "depth":4.5},
+        {"name":"Kitchen",      "width":3.5, "depth":4.5},
+        {"name":"Dining Room",  "width":3.0, "depth":4.5},
+        {"name":"Hallway",      "width":9.0, "depth":1.5},
+        {"name":"Bedroom",      "width":4.5, "depth":3.5},
+        {"name":"Bathroom",     "width":2.5, "depth":2.0},
+        {"name":"Patio",        "width":2.0, "depth":3.5}
       ]
     }
   ],
