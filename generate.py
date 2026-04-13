@@ -275,6 +275,12 @@ def build_room(m, oh, body_ctx, room, storey_pl, ceil_h, built_walls, elements):
 # ── Main entry point ──────────────────────────────────────────────────────────
 
 def generate_ifc(spec: dict, output_path: str = None) -> str:
+    # Run layout packer to fix/assign room coordinates
+    try:
+        from layout import process_spec
+        spec = process_spec(spec)
+    except Exception as e:
+        print(f"  Layout packer error (continuing): {e}")
     name     = spec.get("name","Generated Building")
     floors   = spec.get("floors",[])
     metadata = spec.get("metadata",{})
