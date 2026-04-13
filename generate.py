@@ -247,24 +247,18 @@ def plan_walls(rooms):
         side = info["side"]
         has_door = info["has_door"]
 
-        # Determine wall rectangle (x, y, width, height as seen from above)
+        # Determine wall rectangle — centered on the edge line
         if side in ("S", "N"):
-            # Horizontal wall
+            # Horizontal wall along this Y line
             length = abs(x2 - x1)
             wx = min(x1, x2)
-            if side == "S":
-                wy = min(y1, y2)
-            else:
-                wy = min(y1, y2) - wt
+            wy = min(y1, y2) - wt / 2  # center on edge
             ww = length
             wd = wt
         else:
-            # Vertical wall
+            # Vertical wall along this X line
             length = abs(y2 - y1)
-            if side == "W":
-                wx = min(x1, x2)
-            else:
-                wx = min(x1, x2) - wt
+            wx = min(x1, x2) - wt / 2  # center on edge
             wy = min(y1, y2)
             ww = wt
             wd = length
