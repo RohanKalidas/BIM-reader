@@ -182,11 +182,6 @@ def build_room(m, oh, body_ctx, room, storey_pl, ceil_h, built_walls, elements):
         place(m,rx,ry,-FLOOR_T,rel=storey_pl), box_shape(m,body_ctx,rw,rd,FLOOR_T))
     add_material(m,oh,fl,"Concrete"); elements.append(fl)
 
-    # ── Ceiling slab ──────────────────────────────────────────────────────────
-    cl = make_el(m,"IfcSlab",oh,f"{rname} Ceiling",
-        place(m,rx,ry,rh,rel=storey_pl), box_shape(m,body_ctx,rw,rd,FLOOR_T))
-    add_material(m,oh,cl,"Concrete"); elements.append(cl)
-
     # ── Walls (deduplicated) ──────────────────────────────────────────────────
     wall_defs = [
         # (name, x, y, lx, ly)
@@ -342,11 +337,24 @@ def generate_ifc(spec: dict, output_path: str = None) -> str:
         ceil_h = float(ceil_h_raw)/1000 if float(ceil_h_raw)>10 else float(ceil_h_raw)
 
         if has_rooms:
-            for room in floor.get("rooms",[]):
+            rooms = floor.get("rooms",[])
+            for room in rooms:
                 build_room(m,oh,body_ctx,room,storey.ObjectPlacement,
                            ceil_h,built_walls,elements)
+
+            # Single unified roof slab spanning entire building footprint
+            if rooms:
+                min_x = min(float(r.get("x",0)) for r in rooms)
+                min_y = min(float(r.get("y",0)) for r in rooms)
+                max_x = max(float(r.get("x",0))+float(r.get("width",4)) for r in rooms)
+                max_y = max(float(r.get("y",0))+float(r.get("depth",3)) for r in rooms)
+                roof = make_el(m,"IfcRoof",oh,"Roof",
+                    place(m,min_x,min_y,ceil_h,rel=storey.ObjectPlacement),
+                    box_shape(m,body_ctx,max_x-min_x,max_y-min_y,FLOOR_T))
+                add_material(m,oh,roof,"Concrete"); elements.append(roof)
+
             print(f"  Floor '{floor.get('name')}': {len(elements)} elements "
-                  f"from {len(floor.get('rooms',[]))} rooms")
+                  f"from {len(rooms)} rooms")
         else:
             # Legacy component mode
             for comp in floor.get("components",[]):
