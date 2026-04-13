@@ -6,3 +6,5 @@ neo4j
 numpy
 flask
 flask-cors
+werkzeug
+requests
