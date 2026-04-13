@@ -552,30 +552,40 @@ When you have enough information:
 3. Tell the user their building is being generated.
 4. Silently append the spec inside <building_spec> tags. The user NEVER sees it.
 
-SPEC FORMAT — room-based (procedural mode). The system will automatically generate all walls, doors, windows, floors, ceilings, and fixtures for each room. You only need to describe rooms.
+SPEC FORMAT — room-based with coordinates. The system generates walls, doors, windows, floors, ceilings, and fixtures for each room. You MUST provide x and y coordinates for every room.
 
-ROOM LAYOUT RULES:
-- DO NOT include x or y coordinates — the system places rooms automatically with zero gaps
-- Specify only: name, width, depth, height, exterior (optional), door_wall (optional)
-- width = east-west dimension in metres, depth = north-south dimension in metres
+ROOM COORDINATE RULES — CRITICAL:
+- You MUST provide x and y for every room (metres, origin at southwest corner of building)
+- x = east-west position, y = north-south position
+- width = east-west dimension, depth = north-south dimension
+- Rooms that share a wall MUST have exactly matching coordinates along that edge
+- Example: Room A at x=0, width=5 and Room B at x=5 share their east/west wall
+- Example: Room A at y=0, depth=4 and Room B at y=4 share their north/south wall
+- ALL rooms in the same row MUST have the same depth so their walls align
+- There must be NO gaps between rooms — every room edge must touch another room or the building perimeter
+- Think of it as a grid: rooms tile together like a spreadsheet with no empty cells
 - height = floor-to-ceiling in metres (2.7 residential, 3.0+ commercial)
-- exterior: true if the room is on the building perimeter (gets windows). Omit to auto-detect.
-- door_wall: "south", "north", "east", or "west". Omit to auto-assign.
-- Minimum sizes: bathroom 2.5x2.0, bedroom 3.5x3.5, living 4.5x4.0, kitchen 3.0x3.5, hallway width=total_building_width depth=1.5
-- The system automatically groups public rooms (living, kitchen, dining) on one side, hallways in the middle, private rooms (bedroom, bathroom) on the other side
-- List rooms in logical order: public -> hallway -> private
-- Include a hallway/corridor if the building has both public and private zones
 
-ROOM TYPES (system auto-populates fixtures):
+ROOM LAYOUT STRATEGY:
+1. Decide the building footprint (e.g. 12m x 10m for a small apartment)
+2. Divide into rows (e.g. row 1: y=0 to y=4, row 2: y=4 to y=5.5, row 3: y=5.5 to y=9)
+3. All rooms in the same row MUST have the same depth
+4. Fill each row completely — room widths must add up to the building width
+5. Public rooms (living, kitchen, dining) go in one row
+6. Corridors/hallways span the full building width as their own row
+7. Private rooms (bedrooms, bathrooms) go in another row
+8. Every room gets exterior=true if it touches the building perimeter
+
+FIXTURE TYPES (auto-populated based on room name):
 - "Living Room" / "Lounge" — sofa, coffee table, TV stand, light
 - "Kitchen" — counter, sink, stove, refrigerator, light
 - "Dining Room" — dining table, chairs, light
 - "Bedroom" / "Master Bedroom" / "Guest Bedroom" — bed, wardrobe, nightstand, light
 - "Bathroom" / "En-suite" — toilet, sink, shower, light
-- "Hallway" / "Corridor" / "Foyer" — light
+- "Hallway" / "Corridor" / "Foyer" — light only
 - "Utility" / "Laundry" — water heater, light
 - "Office" / "Study" — desk, chair, light
-- "Garage" — light
+- "Garage" — light only
 
 COST ESTIMATION — ALWAYS calculate from first principles, never work backwards from budget.
 
@@ -596,20 +606,22 @@ Step 3: Compare to the user's budget:
 
 NEVER adjust your cost estimate to match the user's budget. Always estimate honestly first.
 
+EXAMPLE SPEC (one-bedroom apartment, 8m x 9.5m footprint):
+
 <building_spec>
 {
-  "name": "Building Name",
+  "name": "One Bedroom Apartment",
   "floors": [
     {
       "name": "Ground Floor",
       "elevation": 0.0,
       "height": 2.7,
       "rooms": [
-        {"name":"Living Room",  "width":5.5, "depth":4.5},
-        {"name":"Kitchen",      "width":3.5, "depth":4.5},
-        {"name":"Hallway",      "width":9.0, "depth":1.5},
-        {"name":"Bedroom",      "width":4.5, "depth":3.5},
-        {"name":"Bathroom",     "width":2.5, "depth":2.0}
+        {"name":"Living Room",  "x":0.0, "y":0.0, "width":5.0, "depth":4.0, "exterior":true},
+        {"name":"Kitchen",      "x":5.0, "y":0.0, "width":3.0, "depth":4.0, "exterior":true},
+        {"name":"Hallway",      "x":0.0, "y":4.0, "width":8.0, "depth":1.5, "exterior":false},
+        {"name":"Bedroom",      "x":0.0, "y":5.5, "width":4.5, "depth":4.0, "exterior":true},
+        {"name":"Bathroom",     "x":4.5, "y":5.5, "width":3.5, "depth":4.0, "exterior":true}
       ]
     }
   ],
@@ -617,7 +629,7 @@ NEVER adjust your cost estimate to match the user's budget. Always estimate hone
     "location": "City, Country",
     "building_type": "Residential",
     "estimated_cost_usd": 300000,
-    "gross_floor_area_m2": 75,
+    "gross_floor_area_m2": 76,
     "floors_above_ground": 1,
     "estimated_duration_months": 7,
     "structural_system": "CMU load-bearing walls",
@@ -636,7 +648,14 @@ NEVER adjust your cost estimate to match the user's budget. Always estimate hone
   }
 }
 </building_spec>
+
+CRITICAL CHECKS before outputting spec:
+1. Do all rooms in the same row have the SAME depth? If not, fix it.
+2. Do room widths in each row add up to the same building width? If not, fix it.
+3. Are there any gaps? If row 1 ends at y=4.0, row 2 MUST start at y=4.0.
+4. Does every room have x and y coordinates? If not, add them.
 """
+
 
 
 @app.route("/api/generate/stream", methods=["POST"])
