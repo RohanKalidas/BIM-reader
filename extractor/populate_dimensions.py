@@ -1,11 +1,15 @@
-import os
-import psycopg2
-import psycopg2.extras
-from dotenv import load_dotenv
+"""
+extractor/populate_dimensions.py — Populates component dimensions from property sets.
 
-load_dotenv()
+Uses centralized database module with context managers.
+"""
 
-# ── Key name maps ──────────────────────────────────────────────────────────────
+import logging
+from database.db import get_db_connection
+
+logger = logging.getLogger(__name__)
+
+# ── Key name maps ────────────────────────────────────────────────────────────
 # For each dimension, a ranked list of key names to look for across ANY pset.
 # First match wins. All comparisons are case-insensitive.
 
@@ -26,15 +30,6 @@ SKIP_PSETS = {
     'materials and finishes', 'analytical properties',
     'ai_enrichment', '_material', '_material_layers', '_material_constituents'
 }
-
-def get_db():
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        port=os.getenv("DB_PORT"),
-        dbname=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD")
-    )
 
 
 def safe_float(v):
@@ -83,7 +78,7 @@ def extract_dims(category, parameters):
     """
     dims = {}
 
-    # ── Layer 1: AI enrichment (most trusted if enricher ran) ──────────────────
+    # ── Layer 1: AI enrichment (most trusted if enricher ran) ────────────
     enrichment = parameters.get('ai_enrichment', {}) if parameters else {}
     ai_dims    = enrichment.get('dimensions', {})
     ai_calc    = enrichment.get('calculated_dimensions', {})
@@ -99,11 +94,11 @@ def extract_dims(category, parameters):
 
     quality = enrichment.get('quality_score')
 
-    # ── Layer 2: Strip.py internal keys ────────────────────────────────────────
+    # ── Layer 2: Strip.py internal keys ──────────────────────────────────
     if not dims['height_mm'] and parameters:
         dims['height_mm'] = safe_float(parameters.get('_height_mm'))
 
-    # ── Layer 3: Fuzzy search across all psets ─────────────────────────────────
+    # ── Layer 3: Fuzzy search across all psets ───────────────────────────
     if not dims['height_mm']:
         dims['height_mm'] = search_psets(parameters, HEIGHT_KEYS)
 
@@ -122,7 +117,7 @@ def extract_dims(category, parameters):
             # If volume > 10000 it's almost certainly stored in mm³ not m³
             dims['volume_m3'] = raw_vol / 1e9 if raw_vol > 10000 else raw_vol
 
-    # ── Layer 4: Derive quality score from data completeness ───────────────────
+    # ── Layer 4: Derive quality score from data completeness ─────────────
     if quality is None:
         filled = sum(1 for k in ['width_mm', 'height_mm', 'length_mm', 'area_m2', 'volume_m3']
                      if dims.get(k) is not None)
@@ -133,66 +128,64 @@ def extract_dims(category, parameters):
 
 
 def populate_dimensions(project_id=None):
-    conn   = get_db()
-    cursor = conn.cursor()
+    with get_db_connection() as (conn, cursor):
+        if project_id:
+            cursor.execute("""
+                SELECT id, category, parameters
+                FROM components
+                WHERE project_id = %s
+            """, (project_id,))
+        else:
+            cursor.execute("""
+                SELECT id, category, parameters
+                FROM components
+            """)
 
-    if project_id:
-        cursor.execute("""
-            SELECT id, category, parameters
-            FROM components
-            WHERE project_id = %s
-        """, (project_id,))
-    else:
-        cursor.execute("""
-            SELECT id, category, parameters
-            FROM components
-        """)
+        components = cursor.fetchall()
+        print(f"Found {len(components)} components\n")
 
-    components = cursor.fetchall()
-    print(f"Found {len(components)} components\n")
+        updated = 0
 
-    updated = 0
+        for comp_id, category, parameters in components:
+            dims = extract_dims(category, parameters or {})
 
-    for comp_id, category, parameters in components:
-        dims = extract_dims(category, parameters or {})
+            cursor.execute("""
+                UPDATE components
+                SET
+                    width_mm      = %s,
+                    height_mm     = %s,
+                    length_mm     = %s,
+                    area_m2       = %s,
+                    volume_m3     = %s,
+                    quality_score = %s
+                WHERE id = %s
+            """, (
+                dims.get('width_mm'),
+                dims.get('height_mm'),
+                dims.get('length_mm'),
+                dims.get('area_m2'),
+                dims.get('volume_m3'),
+                dims.get('quality_score'),
+                comp_id
+            ))
 
-        cursor.execute("""
-            UPDATE components
-            SET
-                width_mm      = %s,
-                height_mm     = %s,
-                length_mm     = %s,
-                area_m2       = %s,
-                volume_m3     = %s,
-                quality_score = %s
-            WHERE id = %s
-        """, (
-            dims.get('width_mm'),
-            dims.get('height_mm'),
-            dims.get('length_mm'),
-            dims.get('area_m2'),
-            dims.get('volume_m3'),
-            dims.get('quality_score'),
-            comp_id
-        ))
+            print(f"id={comp_id} [{category}] -> "
+                  f"w={dims.get('width_mm')} "
+                  f"h={dims.get('height_mm')} "
+                  f"l={dims.get('length_mm')} "
+                  f"area={dims.get('area_m2')} "
+                  f"vol={dims.get('volume_m3')} "
+                  f"q={dims.get('quality_score')}")
+            updated += 1
 
-        print(f"id={comp_id} [{category}] → "
-              f"w={dims.get('width_mm')} "
-              f"h={dims.get('height_mm')} "
-              f"l={dims.get('length_mm')} "
-              f"area={dims.get('area_m2')} "
-              f"vol={dims.get('volume_m3')} "
-              f"q={dims.get('quality_score')}")
-        updated += 1
+        # conn.commit() happens automatically via context manager
 
-    conn.commit()
-    cursor.close()
-    conn.close()
     print(f"\nUpdated {updated} components. Done!")
 
 
 if __name__ == "__main__":
     import sys
+    logging.basicConfig(level=logging.INFO)
     pid = int(sys.argv[1]) if len(sys.argv) > 1 else None
     if pid:
         print(f"Running for project_id={pid}")
