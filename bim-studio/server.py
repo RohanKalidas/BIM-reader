@@ -511,17 +511,20 @@ When you have enough information:
 SPEC FORMAT — room-based (procedural mode). The system will automatically generate all walls, doors, windows, floors, ceilings, and fixtures for each room. You only need to describe rooms.
 
 ROOM LAYOUT RULES:
-- Place rooms adjacent to each other — shared walls between rooms are handled automatically
-- x, y are the SW corner of the room in metres from building origin
-- width = east-west dimension, depth = north-south dimension
-- height = floor-to-ceiling in metres (default 2.7)
-- exterior: true for perimeter rooms with windows, false for interior rooms
+- x, y are the SW corner of each room's OUTER boundary (including walls) in metres
+- width and depth include the wall thickness on all sides
+- Rooms that share a wall must be placed so their outer boundaries touch exactly — no gaps
+  Example: Living Room x=0 width=6, Kitchen x=6 width=3.5 (they share the wall at x=6)
+- Exterior wall thickness is 0.20m, interior wall thickness is 0.12m
+- For rooms stacked north-south: room2.y = room1.y + room1.depth (no gap)
+- For rooms side by side east-west: room2.x = room1.x + room1.width (no gap)
+- Hallways connect rooms — make them 1.5-2.0m wide minimum
+- Minimum room sizes: bathroom 2.5×2.0m, bedroom 3.5×3.5m, living 4.5×4.0m, kitchen 3.0×3.5m
+- height = floor-to-ceiling in metres (use 2.7 for residential, 3.0 for commercial)
+- exterior: true for rooms on the building perimeter (get windows), false for interior rooms
 - door_wall: which wall the door is on — "south", "north", "east", "west"
-- Rooms must tile together without gaps or overlaps
-- Hallways connect rooms — make them 1.2-1.5m wide
-- Bathrooms are typically 2.5x2m minimum
-- Bedrooms minimum 3x3.5m
-- Living rooms minimum 4x4m
+- All rooms on the same floor must form a connected, gap-free layout
+- Patio/terrace rooms should be adjacent to living areas on the south or east side
 
 ROOM TYPES (system auto-populates fixtures):
 - "Living Room" / "Lounge" — sofa, coffee table, TV stand, light
@@ -568,11 +571,12 @@ House <200m²: 6-12mo | House 200-500m²: 12-18mo | Commercial <2000m²: 12-24mo
       "elevation": 0.0,
       "height": 2.7,
       "rooms": [
-        {"name":"Living Room",  "x":0.0, "y":0.0, "width":5.0, "depth":4.0, "exterior":true,  "door_wall":"east"},
-        {"name":"Kitchen",      "x":5.0, "y":0.0, "width":3.0, "depth":4.0, "exterior":true,  "door_wall":"west"},
-        {"name":"Bedroom",      "x":0.0, "y":4.0, "width":4.0, "depth":3.5, "exterior":true,  "door_wall":"south"},
-        {"name":"Bathroom",     "x":4.0, "y":4.0, "width":2.5, "depth":2.0, "exterior":false, "door_wall":"south"},
-        {"name":"Hallway",      "x":4.0, "y":6.0, "width":4.0, "depth":1.5, "exterior":false, "door_wall":"west"}
+        {"name":"Living Room",  "x":0.0, "y":0.0, "width":5.5, "depth":4.5, "exterior":true,  "door_wall":"north"},
+        {"name":"Kitchen",      "x":5.5, "y":0.0, "width":3.5, "depth":4.5, "exterior":true,  "door_wall":"north"},
+        {"name":"Hallway",      "x":0.0, "y":4.5, "width":9.0, "depth":1.5, "exterior":false, "door_wall":"east"},
+        {"name":"Bedroom",      "x":0.0, "y":6.0, "width":4.5, "depth":3.5, "exterior":true,  "door_wall":"south"},
+        {"name":"Bathroom",     "x":4.5, "y":6.0, "width":2.5, "depth":2.0, "exterior":false, "door_wall":"south"},
+        {"name":"Patio",        "x":7.0, "y":6.0, "width":2.0, "depth":3.5, "exterior":true,  "door_wall":"south"}
       ]
     }
   ],
