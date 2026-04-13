@@ -7,6 +7,10 @@ and proper connection management.
 
 import os
 import sys
+
+# Add parent directory to path FIRST so database package is findable
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+
 import json
 import subprocess
 import logging
@@ -17,12 +21,8 @@ from flask import Flask, jsonify, send_from_directory, send_file, request, Respo
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 
-# Add parent directory to path so we can import from database/
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-
 from database.db import get_db_connection
 from aps_upload import upload_to_aps, get_token
-
 load_dotenv()
 
 logger = logging.getLogger(__name__)
