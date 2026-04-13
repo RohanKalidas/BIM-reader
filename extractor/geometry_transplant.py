@@ -1,17 +1,13 @@
 """
 extractor/geometry_transplant.py — Transplants real IFC geometry from library components.
 
-Uses ifcopenshell.util.element.copy_deep() to properly deep-copy geometry
-items between IFC files. The key insight: copy individual representation ITEMS
-(solids, profiles, etc.) with exclude=["IfcGeometricRepresentationContext",
-"IfcGeometricRepresentationSubContext"] to strip context references, then
-wrap them in fresh ShapeRepresentations using the target file's context.
+Uses ifcopenshell.util.element.copy_deep() to deep-copy geometry items
+between IFC files, with exclude to skip context entities. Then remaps
+any ContextOfItems references inside MappedRepresentations to the target
+file's body context.
 
-This ensures geometry is always at local origin (0,0,0) and the element's
-ObjectPlacement handles positioning.
-
-Excludes generated_*.ifc files (our own box output).
-Strict category matching to prevent cross-category false matches.
+Excludes generated_*.ifc files.
+Strict category matching.
 """
 
 import os
@@ -24,7 +20,6 @@ logger = logging.getLogger(__name__)
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads")
 
-# Maps fixture template names to terms found in Revit family names
 SEARCH_SYNONYMS = {
     "toilet":        ["toilet","wc","water closet","sanitary","lavatory","commode"],
     "sink":          ["sink","basin","washbasin","lavatory","wash hand","counter top w sink"],
@@ -53,7 +48,6 @@ SEARCH_SYNONYMS = {
     "water heater":  ["water heater","boiler","hot water","geyser"],
 }
 
-# Categories that are interchangeable for matching purposes
 RELATED_CATEGORIES = {
     "IfcFurniture":          {"IfcFurniture", "IfcFurnishingElement"},
     "IfcFurnishingElement":  {"IfcFurniture", "IfcFurnishingElement"},
@@ -76,7 +70,6 @@ class GeometryLibrary:
     def _load_component_index(self):
         if self._component_index is not None:
             return
-
         with self._get_db(cursor_factory=psycopg2.extras.RealDictCursor) as (conn, cursor):
             cursor.execute("""
                 SELECT c.id, c.category, c.family_name, c.type_name, c.revit_id,
@@ -91,30 +84,24 @@ class GeometryLibrary:
                 ORDER BY c.quality_score DESC NULLS LAST
             """)
             self._component_index = cursor.fetchall()
-
         logger.info("Loaded %d real components (excluding generated files)",
                     len(self._component_index))
 
     def _open_ifc(self, filename):
         if filename in self._ifc_cache:
             return self._ifc_cache[filename]
-
         filepath = os.path.join(self._upload_folder, filename)
         if not os.path.exists(filepath):
-            logger.warning("Source IFC not found: %s", filepath)
             return None
-
         try:
             model = ifcopenshell.open(filepath)
             self._ifc_cache[filename] = model
-            logger.info("Opened source IFC: %s", filename)
             return model
         except Exception as e:
             logger.error("Failed to open %s: %s", filename, e)
             return None
 
     def find_component(self, name, category=None, target_w=None, target_d=None, target_h=None):
-        """Find best matching component. Strict category filtering."""
         cache_key = (name.lower(), category)
         if cache_key in self._match_cache:
             return self._match_cache[cache_key]
@@ -130,23 +117,18 @@ class GeometryLibrary:
                     terms.append(key)
         terms = list(set(terms))
 
-        # Determine allowed categories
         allowed_cats = RELATED_CATEGORIES.get(category, {category} if category else None)
 
         best = None
         best_score = -1
 
         for comp in self._component_index:
-            comp_cat = comp["category"]
-
-            # Strict category filter
-            if allowed_cats and comp_cat not in allowed_cats:
+            if allowed_cats and comp["category"] not in allowed_cats:
                 continue
 
             comp_name = (comp["family_name"] or "").lower()
             comp_type = (comp["type_name"] or "").lower()
 
-            # Name matching
             score = 0
             name_matched = False
             for term in terms:
@@ -163,7 +145,6 @@ class GeometryLibrary:
 
             if comp.get("quality_score"):
                 score += comp["quality_score"] * 3
-
             if target_w and comp.get("width_mm") and comp["width_mm"] > 0:
                 ratio = min(target_w * 1000, comp["width_mm"]) / max(target_w * 1000, comp["width_mm"])
                 score += ratio * 2
@@ -185,19 +166,9 @@ class GeometryLibrary:
                   f"from {best['filename']} (score={best_score:.0f})")
         else:
             print(f"      NO MATCH for '{name}' (category={category})")
-
         return best
 
     def transplant_geometry(self, target_model, source_component, body_ctx):
-        """
-        Deep-copy geometry from a source component into the target model.
-        
-        Uses copy_deep on individual representation items with context exclusion.
-        This strips the source file's context references and placement chain,
-        resulting in geometry at local origin (0,0,0).
-        
-        Returns IfcProductDefinitionShape or None.
-        """
         if not source_component:
             return None
 
@@ -205,25 +176,19 @@ class GeometryLibrary:
         if not source_model:
             return None
 
-        # Find the source element
-        revit_id = source_component["revit_id"]
-        source_element = self._find_element(source_model, revit_id, source_component["category"])
-        if not source_element:
-            logger.warning("Element %s not found in %s", revit_id, source_component["filename"])
-            return None
-
-        if not source_element.Representation:
+        source_element = self._find_element(source_model, source_component["revit_id"],
+                                             source_component["category"])
+        if not source_element or not source_element.Representation:
             return None
 
         try:
             return self._copy_geometry(target_model, source_element, body_ctx)
         except Exception as e:
             logger.warning("Transplant failed for %s: %s",
-                          source_component.get("family_name", revit_id), e)
+                          source_component.get("family_name", "?"), e)
             return None
 
     def _find_element(self, model, revit_id, category):
-        """Find element in source model by GlobalId."""
         try:
             return model.by_guid(revit_id)
         except Exception:
@@ -238,12 +203,10 @@ class GeometryLibrary:
 
     def _copy_geometry(self, target, source_element, body_ctx):
         """
-        The core geometry copy operation.
-        
-        For each ShapeRepresentation in the source, copy each geometry Item
-        using copy_deep (which handles all nested references), excluding
-        context objects. Then wrap in fresh ShapeRepresentations with the
-        target's body context.
+        Core geometry copy. For each representation item:
+        1. copy_deep with context exclusion
+        2. Remap any ContextOfItems inside MappedRepresentations to target's body_ctx
+        3. Wrap in fresh ShapeRepresentation with target's body_ctx
         """
         source_rep = source_element.Representation
         copied_reps = []
@@ -252,14 +215,18 @@ class GeometryLibrary:
             copied_items = []
             for item in rep.Items:
                 try:
-                    # copy_deep: deep-copies the entity and ALL its references
-                    # into the target file. Exclude context refs so they don't
-                    # carry over from the source file.
                     copied_item = ifcopenshell.util.element.copy_deep(
                         target, item,
                         exclude=["IfcGeometricRepresentationContext",
                                  "IfcGeometricRepresentationSubContext"]
                     )
+
+                    # FIX: Remap context references inside MappedItems
+                    # copy_deep excludes creating new context entities but leaves
+                    # dangling references in MappedRepresentation.ContextOfItems.
+                    # We need to point these to our target's body context.
+                    self._remap_contexts(copied_item, body_ctx)
+
                     copied_items.append(copied_item)
                 except Exception as e:
                     logger.debug("Failed to copy item %s: %s", item.is_a(), e)
@@ -281,39 +248,57 @@ class GeometryLibrary:
 
         return target.createIfcProductDefinitionShape(None, None, copied_reps)
 
-    def transplant_materials(self, target_model, oh, target_element, source_component):
-        """Copy material associations from source to target."""
-        if not source_component:
+    def _remap_contexts(self, entity, body_ctx):
+        """
+        Recursively find and fix any ContextOfItems references inside
+        a copied entity tree. This is needed because copy_deep with
+        exclude=["IfcGeometricRepresentationContext"] leaves dangling
+        references that point to stale/wrong context entities.
+        """
+        if entity is None:
             return
 
+        # MappedItem -> MappingSource -> MappedRepresentation has ContextOfItems
+        if entity.is_a("IfcMappedItem"):
+            try:
+                mapped_rep = entity.MappingSource.MappedRepresentation
+                if mapped_rep and hasattr(mapped_rep, "ContextOfItems"):
+                    mapped_rep.ContextOfItems = body_ctx
+            except Exception:
+                pass
+
+        # Also check if entity itself has ContextOfItems (ShapeRepresentation)
+        if hasattr(entity, "ContextOfItems"):
+            try:
+                entity.ContextOfItems = body_ctx
+            except Exception:
+                pass
+
+    def transplant_materials(self, target_model, oh, target_element, source_component):
+        if not source_component:
+            return
         source_model = self._open_ifc(source_component["filename"])
         if not source_model:
             return
-
         source_element = self._find_element(
-            source_model, source_component["revit_id"], source_component["category"]
-        )
+            source_model, source_component["revit_id"], source_component["category"])
         if not source_element:
             return
-
         try:
             if not hasattr(source_element, 'HasAssociations'):
                 return
             for rel in source_element.HasAssociations:
                 if rel.is_a("IfcRelAssociatesMaterial"):
                     try:
-                        # copy_deep the material into the target file
                         copied_mat = ifcopenshell.util.element.copy_deep(
                             target_model, rel.RelatingMaterial,
                             exclude=["IfcGeometricRepresentationContext",
-                                     "IfcGeometricRepresentationSubContext"]
-                        )
+                                     "IfcGeometricRepresentationSubContext"])
                         target_model.createIfcRelAssociatesMaterial(
                             ifcopenshell.guid.new(), oh, None, None,
-                            [target_element], copied_mat
-                        )
-                    except Exception as e:
-                        logger.debug("Material copy failed: %s", e)
+                            [target_element], copied_mat)
+                    except Exception:
+                        pass
                     return
         except Exception:
             pass
