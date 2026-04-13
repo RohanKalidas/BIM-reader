@@ -1,31 +1,28 @@
+"""
+reconstruct.py — Reconstructs an IFC file from the PostgreSQL database.
+
+Uses centralized database module with context managers.
+"""
+
 import os
 import sys
 import math
 import json
-import psycopg2
+import logging
 import psycopg2.extras
 import ifcopenshell
-import ifcopenshell.api
+import ifcopenshell.guid
 import ifcopenshell.util.placement as placement_util
 import numpy as np
-from dotenv import load_dotenv
 from datetime import datetime
 
-load_dotenv()
+from database.db import get_db_connection
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Database
+# Database loaders
 # ---------------------------------------------------------------------------
-
-def get_db():
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        port=os.getenv("DB_PORT"),
-        dbname=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD")
-    )
-
 
 def load_project(cursor, project_id):
     cursor.execute("SELECT * FROM projects WHERE id = %s", (project_id,))
@@ -82,12 +79,8 @@ def load_spaces(cursor, project_id):
 
 def euler_to_matrix(rot_x_deg, rot_y_deg, rot_z_deg):
     """
-    Recompose the 3×3 rotation matrix from the Euler angles stored by strip.py.
-    strip.py used:
-        rot_z = degrees(arctan2(matrix[1][0], matrix[0][0]))   ← yaw   (Z)
-        rot_y = degrees(arctan2(-matrix[2][0], sqrt(...)))      ← pitch (Y)
-        rot_x = degrees(arctan2(matrix[2][1], matrix[2][2]))   ← roll  (X)
-    So we reconstruct in ZYX order (same convention).
+    Recompose the 3x3 rotation matrix from the Euler angles stored by strip.py.
+    strip.py used ZYX convention, so we reconstruct in the same order.
     """
     rx = math.radians(rot_x_deg or 0.0)
     ry = math.radians(rot_y_deg or 0.0)
@@ -108,8 +101,7 @@ def euler_to_matrix(rot_x_deg, rot_y_deg, rot_z_deg):
 
 def make_ifc_placement(model, pos_x, pos_y, pos_z, rot_x, rot_y, rot_z):
     """
-    Build an IfcLocalPlacement → IfcAxis2Placement3D from stored position
-    and Euler angles.  Returns an IfcLocalPlacement entity.
+    Build an IfcLocalPlacement from stored position and Euler angles.
     """
     x = float(pos_x or 0.0)
     y = float(pos_y or 0.0)
@@ -117,10 +109,6 @@ def make_ifc_placement(model, pos_x, pos_y, pos_z, rot_x, rot_y, rot_z):
 
     r = euler_to_matrix(rot_x, rot_y, rot_z)
 
-    # IFC axis2placement3D needs:
-    #   Location  — origin point
-    #   Axis      — local Z axis (column 2 of rotation matrix)
-    #   RefDirection — local X axis (column 0 of rotation matrix)
     location = model.createIfcCartesianPoint((x, y, z))
     axis     = model.createIfcDirection((r[0][2], r[1][2], r[2][2]))   # Z col
     ref_dir  = model.createIfcDirection((r[0][0], r[1][0], r[2][0]))   # X col
@@ -133,7 +121,6 @@ def make_ifc_placement(model, pos_x, pos_y, pos_z, rot_x, rot_y, rot_z):
 # IFC entity factories
 # ---------------------------------------------------------------------------
 
-# Map IFC category string → ifcopenshell create method name
 CATEGORY_MAP = {
     # Architectural
     "IfcWall":                  "IfcWall",
@@ -184,8 +171,8 @@ CATEGORY_MAP = {
 
 def create_element(model, category, global_id, name, placement):
     """
-    Create the correct IfcElement subtype.  Falls back to IfcBuildingElementProxy
-    for unknown categories so we never silently drop a component.
+    Create the correct IfcElement subtype. Falls back to IfcBuildingElementProxy
+    for unknown categories.
     """
     ifc_type = CATEGORY_MAP.get(category, "IfcBuildingElementProxy")
     try:
@@ -198,7 +185,7 @@ def create_element(model, category, global_id, name, placement):
         )
         return element
     except Exception as e:
-        # Last-resort fallback
+        logger.debug("Failed to create %s, falling back to proxy: %s", ifc_type, e)
         element = model.create_entity(
             "IfcBuildingElementProxy",
             GlobalId=global_id,
@@ -242,7 +229,8 @@ def attach_psets(model, owner_history, element, parameters):
                     NominalValue=nominal
                 )
                 props.append(prop)
-            except Exception:
+            except Exception as e:
+                logger.debug("Failed to create property %s: %s", prop_name, e)
                 continue
 
         if not props:
@@ -263,7 +251,8 @@ def attach_psets(model, owner_history, element, parameters):
                 RelatedObjects=[element],
                 RelatingPropertyDefinition=pset
             )
-        except Exception:
+        except Exception as e:
+            logger.debug("Failed to attach pset %s: %s", pset_name, e)
             continue
 
 
@@ -321,8 +310,7 @@ def attach_wall_layers(model, owner_history, element, wall_type_row):
 def attach_relationships(model, owner_history, relationships, component_map):
     """
     Recreate explicit IFC relationships from the relationships table.
-    Only handles types that map cleanly to IFC rel entities.
-    Skips self-referential rows (VOIDS/BOUNDS/CONTAINS workaround).
+    Skips self-referential rows (VOIDS/BOUNDS/CONTAINS/ASSIGNED_TO workaround).
     """
     counts = {}
 
@@ -332,7 +320,7 @@ def attach_relationships(model, owner_history, relationships, component_map):
         rel_type = rel["relationship_type"]
         props  = rel["properties"] or {}
 
-        # Skip self-referential rows (known strip.py workaround)
+        # Skip self-referential rows (known workaround for entities without component IDs)
         if a_id == b_id:
             continue
 
@@ -354,11 +342,8 @@ def attach_relationships(model, owner_history, relationships, component_map):
                 counts["CONNECTS_TO"] = counts.get("CONNECTS_TO", 0) + 1
 
             elif rel_type == "FILLS":
-                # IfcRelFillsElement needs an IfcOpeningElement as RelatingOpeningElement.
-                # We don't have the opening stored as a component, so we create a
-                # placeholder opening and attach it.
                 opening_id = props.get("opening_id", ifcopenshell.guid.new())
-                placement = elem_b.ObjectPlacement  # same placement as the wall
+                placement = elem_b.ObjectPlacement
                 opening = model.create_entity(
                     "IfcOpeningElement",
                     GlobalId=opening_id,
@@ -414,7 +399,7 @@ def attach_relationships(model, owner_history, relationships, component_map):
                 counts["COVERED_BY"] = counts.get("COVERED_BY", 0) + 1
 
         except Exception as e:
-            # Never crash the whole reconstruction on a single bad rel
+            logger.debug("Failed to create %s relationship: %s", rel_type, e)
             continue
 
     return counts
@@ -430,33 +415,28 @@ def reconstruct(project_id, output_path=None):
     print("=" * 50)
 
     # --- Load from Postgres ---
-    conn = get_db()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    with get_db_connection(cursor_factory=psycopg2.extras.RealDictCursor) as (conn, cursor):
+        project = load_project(cursor, project_id)
+        if not project:
+            print(f"Error: project {project_id} not found")
+            sys.exit(1)
 
-    project = load_project(cursor, project_id)
-    if not project:
-        print(f"Error: project {project_id} not found")
-        sys.exit(1)
+        print(f"\nProject: {project['name']} (id={project_id})")
 
-    print(f"\nProject: {project['name']} (id={project_id})")
+        components    = load_components(cursor, project_id)
+        relationships = load_relationships(cursor, project_id)
+        wall_types    = load_wall_types(cursor, project_id)
+        spaces        = load_spaces(cursor, project_id)
 
-    components   = load_components(cursor, project_id)
-    relationships = load_relationships(cursor, project_id)
-    wall_types   = load_wall_types(cursor, project_id)
-    spaces       = load_spaces(cursor, project_id)
-
-    print(f"Loaded {len(components)} components, "
-          f"{len(relationships)} relationships, "
-          f"{len(spaces)} spaces")
-
-    cursor.close()
-    conn.close()
+        print(f"Loaded {len(components)} components, "
+              f"{len(relationships)} relationships, "
+              f"{len(spaces)} spaces")
 
     # --- Build the IFC model ---
     print("\nBuilding IFC model...")
     model = ifcopenshell.file(schema="IFC4")
 
-    # Owner history — required by many IFC entities
+    # Owner history
     application = model.create_entity(
         "IfcApplication",
         ApplicationDeveloper=model.create_entity(
@@ -480,7 +460,7 @@ def reconstruct(project_id, output_path=None):
         CreationDate=int(datetime.now().timestamp())
     )
 
-    # Project → Site → Building hierarchy
+    # Project -> Site -> Building hierarchy
     units = model.create_entity(
         "IfcUnitAssignment",
         Units=[
@@ -534,12 +514,11 @@ def reconstruct(project_id, output_path=None):
         RelatedObjects=[ifc_building]
     )
 
-    # --- Build floor (storey) nodes, ordered by elevation ---
+    # --- Build floor (storey) nodes ---
     print("Creating building storeys...")
-    storey_map = {}  # level name → IfcBuildingStorey
-    storey_elements = {}  # level name → [elements]
+    storey_map = {}
+    storey_elements = {}
 
-    # Collect all unique levels from components
     seen_levels = {}
     for comp in components:
         level = comp["level"]
@@ -547,8 +526,7 @@ def reconstruct(project_id, output_path=None):
         if level and level not in seen_levels:
             seen_levels[level] = elevation
 
-    for level_name, elevation in sorted(seen_levels.items(),
-                                         key=lambda x: (x[1] or 0)):
+    for level_name, elevation in sorted(seen_levels.items(), key=lambda x: (x[1] or 0)):
         elev = float(elevation or 0.0)
         storey_placement = model.create_entity(
             "IfcLocalPlacement",
@@ -573,7 +551,6 @@ def reconstruct(project_id, output_path=None):
         storey_elements[level_name] = []
         print(f"  Storey: {level_name} @ {elev:.2f}m")
 
-    # Attach storeys to building
     if storey_map:
         model.create_entity(
             "IfcRelAggregates",
@@ -585,7 +562,7 @@ def reconstruct(project_id, output_path=None):
 
     # --- Create all component elements ---
     print(f"\nCreating {len(components)} elements...")
-    component_map = {}  # db component id → ifc element
+    component_map = {}
     skipped = 0
 
     for comp in components:
@@ -594,7 +571,6 @@ def reconstruct(project_id, output_path=None):
         name     = comp["family_name"] or comp["type_name"] or category
         guid     = comp["revit_id"] or ifcopenshell.guid.new()
 
-        # Placement
         if comp["pos_x"] is not None:
             placement = make_ifc_placement(
                 model,
@@ -602,27 +578,22 @@ def reconstruct(project_id, output_path=None):
                 comp["rot_x"], comp["rot_y"], comp["rot_z"]
             )
         else:
-            # No spatial data — place at origin
             placement = world_placement
             skipped += 1
 
-        # Create the IFC element
         element = create_element(model, category, guid, name, placement)
         component_map[db_id] = element
 
-        # Attach to storey
         level = comp["level"]
         if level and level in storey_map:
             storey_elements[level].append(element)
 
-        # Re-attach property sets
         attach_psets(model, owner_history, element, comp["parameters"])
 
-        # Re-attach wall layers
         if category in ("IfcWall", "IfcWallStandardCase", "IfcWallElementedCase"):
             attach_wall_layers(model, owner_history, element, wall_types.get(db_id))
 
-    # Attach elements to their storeys via IfcRelContainedInSpatialStructure
+    # Attach elements to storeys
     for level_name, elements in storey_elements.items():
         if elements:
             model.create_entity(
@@ -638,9 +609,7 @@ def reconstruct(project_id, output_path=None):
 
     # --- Recreate relationships ---
     print("\nRecreating relationships...")
-    rel_counts = attach_relationships(
-        model, owner_history, relationships, component_map
-    )
+    rel_counts = attach_relationships(model, owner_history, relationships, component_map)
     for rel_type, count in rel_counts.items():
         print(f"  {rel_type}: {count}")
 
@@ -669,6 +638,7 @@ def reconstruct(project_id, output_path=None):
 
 if __name__ == "__main__":
     import argparse
+    logging.basicConfig(level=logging.INFO)
 
     parser = argparse.ArgumentParser(description="Reconstruct an IFC file from the BIM database")
     parser.add_argument("project_id", type=int, help="Project ID to reconstruct")
