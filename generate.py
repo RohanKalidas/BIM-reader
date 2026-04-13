@@ -6,29 +6,23 @@ Rooms share walls — adjacent rooms don't duplicate shared boundaries.
 Includes basic MEP: supply ducts at ceiling, cold water pipes at floor level.
 """
 
-import math, json, os
+import math
+import json
+import os
+import logging
 import ifcopenshell
 import ifcopenshell.guid
-import psycopg2, psycopg2.extras
-from dotenv import load_dotenv
+import psycopg2.extras
 from datetime import datetime
 
-load_dotenv()
+from database.db import get_db_connection
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 
-# ── DB ────────────────────────────────────────────────────────────────────────
-
-def get_db():
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST","localhost"),
-        port=int(os.getenv("DB_PORT",5432)),
-        dbname=os.getenv("DB_NAME","bim_components"),
-        user=os.getenv("DB_USER","postgres"),
-        password=os.getenv("DB_PASSWORD"))
-
-# ── IFC primitives ────────────────────────────────────────────────────────────
+# ── IFC primitives ───────────────────────────────────────────────────────────
 
 def pt3(m,x,y,z): return m.createIfcCartesianPoint((float(x),float(y),float(z)))
 def pt2(m,x,y):   return m.createIfcCartesianPoint((float(x),float(y)))
@@ -76,9 +70,10 @@ def add_material(m, oh, el, name):
         mat = m.createIfcMaterial(str(name),None,None)
         m.createIfcRelAssociatesMaterial(
             ifcopenshell.guid.new(),oh,None,None,[el],mat)
-    except Exception: pass
+    except Exception as e:
+        logger.debug("Failed to add material %s: %s", name, e)
 
-# ── Constants ─────────────────────────────────────────────────────────────────
+# ── Constants ────────────────────────────────────────────────────────────────
 
 EXT_WALL_T = 0.20   # exterior wall thickness m
 INT_WALL_T = 0.12   # interior wall thickness m
@@ -92,7 +87,7 @@ DUCT_W     = 0.40   # supply duct width
 DUCT_H     = 0.20   # supply duct height
 PIPE_D     = 0.05   # pipe diameter (drawn as square)
 
-# ── Room type classification ──────────────────────────────────────────────────
+# ── Room type classification ─────────────────────────────────────────────────
 
 def room_type(name):
     n = name.lower()
@@ -108,10 +103,7 @@ def room_type(name):
     if any(x in n for x in ["garage","parking"]):                        return "garage"
     return "living"
 
-# ── Fixture templates ─────────────────────────────────────────────────────────
-# (name, ifc_type, fx, fy, fw, fd, fh)
-# fx/fy = fraction of inner room (0=left/bottom wall, 1=right/top wall)
-# fw/fd/fh = metres
+# ── Fixture templates ────────────────────────────────────────────────────────
 
 FIXTURES = {
     "bathroom": [
@@ -156,14 +148,14 @@ FIXTURES = {
     "garage":  [],
 }
 
-# ── Wall deduplication ────────────────────────────────────────────────────────
+# ── Wall deduplication ───────────────────────────────────────────────────────
 
 def wall_key(x1,y1,x2,y2):
     """Canonical key for a wall segment (order-independent)."""
     a,b = (round(x1,3),round(y1,3)), (round(x2,3),round(y2,3))
     return (min(a,b), max(a,b))
 
-# ── Build single room ─────────────────────────────────────────────────────────
+# ── Build single room ────────────────────────────────────────────────────────
 
 def build_room(m, oh, body_ctx, room, storey_pl, ceil_h, built_walls, elements):
     rx    = float(room.get("x",0))
@@ -177,20 +169,18 @@ def build_room(m, oh, body_ctx, room, storey_pl, ceil_h, built_walls, elements):
     wmat  = "CMU" if ext else "Drywall"
     rtype = room_type(rname)
 
-    # ── Floor slab ────────────────────────────────────────────────────────────
+    # ── Floor slab ───────────────────────────────────────────────────────
     fl = make_el(m,"IfcSlab",oh,f"{rname} Floor",
         place(m,rx,ry,-FLOOR_T,rel=storey_pl), box_shape(m,body_ctx,rw,rd,FLOOR_T))
     add_material(m,oh,fl,"Concrete"); elements.append(fl)
 
-    # ── Walls (deduplicated) ──────────────────────────────────────────────────
+    # ── Walls (deduplicated) ─────────────────────────────────────────────
     wall_defs = [
-        # (name, x, y, lx, ly)
         (f"{rname} S Wall", rx,      ry,        rw, wt),
         (f"{rname} N Wall", rx,      ry+rd-wt,  rw, wt),
         (f"{rname} W Wall", rx,      ry+wt,     wt, rd-2*wt),
         (f"{rname} E Wall", rx+rw-wt,ry+wt,     wt, rd-2*wt),
     ]
-    # Keys for dedup: use the two far corners
     wall_keys = [
         wall_key(rx,      ry,        rx+rw, ry+wt),
         wall_key(rx,      ry+rd-wt,  rx+rw, ry+rd),
@@ -205,7 +195,7 @@ def build_room(m, oh, body_ctx, room, storey_pl, ceil_h, built_walls, elements):
             place(m,wx,wy,0,rel=storey_pl), box_shape(m,body_ctx,wlx,wly,rh))
         add_material(m,oh,w,wmat); elements.append(w)
 
-    # ── Door ─────────────────────────────────────────────────────────────────
+    # ── Door ─────────────────────────────────────────────────────────────
     dwall = room.get("door_wall","south")
     doff  = max(wt+0.15, 0.4)
     if dwall=="south":   dx,dy,dlx,dly = rx+doff, ry,       DOOR_W, wt
@@ -216,7 +206,7 @@ def build_room(m, oh, body_ctx, room, storey_pl, ceil_h, built_walls, elements):
         place(m,dx,dy,0,rel=storey_pl), box_shape(m,body_ctx,dlx,dly,DOOR_H))
     add_material(m,oh,d,"Wood"); elements.append(d)
 
-    # ── Window (exterior rooms) ───────────────────────────────────────────────
+    # ── Window (exterior rooms) ──────────────────────────────────────────
     if ext and rw >= 2.0:
         wx2 = rx + rw/2 - WIN_W/2
         w2 = make_el(m,"IfcWindow",oh,f"{rname} Window",
@@ -224,14 +214,14 @@ def build_room(m, oh, body_ctx, room, storey_pl, ceil_h, built_walls, elements):
             box_shape(m,body_ctx,WIN_W,wt+0.02,WIN_H))
         add_material(m,oh,w2,"Glass"); elements.append(w2)
 
-    # ── Light fixture ─────────────────────────────────────────────────────────
+    # ── Light fixture ────────────────────────────────────────────────────
     lx2 = rx + rw/2 - 0.10
     ly2 = ry + rd/2 - 0.10
     lf = make_el(m,"IfcLightFixture",oh,f"{rname} Light",
         place(m,lx2,ly2,rh-0.05,rel=storey_pl), box_shape(m,body_ctx,0.20,0.20,0.05))
     add_material(m,oh,lf,"Aluminium"); elements.append(lf)
 
-    # ── Supply duct at ceiling ────────────────────────────────────────────────
+    # ── Supply duct at ceiling ───────────────────────────────────────────
     if rtype not in ("patio","garage") and rw > 1.0:
         duct_len = rw - 2*wt - 0.1
         if duct_len > 0.3:
@@ -243,7 +233,7 @@ def build_room(m, oh, body_ctx, room, storey_pl, ceil_h, built_walls, elements):
                 box_shape(m,body_ctx,duct_len,DUCT_W,DUCT_H))
             add_material(m,oh,dc,"GalvanisedSteel"); elements.append(dc)
 
-    # ── Cold water pipe (wet rooms only) ──────────────────────────────────────
+    # ── Cold water pipe (wet rooms only) ─────────────────────────────────
     if rtype in ("bathroom","kitchen","utility"):
         pipe_len = rd - 2*wt - 0.1
         if pipe_len > 0.2:
@@ -255,7 +245,7 @@ def build_room(m, oh, body_ctx, room, storey_pl, ceil_h, built_walls, elements):
                 box_shape(m,body_ctx,PIPE_D,pipe_len,PIPE_D))
             add_material(m,oh,pp,"Copper"); elements.append(pp)
 
-    # ── Furniture & fixtures ──────────────────────────────────────────────────
+    # ── Furniture & fixtures ─────────────────────────────────────────────
     fixture_list = FIXTURES.get(rtype,[])
     inner_w = max(rw - 2*wt, 0.4)
     inner_d = max(rd - 2*wt, 0.4)
@@ -272,7 +262,7 @@ def build_room(m, oh, body_ctx, room, storey_pl, ceil_h, built_walls, elements):
             box_shape(m,body_ctx,fw2,fd2,fh2))
         elements.append(fe)
 
-# ── Main entry point ──────────────────────────────────────────────────────────
+# ── Main entry point ─────────────────────────────────────────────────────────
 
 def generate_ifc(spec: dict, output_path: str = None) -> str:
     # Run layout packer to fix/assign room coordinates
@@ -280,7 +270,8 @@ def generate_ifc(spec: dict, output_path: str = None) -> str:
         from layout import process_spec
         spec = process_spec(spec)
     except Exception as e:
-        print(f"  Layout packer error (continuing): {e}")
+        logger.warning("Layout packer error (continuing): %s", e)
+
     name     = spec.get("name","Generated Building")
     floors   = spec.get("floors",[])
     metadata = spec.get("metadata",{})
@@ -348,7 +339,7 @@ def generate_ifc(spec: dict, output_path: str = None) -> str:
                 build_room(m,oh,body_ctx,room,storey.ObjectPlacement,
                            ceil_h,built_walls,elements)
 
-            # Single unified roof slab spanning entire building footprint
+            # Single unified roof slab
             if rooms:
                 min_x = min(float(r.get("x",0)) for r in rooms)
                 min_y = min(float(r.get("y",0)) for r in rooms)
@@ -396,7 +387,8 @@ def generate_ifc(spec: dict, output_path: str = None) -> str:
             try:
                 props.append(m.createIfcPropertySingleValue(
                     str(k),None,m.create_entity("IfcLabel",wrappedValue=str(v)),None))
-            except Exception: pass
+            except Exception as e:
+                logger.debug("Failed to create metadata property %s: %s", k, e)
         if props:
             pset = m.createIfcPropertySet(
                 ifcopenshell.guid.new(),oh,"BIM_Studio_Project_Info",None,props)
@@ -413,6 +405,7 @@ def generate_ifc(spec: dict, output_path: str = None) -> str:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     test_spec = {
         "name":"Test 1BR Apartment",
         "floors":[{
