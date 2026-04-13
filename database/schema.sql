@@ -62,13 +62,6 @@ CREATE TABLE relationships (
     -- COVERED_BY        — element has a covering
     -- ASSIGNED_TO       — element assigned to a system
     properties          JSONB DEFAULT '{}',
-    -- properties example:
-    -- {
-    --   "angle": 90,
-    --   "distance": 0,
-    --   "flow_direction": "supply",
-    --   "connection_point": {"x": 0, "y": 0, "z": 0}
-    -- }
     source              TEXT DEFAULT 'explicit',
     -- explicit = read directly from IFC
     -- calculated = derived from geometry
