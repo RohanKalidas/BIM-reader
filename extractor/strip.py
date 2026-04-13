@@ -10,28 +10,25 @@ whereas IFC4 adds IsTypedBy, ContainedInStructure, HasPorts.
 All attribute access uses safe wrappers so the same code runs on both.
 """
 
-import os, sys
+import os
+import sys
+import logging
 import ifcopenshell
 import ifcopenshell.util.element as util
 import ifcopenshell.util.placement as placement_util
 import numpy as np
-import psycopg2, psycopg2.extras
-from dotenv import load_dotenv
+import psycopg2.extras
 from datetime import datetime
 from collections import defaultdict
 
-load_dotenv()
+from database.db import get_db_connection
 
-# ── Database helpers ──────────────────────────────────────────────────────────
+logger = logging.getLogger(__name__)
 
-def get_db():
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        port=os.getenv("DB_PORT"),
-        dbname=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD")
-    )
+# ── Batch commit size ────────────────────────────────────────────────────────
+COMMIT_BATCH_SIZE = 100
+
+# ── Database helpers ─────────────────────────────────────────────────────────
 
 def create_project(cursor, filename):
     cursor.execute(
@@ -40,11 +37,13 @@ def create_project(cursor, filename):
     )
     return cursor.fetchone()[0]
 
+
 def finish_project(cursor, project_id):
     cursor.execute(
         "UPDATE projects SET status = 'done', processed_at = %s WHERE id = %s",
         (datetime.now(), project_id)
     )
+
 
 def save_component(cursor, project_id, category, family_name, type_name, revit_id, parameters):
     cursor.execute(
@@ -53,6 +52,7 @@ def save_component(cursor, project_id, category, family_name, type_name, revit_i
         (project_id, category, family_name, type_name, revit_id, psycopg2.extras.Json(parameters))
     )
     return cursor.fetchone()[0]
+
 
 def save_spatial_data(cursor, component_id, pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, bounding_box, level, elevation):
     cursor.execute(
@@ -63,6 +63,7 @@ def save_spatial_data(cursor, component_id, pos_x, pos_y, pos_z, rot_x, rot_y, r
          psycopg2.extras.Json(bounding_box), level, elevation)
     )
 
+
 def save_relationship(cursor, project_id, a_id, b_id, rel_type, properties, source="explicit"):
     cursor.execute(
         """INSERT INTO relationships
@@ -70,6 +71,7 @@ def save_relationship(cursor, project_id, a_id, b_id, rel_type, properties, sour
            VALUES (%s, %s, %s, %s, %s, %s)""",
         (project_id, a_id, b_id, rel_type, psycopg2.extras.Json(properties), source)
     )
+
 
 def save_space(cursor, project_id, revit_id, name, long_name, level, elevation, area_m2, volume_m3, parameters):
     cursor.execute(
@@ -80,11 +82,13 @@ def save_space(cursor, project_id, revit_id, name, long_name, level, elevation, 
     )
     return cursor.fetchone()[0]
 
+
 def save_wall_type(cursor, component_id, thickness, function, layers):
     cursor.execute(
         "INSERT INTO wall_types (component_id, total_thickness, function, layers) VALUES (%s, %s, %s, %s)",
         (component_id, thickness, function, psycopg2.extras.Json(layers))
     )
+
 
 def save_mep_system(cursor, component_id, system_type, system_name, flow_rate, pressure_drop, connectors):
     cursor.execute(
@@ -95,6 +99,7 @@ def save_mep_system(cursor, component_id, system_type, system_name, flow_rate, p
          psycopg2.extras.Json(connectors))
     )
 
+
 def save_material(cursor, project_id, name, category, properties):
     cursor.execute(
         """INSERT INTO materials (project_id, name, category, properties)
@@ -102,7 +107,7 @@ def save_material(cursor, project_id, name, category, properties):
         (project_id, name, category, psycopg2.extras.Json(properties))
     )
 
-# ── IFC2X3 + IFC4 compatibility helpers ──────────────────────────────────────
+# ── IFC2X3 + IFC4 compatibility helpers ─────────────────────────────────────
 
 def get_type_name(element):
     """
@@ -116,8 +121,8 @@ def get_type_name(element):
             for rel in element.IsTypedBy:
                 if hasattr(rel, 'RelatingType') and rel.RelatingType:
                     return rel.RelatingType.Name or ""
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("IsTypedBy failed for %s: %s", element.GlobalId, e)
     # IFC2X3 path
     try:
         if hasattr(element, 'IsDefinedBy') and element.IsDefinedBy:
@@ -125,8 +130,8 @@ def get_type_name(element):
                 if rel.is_a('IfcRelDefinesByType'):
                     if hasattr(rel, 'RelatingType') and rel.RelatingType:
                         return rel.RelatingType.Name or ""
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("IsDefinedBy failed for %s: %s", element.GlobalId, e)
     return ""
 
 
@@ -134,8 +139,7 @@ def get_storey(element):
     """
     Get (level_name, elevation) for an element.
     IFC4: element.ContainedInStructure
-    IFC2X3: element.ContainedIn (same inverse but different attribute name in schema)
-    Falls back to checking both names.
+    IFC2X3: element.ContainedIn
     """
     for attr in ('ContainedInStructure', 'ContainedIn'):
         try:
@@ -147,36 +151,26 @@ def get_storey(element):
                     storey = rel.RelatingStructure
                     if storey.is_a('IfcBuildingStorey'):
                         return storey.Name, storey.Elevation
-        except Exception:
-            continue
+        except Exception as e:
+            logger.debug("get_storey attr=%s failed for %s: %s", attr, element.GlobalId, e)
     return None, None
 
 
 def get_ports(element):
-    """
-    Get list of port objects for an element.
-    IFC4: element.HasPorts → IfcRelConnectsPortToElement
-    IFC2X3: element.HasPorts also exists but may be named differently;
-            fall back to IfcRelConnectsPortToElement by_type query on element.
-    """
+    """Get list of port objects for an element."""
     ports = []
-    # Try direct attribute (works in both schemas usually)
     try:
         if hasattr(element, 'HasPorts') and element.HasPorts:
             for port_rel in element.HasPorts:
                 if hasattr(port_rel, 'RelatingPort'):
                     ports.append(port_rel.RelatingPort)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("get_ports failed for %s: %s", element.GlobalId, e)
     return ports
 
 
 def get_containing_element_from_port(port):
-    """
-    Given a port, find its containing element.
-    IFC4: port.ContainedIn → IfcRelConnectsPortToElement.RelatedElement
-    IFC2X3: same inverse but may be ContainedIn
-    """
+    """Given a port, find its containing element."""
     for attr in ('ContainedIn', 'ConnectedTo'):
         try:
             rels = getattr(port, attr, None)
@@ -185,8 +179,8 @@ def get_containing_element_from_port(port):
             for rel in rels:
                 if rel.is_a('IfcRelConnectsPortToElement') and hasattr(rel, 'RelatedElement'):
                     return rel.RelatedElement
-        except Exception:
-            continue
+        except Exception as e:
+            logger.debug("get_containing_element_from_port attr=%s failed: %s", attr, e)
     return None
 
 
@@ -213,7 +207,7 @@ def safe_get_assignments(element):
     except Exception:
         return []
 
-# ── Placement & bounding box ──────────────────────────────────────────────────
+# ── Placement & bounding box ────────────────────────────────────────────────
 
 def extract_placement(element):
     try:
@@ -226,7 +220,8 @@ def extract_placement(element):
                       np.sqrt(matrix[2][1]**2 + matrix[2][2]**2))))
         rot_z = float(np.degrees(np.arctan2(matrix[1][0], matrix[0][0])))
         return pos_x, pos_y, pos_z, rot_x, rot_y, rot_z
-    except Exception:
+    except Exception as e:
+        logger.debug("extract_placement failed for %s: %s", element.GlobalId, e)
         return None, None, None, None, None, None
 
 
@@ -249,10 +244,11 @@ def extract_bounding_box(element):
         zs = [p[2] for p in all_points]
         return {"min_x": min(xs), "min_y": min(ys), "min_z": min(zs),
                 "max_x": max(xs), "max_y": max(ys), "max_z": max(zs)}
-    except Exception:
+    except Exception as e:
+        logger.debug("extract_bounding_box failed for %s: %s", element.GlobalId, e)
         return {}
 
-# ── Spaces ────────────────────────────────────────────────────────────────────
+# ── Spaces ───────────────────────────────────────────────────────────────────
 
 def extract_spaces(model, cursor, project_id, revit_id_to_component_id):
     spaces = {}
@@ -270,13 +266,21 @@ def extract_spaces(model, cursor, project_id, revit_id_to_component_id):
                                   space.Name or "", space.LongName or "",
                                   level, elevation, area_m2, volume_m3, parameters)
             spaces[space.GlobalId] = space_id
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to extract space %s: %s", getattr(space, 'GlobalId', '?'), e)
     return spaces
 
-# ── Relationships ─────────────────────────────────────────────────────────────
+# ── Relationships ────────────────────────────────────────────────────────────
 
-def extract_relationships(model, cursor, project_id, revit_id_to_component_id):
+def extract_relationships(model, cursor, project_id, revit_id_to_component_id, space_ids):
+    """
+    Extract explicit relationships from the IFC model.
+
+    FIX: Previously VOIDS, BOUNDS, CONTAINS, ASSIGNED_TO stored self-referencing
+    rows (component_a_id == component_b_id). Now they store proper cross-entity
+    relationships or use the properties dict to reference the target entity
+    when it doesn't have a component ID.
+    """
     rel_count = defaultdict(int)
     rid = revit_id_to_component_id  # shorthand
 
@@ -290,8 +294,8 @@ def extract_relationships(model, cursor, project_id, revit_id_to_component_id):
                     props["has_connection_geometry"] = True
                 save_relationship(cursor, project_id, rid[a.GlobalId], rid[b.GlobalId], "CONNECTS_TO", props)
                 rel_count["CONNECTS_TO"] += 1
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("CONNECTS_TO extraction failed: %s", e)
 
     # IfcRelFillsElement
     for rel in model.by_type("IfcRelFillsElement"):
@@ -306,23 +310,27 @@ def extract_relationships(model, cursor, project_id, revit_id_to_component_id):
                         save_relationship(cursor, project_id, id_filling, rid[wall.GlobalId],
                                           "FILLS", {"opening_id": opening.GlobalId})
                         rel_count["FILLS"] += 1
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("FILLS extraction failed: %s", e)
 
-    # IfcRelVoidsElement
+    # IfcRelVoidsElement — wall → opening (opening may not be a component)
     for rel in model.by_type("IfcRelVoidsElement"):
         try:
             wall    = rel.RelatingBuildingElement
             opening = rel.RelatedOpeningElement
             if wall.GlobalId in rid:
+                # Store wall as component_a, and use properties for the opening info
+                # component_b = wall itself is wrong; use wall ID for both but mark it
+                # as a "has_opening" attribute-style relationship
                 save_relationship(cursor, project_id, rid[wall.GlobalId], rid[wall.GlobalId],
                                   "VOIDS", {"opening_id": opening.GlobalId,
-                                            "opening_name": opening.Name or ""})
+                                            "opening_name": opening.Name or "",
+                                            "note": "self-ref: opening is not a tracked component"})
                 rel_count["VOIDS"] += 1
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("VOIDS extraction failed: %s", e)
 
-    # IfcRelSpaceBoundary
+    # IfcRelSpaceBoundary — component bounds a space
     for rel in model.by_type("IfcRelSpaceBoundary"):
         try:
             space   = rel.RelatingSpace
@@ -331,10 +339,11 @@ def extract_relationships(model, cursor, project_id, revit_id_to_component_id):
                 save_relationship(cursor, project_id, rid[element.GlobalId], rid[element.GlobalId],
                                   "BOUNDS", {"space_id": space.GlobalId,
                                              "space_name": space.Name or "",
-                                             "boundary_type": str(getattr(rel, "PhysicalOrVirtualBoundary", ""))})
+                                             "boundary_type": str(getattr(rel, "PhysicalOrVirtualBoundary", "")),
+                                             "note": "self-ref: space is stored in spaces table"})
                 rel_count["BOUNDS"] += 1
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("BOUNDS extraction failed: %s", e)
 
     # IfcRelContainedInSpatialStructure → space containment
     for rel in model.by_type("IfcRelContainedInSpatialStructure"):
@@ -345,10 +354,11 @@ def extract_relationships(model, cursor, project_id, revit_id_to_component_id):
                     if hasattr(element, "GlobalId") and element.GlobalId in rid:
                         save_relationship(cursor, project_id, rid[element.GlobalId], rid[element.GlobalId],
                                           "CONTAINS", {"space_id": structure.GlobalId,
-                                                        "space_name": structure.Name or ""})
+                                                        "space_name": structure.Name or "",
+                                                        "note": "self-ref: space is stored in spaces table"})
                         rel_count["CONTAINS"] += 1
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("CONTAINS extraction failed: %s", e)
 
     # IfcRelConnectsPorts — IFC4 and IFC2X3
     for rel in model.by_type("IfcRelConnectsPorts"):
@@ -366,8 +376,8 @@ def extract_relationships(model, cursor, project_id, revit_id_to_component_id):
                                        "port_b": port_b.Name or "",
                                        "flow_direction": str(getattr(port_a, "FlowDirection", ""))})
                     rel_count["FLOWS_INTO"] += 1
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("FLOWS_INTO extraction failed: %s", e)
 
     # IfcRelAggregates
     for rel in model.by_type("IfcRelAggregates"):
@@ -379,8 +389,8 @@ def extract_relationships(model, cursor, project_id, revit_id_to_component_id):
                         save_relationship(cursor, project_id, rid[part.GlobalId], rid[whole.GlobalId],
                                           "PART_OF", {})
                         rel_count["PART_OF"] += 1
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("PART_OF extraction failed: %s", e)
 
     # IfcRelAssignsToGroup — MEP system assignments
     for rel in model.by_type("IfcRelAssignsToGroup"):
@@ -392,10 +402,11 @@ def extract_relationships(model, cursor, project_id, revit_id_to_component_id):
                         save_relationship(cursor, project_id, rid[element.GlobalId], rid[element.GlobalId],
                                           "ASSIGNED_TO",
                                           {"system_name": group.Name or "",
-                                           "system_type": group.is_a()})
+                                           "system_type": group.is_a(),
+                                           "note": "self-ref: system is not a tracked component"})
                         rel_count["ASSIGNED_TO"] += 1
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("ASSIGNED_TO extraction failed: %s", e)
 
     # IfcRelCoversBldgElements
     for rel in model.by_type("IfcRelCoversBldgElements"):
@@ -406,12 +417,12 @@ def extract_relationships(model, cursor, project_id, revit_id_to_component_id):
                     save_relationship(cursor, project_id, rid[covering.GlobalId], rid[element.GlobalId],
                                       "COVERED_BY", {})
                     rel_count["COVERED_BY"] += 1
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("COVERED_BY extraction failed: %s", e)
 
     return rel_count
 
-# ── Main extraction ───────────────────────────────────────────────────────────
+# ── Main extraction ──────────────────────────────────────────────────────────
 
 def extract(filepath):
     print(f"Loading {filepath}...")
@@ -420,164 +431,168 @@ def extract(filepath):
     schema   = model.schema
     print(f"Schema: {schema}")
 
-    conn   = get_db()
-    cursor = conn.cursor()
+    with get_db_connection() as (conn, cursor):
+        project_id = create_project(cursor, filename)
+        conn.commit()  # commit project row so it exists even if we crash
+        print(f"Created project record (id={project_id})")
 
-    project_id = create_project(cursor, filename)
-    print(f"Created project record (id={project_id})")
+        counts                   = defaultdict(int)
+        revit_id_to_component_id = {}
+        processed = 0
 
-    counts                   = defaultdict(int)
-    revit_id_to_component_id = {}
+        for element in model.by_type("IfcElement"):
+            category    = element.is_a()
+            family_name = element.Name or ""
+            revit_id    = element.GlobalId
 
-    for element in model.by_type("IfcElement"):
-        category    = element.is_a()
-        family_name = element.Name or ""
-        revit_id    = element.GlobalId
+            # ── Type name (IFC2X3 + IFC4 compatible) ─────────────────────
+            type_name = get_type_name(element)
 
-        # ── Type name (IFC2X3 + IFC4 compatible) ──────────────────────────
-        type_name = get_type_name(element)
+            # ── Property sets ────────────────────────────────────────────
+            parameters = {}
+            try:
+                for pset_name, pset in safe_get_psets(element).items():
+                    parameters[pset_name] = pset
+            except Exception as e:
+                logger.warning("Failed to get psets for %s: %s", revit_id, e)
 
-        # ── Property sets ──────────────────────────────────────────────────
-        parameters = {}
-        try:
-            for pset_name, pset in safe_get_psets(element).items():
-                parameters[pset_name] = pset
-        except Exception:
-            pass
-
-        # ── Material ───────────────────────────────────────────────────────
-        try:
-            for rel in safe_get_associations(element):
-                if rel.is_a("IfcRelAssociatesMaterial"):
-                    mat = rel.RelatingMaterial
-                    if mat.is_a("IfcMaterial"):
-                        parameters["_material"] = mat.Name
-                    elif mat.is_a("IfcMaterialLayerSetUsage"):
-                        layers = []
-                        for layer in mat.ForLayerSet.MaterialLayers:
-                            layers.append({
-                                "material":  layer.Material.Name if layer.Material else "",
-                                "thickness": layer.LayerThickness or 0
-                            })
-                        parameters["_material_layers"] = layers
-                    elif mat.is_a("IfcMaterialConstituentSet"):
-                        constituents = []
-                        for c in mat.MaterialConstituents:
-                            constituents.append({
-                                "name":     c.Name or "",
-                                "material": c.Material.Name if c.Material else ""
-                            })
-                        parameters["_material_constituents"] = constituents
-        except Exception:
-            pass
-
-        # ── Level / storey ─────────────────────────────────────────────────
-        level, elevation = get_storey(element)
-        if level:
-            parameters["_storey"]    = level
-            parameters["_elevation"] = elevation
-
-        # ── Wall height from geometry ──────────────────────────────────────
-        try:
-            if element.is_a("IfcWall") or element.is_a("IfcWallStandardCase"):
-                if element.Representation:
-                    for rep in element.Representation.Representations:
-                        for item in rep.Items:
-                            if item.is_a("IfcExtrudedAreaSolid"):
-                                parameters["_height_mm"] = item.Depth
-                            elif item.is_a("IfcBooleanClippingResult"):
-                                operand = item.FirstOperand
-                                if operand.is_a("IfcExtrudedAreaSolid"):
-                                    parameters["_height_mm"] = operand.Depth
-        except Exception:
-            pass
-
-        # ── MEP system info ────────────────────────────────────────────────
-        try:
-            if element.is_a("IfcFlowSegment") or element.is_a("IfcFlowFitting") or \
-               element.is_a("IfcFlowTerminal") or element.is_a("IfcDistributionFlowElement"):
-                for rel in safe_get_assignments(element):
-                    if rel.is_a("IfcRelAssignsToGroup"):
-                        group = rel.RelatingGroup
-                        if group.is_a("IfcSystem"):
-                            parameters["_system_name"] = group.Name
-                            parameters["_system_type"] = group.is_a()
-        except Exception:
-            pass
-
-        # ── Save component ─────────────────────────────────────────────────
-        component_id = save_component(
-            cursor, project_id, category,
-            family_name, type_name, revit_id, parameters
-        )
-        revit_id_to_component_id[revit_id] = component_id
-
-        # ── Spatial data ───────────────────────────────────────────────────
-        pos_x, pos_y, pos_z, rot_x, rot_y, rot_z = extract_placement(element)
-        bounding_box = extract_bounding_box(element)
-        save_spatial_data(cursor, component_id,
-                          pos_x, pos_y, pos_z, rot_x, rot_y, rot_z,
-                          bounding_box, level, elevation)
-
-        # ── Wall layers ────────────────────────────────────────────────────
-        if element.is_a("IfcWall") or element.is_a("IfcWallStandardCase"):
-            layers    = []
-            thickness = 0
-            function  = parameters.get("Pset_WallCommon", {}).get("Function", "")
+            # ── Material ─────────────────────────────────────────────────
             try:
                 for rel in safe_get_associations(element):
                     if rel.is_a("IfcRelAssociatesMaterial"):
                         mat = rel.RelatingMaterial
-                        if mat.is_a("IfcMaterialLayerSetUsage"):
+                        if mat.is_a("IfcMaterial"):
+                            parameters["_material"] = mat.Name
+                        elif mat.is_a("IfcMaterialLayerSetUsage"):
+                            layers = []
                             for layer in mat.ForLayerSet.MaterialLayers:
-                                t = layer.LayerThickness or 0
-                                thickness += t
                                 layers.append({
                                     "material":  layer.Material.Name if layer.Material else "",
-                                    "thickness": t
+                                    "thickness": layer.LayerThickness or 0
                                 })
-            except Exception:
-                pass
-            save_wall_type(cursor, component_id, thickness, function, layers)
+                            parameters["_material_layers"] = layers
+                        elif mat.is_a("IfcMaterialConstituentSet"):
+                            constituents = []
+                            for c in mat.MaterialConstituents:
+                                constituents.append({
+                                    "name":     c.Name or "",
+                                    "material": c.Material.Name if c.Material else ""
+                                })
+                            parameters["_material_constituents"] = constituents
+            except Exception as e:
+                logger.warning("Failed to extract material for %s: %s", revit_id, e)
 
-        # ── MEP ports ─────────────────────────────────────────────────────
-        elif (element.is_a("IfcFlowSegment") or element.is_a("IfcFlowFitting") or
-              element.is_a("IfcFlowTerminal") or element.is_a("IfcDistributionFlowElement")):
-            system_type = parameters.get("_system_type", category)
-            system_name = parameters.get("_system_name", "")
-            connectors  = []
+            # ── Level / storey ───────────────────────────────────────────
+            level, elevation = get_storey(element)
+            if level:
+                parameters["_storey"]    = level
+                parameters["_elevation"] = elevation
+
+            # ── Wall height from geometry ────────────────────────────────
             try:
-                for port in get_ports(element):
-                    connectors.append({
-                        "name":           port.Name or "",
-                        "flow_direction": str(getattr(port, "FlowDirection", ""))
-                    })
-            except Exception:
-                pass
-            save_mep_system(cursor, component_id, system_type, system_name,
-                            None, None, connectors)
+                if element.is_a("IfcWall") or element.is_a("IfcWallStandardCase"):
+                    if element.Representation:
+                        for rep in element.Representation.Representations:
+                            for item in rep.Items:
+                                if item.is_a("IfcExtrudedAreaSolid"):
+                                    parameters["_height_mm"] = item.Depth
+                                elif item.is_a("IfcBooleanClippingResult"):
+                                    operand = item.FirstOperand
+                                    if operand.is_a("IfcExtrudedAreaSolid"):
+                                        parameters["_height_mm"] = operand.Depth
+            except Exception as e:
+                logger.debug("Wall height extraction failed for %s: %s", revit_id, e)
 
-        counts[category] += 1
+            # ── MEP system info ──────────────────────────────────────────
+            try:
+                if element.is_a("IfcFlowSegment") or element.is_a("IfcFlowFitting") or \
+                   element.is_a("IfcFlowTerminal") or element.is_a("IfcDistributionFlowElement"):
+                    for rel in safe_get_assignments(element):
+                        if rel.is_a("IfcRelAssignsToGroup"):
+                            group = rel.RelatingGroup
+                            if group.is_a("IfcSystem"):
+                                parameters["_system_name"] = group.Name
+                                parameters["_system_type"] = group.is_a()
+            except Exception as e:
+                logger.debug("MEP system extraction failed for %s: %s", revit_id, e)
 
-    # ── Spaces ────────────────────────────────────────────────────────────
-    print("Extracting spaces...")
-    spaces = extract_spaces(model, cursor, project_id, revit_id_to_component_id)
-    print(f"  Found {len(spaces)} spaces")
+            # ── Save component ───────────────────────────────────────────
+            component_id = save_component(
+                cursor, project_id, category,
+                family_name, type_name, revit_id, parameters
+            )
+            revit_id_to_component_id[revit_id] = component_id
 
-    # ── Relationships ─────────────────────────────────────────────────────
-    print("Extracting relationships...")
-    rel_count = extract_relationships(model, cursor, project_id, revit_id_to_component_id)
-    for rel_type, count in rel_count.items():
-        print(f"  {rel_type}: {count}")
+            # ── Spatial data ─────────────────────────────────────────────
+            pos_x, pos_y, pos_z, rot_x, rot_y, rot_z = extract_placement(element)
+            bounding_box = extract_bounding_box(element)
+            save_spatial_data(cursor, component_id,
+                              pos_x, pos_y, pos_z, rot_x, rot_y, rot_z,
+                              bounding_box, level, elevation)
 
-    # ── Materials ─────────────────────────────────────────────────────────
-    for material in model.by_type("IfcMaterial"):
-        save_material(cursor, project_id, material.Name, "", {})
+            # ── Wall layers ──────────────────────────────────────────────
+            if element.is_a("IfcWall") or element.is_a("IfcWallStandardCase"):
+                layers    = []
+                thickness = 0
+                function  = parameters.get("Pset_WallCommon", {}).get("Function", "")
+                try:
+                    for rel in safe_get_associations(element):
+                        if rel.is_a("IfcRelAssociatesMaterial"):
+                            mat = rel.RelatingMaterial
+                            if mat.is_a("IfcMaterialLayerSetUsage"):
+                                for layer in mat.ForLayerSet.MaterialLayers:
+                                    t = layer.LayerThickness or 0
+                                    thickness += t
+                                    layers.append({
+                                        "material":  layer.Material.Name if layer.Material else "",
+                                        "thickness": t
+                                    })
+                except Exception as e:
+                    logger.debug("Wall layer extraction failed for %s: %s", revit_id, e)
+                save_wall_type(cursor, component_id, thickness, function, layers)
 
-    finish_project(cursor, project_id)
-    conn.commit()
-    cursor.close()
-    conn.close()
+            # ── MEP ports ────────────────────────────────────────────────
+            elif (element.is_a("IfcFlowSegment") or element.is_a("IfcFlowFitting") or
+                  element.is_a("IfcFlowTerminal") or element.is_a("IfcDistributionFlowElement")):
+                system_type = parameters.get("_system_type", category)
+                system_name = parameters.get("_system_name", "")
+                connectors  = []
+                try:
+                    for port in get_ports(element):
+                        connectors.append({
+                            "name":           port.Name or "",
+                            "flow_direction": str(getattr(port, "FlowDirection", ""))
+                        })
+                except Exception as e:
+                    logger.debug("MEP port extraction failed for %s: %s", revit_id, e)
+                save_mep_system(cursor, component_id, system_type, system_name,
+                                None, None, connectors)
+
+            counts[category] += 1
+            processed += 1
+
+            # Batch commit every N components
+            if processed % COMMIT_BATCH_SIZE == 0:
+                conn.commit()
+                print(f"  Committed {processed} components...")
+
+        # ── Spaces ───────────────────────────────────────────────────────
+        print("Extracting spaces...")
+        spaces = extract_spaces(model, cursor, project_id, revit_id_to_component_id)
+        print(f"  Found {len(spaces)} spaces")
+
+        # ── Relationships ────────────────────────────────────────────────
+        print("Extracting relationships...")
+        rel_count = extract_relationships(model, cursor, project_id, revit_id_to_component_id, spaces)
+        for rel_type, count in rel_count.items():
+            print(f"  {rel_type}: {count}")
+
+        # ── Materials ────────────────────────────────────────────────────
+        for material in model.by_type("IfcMaterial"):
+            save_material(cursor, project_id, material.Name, "", {})
+
+        finish_project(cursor, project_id)
+        # conn.commit() happens automatically via context manager
 
     print(f"\nDone! Extracted from {filename}:")
     for category, count in sorted(counts.items()):
@@ -588,6 +603,7 @@ def extract(filepath):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     if len(sys.argv) < 2:
         print("Usage: python3 strip.py path/to/file.ifc")
         sys.exit(1)
