@@ -1,7 +1,12 @@
 """
 generate.py — BIM Studio
 Procedural IFC generator from room-based specs.
-All geometry is parametric (no transplanting) for consistent scale.
+
+Now with geometry transplantation: when a matching component exists in the
+library (from previously uploaded IFC files), its real 3D geometry is
+deep-copied into the generated model. Falls back to parametric boxes only
+when no library match is found.
+
 Rooms share walls — adjacent rooms don't duplicate shared boundaries.
 Includes basic MEP: supply ducts at ceiling, cold water pipes at floor level.
 """
@@ -9,18 +14,44 @@ Includes basic MEP: supply ducts at ceiling, cold water pipes at floor level.
 import math
 import json
 import os
+import sys
 import logging
 import ifcopenshell
 import ifcopenshell.guid
-import psycopg2.extras
 from datetime import datetime
-
-from database.db import get_db_connection
 
 logger = logging.getLogger(__name__)
 
+# Add parent dir to path for database imports
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
+
 BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
+
+# ── Geometry library (lazy-loaded) ───────────────────────────────────────────
+
+_geo_lib = None
+
+def get_geometry_library():
+    global _geo_lib
+    if _geo_lib is None:
+        try:
+            from database.dp import get_db_connection
+        except ImportError:
+            try:
+                from database.db import get_db_connection
+            except ImportError:
+                logger.warning("Could not import database module — geometry library disabled")
+                return None
+        try:
+            from extractor.geometry_transplant import GeometryLibrary
+            _geo_lib = GeometryLibrary(get_db_connection, UPLOAD_FOLDER)
+            logger.info("Geometry library initialized")
+        except Exception as e:
+            logger.warning("Failed to initialize geometry library: %s", e)
+            return None
+    return _geo_lib
+
 
 # ── IFC primitives ───────────────────────────────────────────────────────────
 
@@ -43,7 +74,6 @@ def make_context(m):
     return ctx, body
 
 def box_shape(m, body_ctx, lx, ly, lz):
-    """Solid box: lx wide (X), ly deep (Y), lz tall (Z). Origin at SW bottom corner."""
     prof  = m.createIfcRectangleProfileDef("AREA", None,
         m.createIfcAxis2Placement2D(pt2(m,0,0), d2(m,1,0)), float(lx), float(ly))
     solid = m.createIfcExtrudedAreaSolid(prof, ax3(m), d3(m,0,0,1), float(lz))
@@ -75,17 +105,17 @@ def add_material(m, oh, el, name):
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
-EXT_WALL_T = 0.20   # exterior wall thickness m
-INT_WALL_T = 0.12   # interior wall thickness m
-FLOOR_T    = 0.20   # slab thickness m
+EXT_WALL_T = 0.20
+INT_WALL_T = 0.12
+FLOOR_T    = 0.20
 DOOR_W     = 0.90
 DOOR_H     = 2.10
 WIN_W      = 1.20
 WIN_H      = 1.10
 WIN_SILL   = 0.90
-DUCT_W     = 0.40   # supply duct width
-DUCT_H     = 0.20   # supply duct height
-PIPE_D     = 0.05   # pipe diameter (drawn as square)
+DUCT_W     = 0.40
+DUCT_H     = 0.20
+PIPE_D     = 0.05
 
 # ── Room type classification ─────────────────────────────────────────────────
 
@@ -104,6 +134,7 @@ def room_type(name):
     return "living"
 
 # ── Fixture templates ────────────────────────────────────────────────────────
+# (name, ifc_type, fx, fy, fw, fd, fh)
 
 FIXTURES = {
     "bathroom": [
@@ -151,13 +182,70 @@ FIXTURES = {
 # ── Wall deduplication ───────────────────────────────────────────────────────
 
 def wall_key(x1,y1,x2,y2):
-    """Canonical key for a wall segment (order-independent)."""
     a,b = (round(x1,3),round(y1,3)), (round(x2,3),round(y2,3))
     return (min(a,b), max(a,b))
 
+# ── Smart placement with geometry transplant ─────────────────────────────────
+
+def place_fixture(m, oh, body_ctx, storey_pl, rname, fname, ftype,
+                  ax, ay, fw, fd, fh, elements, geo_lib):
+    """Place a fixture. Uses real geometry if available, box otherwise."""
+    placement = place(m, ax, ay, 0, rel=storey_pl)
+    real_rep = None
+    source_comp = None
+
+    if geo_lib:
+        source_comp = geo_lib.find_component(fname, category=ftype,
+                                              target_w=fw, target_d=fd, target_h=fh)
+        if source_comp:
+            real_rep = geo_lib.transplant_geometry(m, source_comp, body_ctx)
+
+    if real_rep:
+        el = make_el(m, ftype, oh, f"{rname} {fname}", placement, real_rep)
+        if geo_lib and source_comp:
+            geo_lib.transplant_materials(m, oh, el, source_comp)
+        print(f"    [REAL] {rname} {fname} <- {source_comp.get('family_name','?')}")
+    else:
+        fw2 = max(fw, 0.1); fd2 = max(fd, 0.1); fh2 = max(fh, 0.05)
+        el = make_el(m, ftype, oh, f"{rname} {fname}",
+                     placement, box_shape(m, body_ctx, fw2, fd2, fh2))
+        print(f"    [BOX]  {rname} {fname}")
+
+    elements.append(el)
+    return el
+
+
+def place_architectural(m, oh, body_ctx, storey_pl, name, ifc_type,
+                        x, y, z, w, d, h, material, elements, geo_lib,
+                        rz_deg=0):
+    """Place a door/window. Uses real geometry if available."""
+    placement = place(m, x, y, z, rz_deg, rel=storey_pl)
+    real_rep = None
+    source_comp = None
+
+    if geo_lib:
+        search_name = name.split()[-1]  # "Kitchen Door" -> "Door"
+        source_comp = geo_lib.find_component(search_name, category=ifc_type,
+                                              target_w=w, target_d=d, target_h=h)
+        if source_comp:
+            real_rep = geo_lib.transplant_geometry(m, source_comp, body_ctx)
+
+    if real_rep:
+        el = make_el(m, ifc_type, oh, name, placement, real_rep)
+        if geo_lib and source_comp:
+            geo_lib.transplant_materials(m, oh, el, source_comp)
+        print(f"    [REAL] {name} <- {source_comp.get('family_name','?')}")
+    else:
+        el = make_el(m, ifc_type, oh, name, placement, box_shape(m, body_ctx, w, d, h))
+        add_material(m, oh, el, material)
+
+    elements.append(el)
+    return el
+
+
 # ── Build single room ────────────────────────────────────────────────────────
 
-def build_room(m, oh, body_ctx, room, storey_pl, ceil_h, built_walls, elements):
+def build_room(m, oh, body_ctx, room, storey_pl, ceil_h, built_walls, elements, geo_lib):
     rx    = float(room.get("x",0))
     ry    = float(room.get("y",0))
     rw    = float(room.get("width",4.0))
@@ -169,25 +257,25 @@ def build_room(m, oh, body_ctx, room, storey_pl, ceil_h, built_walls, elements):
     wmat  = "CMU" if ext else "Drywall"
     rtype = room_type(rname)
 
-    # ── Floor slab ───────────────────────────────────────────────────────
+    # ── Floor slab (always parametric) ───────────────────────────────────
     fl = make_el(m,"IfcSlab",oh,f"{rname} Floor",
         place(m,rx,ry,-FLOOR_T,rel=storey_pl), box_shape(m,body_ctx,rw,rd,FLOOR_T))
     add_material(m,oh,fl,"Concrete"); elements.append(fl)
 
-    # ── Walls (deduplicated) ─────────────────────────────────────────────
+    # ── Walls (always parametric — sized to room) ────────────────────────
     wall_defs = [
         (f"{rname} S Wall", rx,      ry,        rw, wt),
         (f"{rname} N Wall", rx,      ry+rd-wt,  rw, wt),
         (f"{rname} W Wall", rx,      ry+wt,     wt, rd-2*wt),
         (f"{rname} E Wall", rx+rw-wt,ry+wt,     wt, rd-2*wt),
     ]
-    wall_keys = [
+    wall_keys_list = [
         wall_key(rx,      ry,        rx+rw, ry+wt),
         wall_key(rx,      ry+rd-wt,  rx+rw, ry+rd),
         wall_key(rx,      ry+wt,     rx+wt, ry+rd-wt),
         wall_key(rx+rw-wt,ry+wt,    rx+rw, ry+rd-wt),
     ]
-    for (wname,wx,wy,wlx,wly), wk in zip(wall_defs, wall_keys):
+    for (wname,wx,wy,wlx,wly), wk in zip(wall_defs, wall_keys_list):
         if wk in built_walls: continue
         built_walls.add(wk)
         if wlx <= 0 or wly <= 0: continue
@@ -195,31 +283,34 @@ def build_room(m, oh, body_ctx, room, storey_pl, ceil_h, built_walls, elements):
             place(m,wx,wy,0,rel=storey_pl), box_shape(m,body_ctx,wlx,wly,rh))
         add_material(m,oh,w,wmat); elements.append(w)
 
-    # ── Door ─────────────────────────────────────────────────────────────
+    # ── Door (try real geometry) ─────────────────────────────────────────
     dwall = room.get("door_wall","south")
     doff  = max(wt+0.15, 0.4)
     if dwall=="south":   dx,dy,dlx,dly = rx+doff, ry,       DOOR_W, wt
     elif dwall=="north": dx,dy,dlx,dly = rx+doff, ry+rd-wt, DOOR_W, wt
     elif dwall=="west":  dx,dy,dlx,dly = rx,      ry+doff,  wt, DOOR_W
     else:                dx,dy,dlx,dly = rx+rw-wt,ry+doff,  wt, DOOR_W
-    d = make_el(m,"IfcDoor",oh,f"{rname} Door",
-        place(m,dx,dy,0,rel=storey_pl), box_shape(m,body_ctx,dlx,dly,DOOR_H))
-    add_material(m,oh,d,"Wood"); elements.append(d)
+
+    place_architectural(m, oh, body_ctx, storey_pl,
+                        f"{rname} Door", "IfcDoor",
+                        dx, dy, 0, dlx, dly, DOOR_H, "Wood",
+                        elements, geo_lib)
 
     # ── Window (exterior rooms) ──────────────────────────────────────────
     if ext and rw >= 2.0:
         wx2 = rx + rw/2 - WIN_W/2
-        w2 = make_el(m,"IfcWindow",oh,f"{rname} Window",
-            place(m,wx2,ry,WIN_SILL,rel=storey_pl),
-            box_shape(m,body_ctx,WIN_W,wt+0.02,WIN_H))
-        add_material(m,oh,w2,"Glass"); elements.append(w2)
+        place_architectural(m, oh, body_ctx, storey_pl,
+                            f"{rname} Window", "IfcWindow",
+                            wx2, ry, WIN_SILL, WIN_W, wt+0.02, WIN_H, "Glass",
+                            elements, geo_lib)
 
     # ── Light fixture ────────────────────────────────────────────────────
     lx2 = rx + rw/2 - 0.10
     ly2 = ry + rd/2 - 0.10
-    lf = make_el(m,"IfcLightFixture",oh,f"{rname} Light",
-        place(m,lx2,ly2,rh-0.05,rel=storey_pl), box_shape(m,body_ctx,0.20,0.20,0.05))
-    add_material(m,oh,lf,"Aluminium"); elements.append(lf)
+    place_fixture(m, oh, body_ctx, storey_pl, rname,
+                  "Light", "IfcLightFixture",
+                  lx2, ly2, 0.20, 0.20, 0.05,
+                  elements, geo_lib)
 
     # ── Supply duct at ceiling ───────────────────────────────────────────
     if rtype not in ("patio","garage") and rw > 1.0:
@@ -245,7 +336,7 @@ def build_room(m, oh, body_ctx, room, storey_pl, ceil_h, built_walls, elements):
                 box_shape(m,body_ctx,PIPE_D,pipe_len,PIPE_D))
             add_material(m,oh,pp,"Copper"); elements.append(pp)
 
-    # ── Furniture & fixtures ─────────────────────────────────────────────
+    # ── Furniture & fixtures (with geometry transplant) ──────────────────
     fixture_list = FIXTURES.get(rtype,[])
     inner_w = max(rw - 2*wt, 0.4)
     inner_d = max(rd - 2*wt, 0.4)
@@ -253,24 +344,22 @@ def build_room(m, oh, body_ctx, room, storey_pl, ceil_h, built_walls, elements):
     for fname, ftype, fx, fy, fw, fd, fh in fixture_list:
         ax2 = rx + wt + fx*inner_w - fw/2
         ay2 = ry + wt + fy*inner_d - fd/2
-        # Clamp inside room
         ax2 = max(rx+wt, min(ax2, rx+rw-wt-fw))
         ay2 = max(ry+wt, min(ay2, ry+rd-wt-fd))
-        fw2 = max(fw,0.1); fd2 = max(fd,0.1); fh2 = max(fh,0.05)
-        fe = make_el(m, ftype, oh, f"{rname} {fname}",
-            place(m,ax2,ay2,0,rel=storey_pl),
-            box_shape(m,body_ctx,fw2,fd2,fh2))
-        elements.append(fe)
+
+        place_fixture(m, oh, body_ctx, storey_pl, rname,
+                      fname, ftype, ax2, ay2, fw, fd, fh,
+                      elements, geo_lib)
+
 
 # ── Main entry point ─────────────────────────────────────────────────────────
 
-def generate_ifc(spec: dict, output_path: str = None) -> str:
-    # Run layout packer to fix/assign room coordinates
+def generate_ifc(spec, output_path=None):
     try:
         from layout import process_spec
         spec = process_spec(spec)
     except Exception as e:
-        logger.warning("Layout packer error (continuing): %s", e)
+        print(f"  Layout packer error (continuing): {e}")
 
     name     = spec.get("name","Generated Building")
     floors   = spec.get("floors",[])
@@ -279,6 +368,13 @@ def generate_ifc(spec: dict, output_path: str = None) -> str:
     has_rooms = any(f.get("rooms") for f in floors)
     mode = "procedural" if has_rooms else "component"
     print(f"Generating IFC [{mode} mode]: {name}")
+
+    # Initialize geometry library
+    geo_lib = get_geometry_library()
+    if geo_lib:
+        print("  Geometry library: ACTIVE (will use real components where possible)")
+    else:
+        print("  Geometry library: INACTIVE (parametric boxes only)")
 
     m = ifcopenshell.file(schema="IFC4")
 
@@ -336,10 +432,9 @@ def generate_ifc(spec: dict, output_path: str = None) -> str:
         if has_rooms:
             rooms = floor.get("rooms",[])
             for room in rooms:
-                build_room(m,oh,body_ctx,room,storey.ObjectPlacement,
-                           ceil_h,built_walls,elements)
+                build_room(m, oh, body_ctx, room, storey.ObjectPlacement,
+                           ceil_h, built_walls, elements, geo_lib)
 
-            # Single unified roof slab
             if rooms:
                 min_x = min(float(r.get("x",0)) for r in rooms)
                 min_y = min(float(r.get("y",0)) for r in rooms)
@@ -350,10 +445,8 @@ def generate_ifc(spec: dict, output_path: str = None) -> str:
                     box_shape(m,body_ctx,max_x-min_x,max_y-min_y,FLOOR_T))
                 add_material(m,oh,roof,"Concrete"); elements.append(roof)
 
-            print(f"  Floor '{floor.get('name')}': {len(elements)} elements "
-                  f"from {len(rooms)} rooms")
+            print(f"  Floor '{floor.get('name')}': {len(elements)} elements from {len(rooms)} rooms")
         else:
-            # Legacy component mode
             for comp in floor.get("components",[]):
                 category = comp.get("category","IfcBuildingElementProxy")
                 ifc_type = category if category in (
@@ -379,7 +472,6 @@ def generate_ifc(spec: dict, output_path: str = None) -> str:
             m.createIfcRelContainedInSpatialStructure(
                 ifcopenshell.guid.new(),oh,None,None,elements,storey)
 
-    # Metadata pset
     if metadata:
         props = []
         for k,v in metadata.items():
@@ -387,8 +479,7 @@ def generate_ifc(spec: dict, output_path: str = None) -> str:
             try:
                 props.append(m.createIfcPropertySingleValue(
                     str(k),None,m.create_entity("IfcLabel",wrappedValue=str(v)),None))
-            except Exception as e:
-                logger.debug("Failed to create metadata property %s: %s", k, e)
+            except Exception: pass
         if props:
             pset = m.createIfcPropertySet(
                 ifcopenshell.guid.new(),oh,"BIM_Studio_Project_Info",None,props)
@@ -401,6 +492,10 @@ def generate_ifc(spec: dict, output_path: str = None) -> str:
 
     m.write(output_path)
     print(f"  Written: {output_path}")
+
+    if geo_lib:
+        geo_lib.clear_cache()
+
     return output_path
 
 
