@@ -1,19 +1,27 @@
 """
-generate.py — BIM Studio v9
-Procedural IFC generator with shared walls, colors, and boolean openings.
+generate.py — BIM Studio v10
+Built entirely on ifcopenshell.api for correct geometry.
 
-Wall strategy: Instead of each room building 4 independent walls, we:
-1. Collect all wall edges from all rooms
-2. Detect shared edges (where two rooms meet)
-3. Build ONE wall per unique edge, using interior thickness for shared
-   walls and exterior thickness for perimeter walls
-4. Cut door/window openings via boolean operations
+Uses:
+- ifcopenshell.api.root.create_entity for all elements
+- ifcopenshell.api.geometry.create_2pt_wall for walls (handles placement + geometry)
+- ifcopenshell.api.geometry.add_door_representation for realistic doors
+- ifcopenshell.api.geometry.add_window_representation for realistic windows
+- ifcopenshell.api.geometry.add_slab_representation with polyline for floors/roofs
+- ifcopenshell.api.style for surface colors
+- ifcopenshell.api.spatial for container assignment
+- ifcopenshell.api.aggregate for spatial hierarchy
+
+Wall strategy: perimeter walls are drawn as continuous segments along the
+building edge. Interior walls are drawn between room boundaries.
+No manual coordinate math for wall geometry — the API handles it.
 """
 
 import math
 import os
 import sys
 import logging
+import numpy as np
 import ifcopenshell
 import ifcopenshell.api
 import ifcopenshell.guid
@@ -29,7 +37,7 @@ COLORS = {
     "ext_wall":     (0.92, 0.87, 0.78, 0.0),
     "int_wall":     (0.95, 0.95, 0.93, 0.0),
     "floor":        (0.75, 0.72, 0.68, 0.0),
-    "roof":         (0.6,  0.55, 0.50, 0.0),
+    "roof":         (0.55, 0.50, 0.45, 0.0),
     "door":         (0.55, 0.35, 0.17, 0.0),
     "window":       (0.6,  0.78, 0.92, 0.3),
     "furniture":    (0.7,  0.6,  0.45, 0.0),
@@ -43,80 +51,53 @@ COLORS = {
     "ceiling":      (0.96, 0.96, 0.96, 0.0),
 }
 
-# ── IFC primitives ───────────────────────────────────────────────────────────
-
-def pt3(m,x,y,z): return m.createIfcCartesianPoint((float(x),float(y),float(z)))
-def pt2(m,x,y):   return m.createIfcCartesianPoint((float(x),float(y)))
-def d3(m,x,y,z):  return m.createIfcDirection((float(x),float(y),float(z)))
-def d2(m,x,y):    return m.createIfcDirection((float(x),float(y)))
-def ax3(m, ox=0,oy=0,oz=0, az=None, rx=None):
-    return m.createIfcAxis2Placement3D(pt3(m,ox,oy,oz), az or d3(m,0,0,1), rx or d3(m,1,0,0))
-def ax2(m, ox=0, oy=0):
-    return m.createIfcAxis2Placement2D(pt2(m,ox,oy), d2(m,1,0))
-def local_pl(m, rel=None, ox=0,oy=0,oz=0):
-    return m.createIfcLocalPlacement(rel, ax3(m,ox,oy,oz))
-def make_context(m):
-    ctx  = m.createIfcGeometricRepresentationContext(None,"Model",3,1e-5,ax3(m),None)
-    body = m.createIfcGeometricRepresentationSubContext("Body","Model",None,None,None,None,ctx,None,"MODEL_VIEW",None)
-    return ctx, body
-def rect_profile(m, w, d):
-    return m.createIfcRectangleProfileDef("AREA", None, ax2(m), float(w), float(d))
-def circle_profile(m, r):
-    return m.createIfcCircleProfileDef("AREA", None, ax2(m), float(r))
-def extrude(m, profile, height, ox=0, oy=0, oz=0):
-    return m.createIfcExtrudedAreaSolid(profile, ax3(m,ox,oy,oz), d3(m,0,0,1), float(height))
-def make_shape(m, body_ctx, solids, rep_type="SweptSolid"):
-    rep = m.createIfcShapeRepresentation(body_ctx, "Body", rep_type, solids)
-    return m.createIfcProductDefinitionShape(None, None, [rep]), rep
-def place(m, x, y, z, rz_deg=0, rel=None):
-    rz = math.radians(float(rz_deg or 0))
-    cz, sz = math.cos(rz), math.sin(rz)
-    return m.createIfcLocalPlacement(rel, ax3(m, x, y, z, d3(m,0,0,1), d3(m,cz,sz,0)))
-def make_el(m, ifc_type, oh, name, pl, shape):
-    try:
-        return m.create_entity(ifc_type, GlobalId=ifcopenshell.guid.new(), OwnerHistory=oh,
-            Name=name, ObjectPlacement=pl, Representation=shape)
-    except Exception:
-        return m.createIfcBuildingElementProxy(ifcopenshell.guid.new(), oh, name, None, None, pl, shape, None, "ELEMENT")
-
-# ── Style helpers ────────────────────────────────────────────────────────────
-
 _style_cache = {}
 
-def add_color(m, rep, color_key):
+def get_style(m, color_key):
+    """Get or create a named surface style."""
     if color_key not in COLORS:
-        return
-    r, g, b, t = COLORS[color_key]
-    cache_key = (id(m), color_key)
-    if cache_key not in _style_cache:
+        return None
+    ck = (id(m), color_key)
+    if ck not in _style_cache:
+        r, g, b, t = COLORS[color_key]
         style = ifcopenshell.api.run("style.add_style", m, name=color_key)
         ifcopenshell.api.run("style.add_surface_style", m, style=style,
             ifc_class="IfcSurfaceStyleRendering",
-            attributes={"SurfaceColour": {"Name": None, "Red": r, "Green": g, "Blue": b}, "Transparency": t})
-        _style_cache[cache_key] = style
-    try:
-        ifcopenshell.api.run("style.assign_representation_styles", m,
-            shape_representation=rep, styles=[_style_cache[cache_key]])
-    except Exception:
-        pass
+            attributes={"SurfaceColour": {"Name": None, "Red": r, "Green": g, "Blue": b},
+                        "Transparency": t})
+        _style_cache[ck] = style
+    return _style_cache[ck]
 
-# ── Constants ────────────────────────────────────────────────────────────────
+def color_rep(m, rep, color_key):
+    """Apply color to a representation."""
+    style = get_style(m, color_key)
+    if style and rep:
+        try:
+            ifcopenshell.api.run("style.assign_representation_styles", m,
+                shape_representation=rep, styles=[style])
+        except Exception:
+            pass
 
-EXT_T   = 0.20
-INT_T   = 0.12
-FLOOR_T = 0.20
-CEIL_T  = 0.02
-DOOR_W  = 0.90
-DOOR_H  = 2.10
-DOOR_T  = 0.05
-WIN_W   = 1.20
-WIN_H   = 1.10
-WIN_SILL = 0.90
-WIN_T   = 0.06
-DUCT_W  = 0.40
-DUCT_H  = 0.15
-PIPE_W  = 0.05
-PIPE_H  = 0.05
+# ── Simple geometry helpers (for furniture/MEP that API doesn't cover) ───────
+
+def box_rep(m, body, w, d, h):
+    """Create a simple extruded rectangle representation."""
+    pts = [(0,0),(w,0),(w,d),(0,d),(0,0)]
+    if m.schema == "IFC2X3":
+        curve = m.createIfcPolyline([m.createIfcCartesianPoint(p) for p in pts])
+    else:
+        curve = m.createIfcIndexedPolyCurve(m.createIfcCartesianPointList2D(pts), None, False)
+    profile = m.createIfcArbitraryClosedProfileDef("AREA", None, curve)
+    solid = m.createIfcExtrudedAreaSolid(profile,
+        m.createIfcAxis2Placement3D(m.createIfcCartesianPoint((0.,0.,0.)),None,None),
+        m.createIfcDirection((0.,0.,1.)), float(h))
+    rep = m.createIfcShapeRepresentation(body, "Body", "SweptSolid", [solid])
+    return m.createIfcProductDefinitionShape(None, None, [rep]), rep
+
+def place_element(m, el, x, y, z):
+    """Set element placement via matrix."""
+    ifcopenshell.api.run("geometry.edit_object_placement", m, product=el,
+        matrix=np.array([[1,0,0,x],[0,1,0,y],[0,0,1,z],[0,0,0,1]], dtype=float))
 
 # ── Room type / fixtures ────────────────────────────────────────────────────
 
@@ -141,281 +122,116 @@ def room_type(name):
             return rt
     return "living"
 
-# (name, fx, fy, fw, fd, fh, color)
+# (name, fx, fy, fw, fd, fh, color, ifc_class)
 FIXTURES = {
-    "bathroom":   [("Toilet",0.15,0.20,0.38,0.65,0.45,"sanitaryware"),("Sink",0.70,0.10,0.50,0.40,0.85,"sanitaryware"),("Shower Tray",0.55,0.65,0.90,0.90,0.10,"sanitaryware")],
-    "kitchen":    [("Counter",0.50,0.06,2.00,0.60,0.90,"furniture"),("Stove",0.70,0.06,0.60,0.60,0.90,"appliance"),("Fridge",0.90,0.06,0.70,0.70,1.80,"appliance")],
-    "bedroom":    [("Bed",0.50,0.60,1.60,2.00,0.50,"bed"),("Wardrobe",0.10,0.08,1.20,0.60,2.10,"furniture"),("Nightstand",0.85,0.60,0.45,0.40,0.50,"furniture")],
-    "living":     [("Sofa",0.50,0.75,2.20,0.90,0.80,"sofa"),("Coffee Table",0.50,0.50,1.00,0.55,0.42,"furniture"),("TV Unit",0.50,0.08,1.50,0.40,0.50,"furniture")],
-    "dining":     [("Table",0.50,0.50,1.60,0.90,0.75,"furniture"),("Chair",0.30,0.30,0.45,0.45,0.85,"furniture"),("Chair",0.70,0.30,0.45,0.45,0.85,"furniture"),("Chair",0.30,0.70,0.45,0.45,0.85,"furniture"),("Chair",0.70,0.70,0.45,0.45,0.85,"furniture")],
-    "office":     [("Desk",0.50,0.25,1.40,0.70,0.75,"furniture"),("Chair",0.50,0.50,0.55,0.55,1.05,"sofa")],
-    "conference": [("Table",0.50,0.50,2.40,1.20,0.75,"furniture"),("Chair",0.20,0.25,0.45,0.45,0.85,"sofa"),("Chair",0.80,0.25,0.45,0.45,0.85,"sofa"),("Chair",0.20,0.75,0.45,0.45,0.85,"sofa"),("Chair",0.80,0.75,0.45,0.45,0.85,"sofa")],
-    "reception":  [("Sofa",0.50,0.70,2.20,0.90,0.80,"sofa"),("Desk",0.50,0.15,1.80,0.70,0.75,"furniture")],
-    "server":     [("Rack",0.25,0.50,0.60,0.80,2.00,"appliance"),("Rack",0.75,0.50,0.60,0.80,2.00,"appliance")],
-    "utility":    [("Heater",0.25,0.25,0.55,0.55,1.50,"appliance"),("Washer",0.75,0.25,0.60,0.60,0.90,"appliance")],
+    "bathroom":   [("Toilet",0.15,0.20,0.38,0.65,0.45,"sanitaryware","IfcSanitaryTerminal"),
+                   ("Sink",0.70,0.10,0.50,0.40,0.85,"sanitaryware","IfcSanitaryTerminal"),
+                   ("Shower Tray",0.55,0.65,0.90,0.90,0.10,"sanitaryware","IfcSanitaryTerminal")],
+    "kitchen":    [("Counter",0.50,0.06,2.00,0.60,0.90,"furniture","IfcFurnishingElement"),
+                   ("Stove",0.70,0.06,0.60,0.60,0.90,"appliance","IfcElectricAppliance"),
+                   ("Fridge",0.90,0.06,0.70,0.70,1.80,"appliance","IfcElectricAppliance")],
+    "bedroom":    [("Bed",0.50,0.60,1.60,2.00,0.50,"bed","IfcFurniture"),
+                   ("Wardrobe",0.10,0.08,1.20,0.60,2.10,"furniture","IfcFurniture"),
+                   ("Nightstand",0.85,0.60,0.45,0.40,0.50,"furniture","IfcFurniture")],
+    "living":     [("Sofa",0.50,0.75,2.20,0.90,0.80,"sofa","IfcFurniture"),
+                   ("Coffee Table",0.50,0.50,1.00,0.55,0.42,"furniture","IfcFurniture"),
+                   ("TV Unit",0.50,0.08,1.50,0.40,0.50,"furniture","IfcFurniture")],
+    "dining":     [("Table",0.50,0.50,1.60,0.90,0.75,"furniture","IfcFurniture"),
+                   ("Chair",0.30,0.30,0.45,0.45,0.85,"furniture","IfcFurniture"),
+                   ("Chair",0.70,0.70,0.45,0.45,0.85,"furniture","IfcFurniture")],
+    "office":     [("Desk",0.50,0.25,1.40,0.70,0.75,"furniture","IfcFurniture"),
+                   ("Chair",0.50,0.50,0.55,0.55,1.05,"sofa","IfcFurniture")],
+    "conference": [("Table",0.50,0.50,2.40,1.20,0.75,"furniture","IfcFurniture"),
+                   ("Chair",0.20,0.30,0.45,0.45,0.85,"sofa","IfcFurniture"),
+                   ("Chair",0.80,0.70,0.45,0.45,0.85,"sofa","IfcFurniture")],
+    "reception":  [("Sofa",0.50,0.70,2.20,0.90,0.80,"sofa","IfcFurniture"),
+                   ("Desk",0.50,0.15,1.80,0.70,0.75,"furniture","IfcFurniture")],
+    "server":     [("Rack",0.25,0.50,0.60,0.80,2.00,"appliance","IfcElectricAppliance"),
+                   ("Rack",0.75,0.50,0.60,0.80,2.00,"appliance","IfcElectricAppliance")],
+    "utility":    [("Heater",0.25,0.25,0.55,0.55,1.50,"appliance","IfcElectricAppliance"),
+                   ("Washer",0.75,0.25,0.60,0.60,0.90,"appliance","IfcElectricAppliance")],
     "hallway": [], "patio": [], "garage": [],
 }
 
 # ── Wall planning ────────────────────────────────────────────────────────────
 
+EXT_T = 0.20
+INT_T = 0.12
+
 def plan_walls(rooms):
     """
-    Analyze all rooms to determine which edges are shared (interior) vs
-    perimeter (exterior). Returns a list of wall segments to build.
+    Plan wall segments. Each wall is defined by two endpoints (p1, p2),
+    thickness, and whether it's exterior.
     
-    Each wall segment: (x, y, width, depth, wall_thickness, is_exterior, 
-                        side, room_name, door_on_this_wall, has_window)
+    Strategy: find all unique edges between rooms. Shared edges get
+    interior thickness, perimeter edges get exterior thickness.
     """
-    # Build a set of all room rectangles
     rects = []
     for r in rooms:
-        rects.append({
-            "name": r.get("name", "Room"),
-            "x": float(r.get("x", 0)),
-            "y": float(r.get("y", 0)),
-            "w": float(r.get("width", 4)),
-            "d": float(r.get("depth", 3)),
-            "door_wall": r.get("door_wall", "south"),
-            "exterior": r.get("exterior", True),
-        })
+        rects.append((
+            round(float(r.get("x",0)), 2),
+            round(float(r.get("y",0)), 2),
+            round(float(r.get("width",4)), 2),
+            round(float(r.get("depth",3)), 2),
+            r.get("name","Room"),
+            r.get("door_wall","south"),
+        ))
 
-    # Find building bounding box
-    min_x = min(r["x"] for r in rects)
-    max_x = max(r["x"] + r["w"] for r in rects)
-    min_y = min(r["y"] for r in rects)
-    max_y = max(r["y"] + r["d"] for r in rects)
+    # Building bounds
+    min_x = min(r[0] for r in rects)
+    max_x = max(r[0]+r[2] for r in rects)
+    min_y = min(r[1] for r in rects)
+    max_y = max(r[1]+r[3] for r in rects)
 
-    def is_perimeter(x1, y1, x2, y2):
-        """Check if a wall edge is on the building perimeter."""
-        # South edge
-        if abs(y1 - min_y) < 0.01 and abs(y2 - min_y) < 0.01:
-            return True
-        # North edge
-        if abs(y1 - max_y) < 0.01 and abs(y2 - max_y) < 0.01:
-            return True
-        # West edge
-        if abs(x1 - min_x) < 0.01 and abs(x2 - min_x) < 0.01:
-            return True
-        # East edge
-        if abs(x1 - max_x) < 0.01 and abs(x2 - max_x) < 0.01:
-            return True
+    def on_perimeter(x1,y1,x2,y2):
+        if abs(y1-y2) < 0.01:  # horizontal
+            return abs(y1-min_y)<0.01 or abs(y1-max_y)<0.01
+        if abs(x1-x2) < 0.01:  # vertical
+            return abs(x1-min_x)<0.01 or abs(x1-max_x)<0.01
         return False
 
-    def edge_key(x1, y1, x2, y2):
-        a = (round(x1, 2), round(y1, 2))
-        b = (round(x2, 2), round(y2, 2))
-        return (min(a, b), max(a, b))
+    def ek(x1,y1,x2,y2):
+        a,b = (round(x1,2),round(y1,2)), (round(x2,2),round(y2,2))
+        return (min(a,b), max(a,b))
 
-    # Collect all edges with their properties
-    edges = {}  # edge_key -> {rooms, is_perimeter, side, ...}
+    edges = {}  # edge_key -> {count, is_perim, rooms, side, has_door}
 
-    for r in rects:
-        rx, ry, rw, rd = r["x"], r["y"], r["w"], r["d"]
+    for rx, ry, rw, rd, rname, door_wall in rects:
         room_edges = [
-            ("S", rx, ry, rx + rw, ry),           # south
-            ("N", rx, ry + rd, rx + rw, ry + rd),  # north
-            ("W", rx, ry, rx, ry + rd),             # west
-            ("E", rx + rw, ry, rx + rw, ry + rd),   # east
+            ("S", rx, ry, rx+rw, ry, door_wall=="south"),
+            ("N", rx, ry+rd, rx+rw, ry+rd, door_wall=="north"),
+            ("W", rx, ry, rx, ry+rd, door_wall=="west"),
+            ("E", rx+rw, ry, rx+rw, ry+rd, door_wall=="east"),
         ]
-
-        for side, x1, y1, x2, y2 in room_edges:
-            ek = edge_key(x1, y1, x2, y2)
-            perim = is_perimeter(x1, y1, x2, y2)
-            has_door = (r["door_wall"] == {"S":"south","N":"north","W":"west","E":"east"}[side])
-
-            if ek not in edges:
-                edges[ek] = {
-                    "rooms": [],
-                    "is_perimeter": perim,
-                    "side": side,
-                    "x1": x1, "y1": y1, "x2": x2, "y2": y2,
-                    "has_door": has_door,
-                }
+        for side, x1, y1, x2, y2, has_door in room_edges:
+            key = ek(x1,y1,x2,y2)
+            if key not in edges:
+                edges[key] = {"count":0, "is_perim": on_perimeter(x1,y1,x2,y2),
+                              "x1":x1,"y1":y1,"x2":x2,"y2":y2,
+                              "has_door": has_door, "rooms":[rname]}
             else:
-                # Edge shared by two rooms — it's interior
-                edges[ek]["is_perimeter"] = False
+                edges[key]["count"] += 1
+                edges[key]["is_perim"] = False  # shared = interior
                 if has_door:
-                    edges[ek]["has_door"] = True
-            edges[ek]["rooms"].append(r["name"])
+                    edges[key]["has_door"] = True
+                edges[key]["rooms"].append(rname)
 
-    # Convert to wall segments with geometry
     walls = []
-    for ek, info in edges.items():
-        x1, y1, x2, y2 = info["x1"], info["y1"], info["x2"], info["y2"]
-        is_ext = info["is_perimeter"]
-        wt = EXT_T if is_ext else INT_T
-        side = info["side"]
-        has_door = info["has_door"]
-
-        # Determine wall rectangle — centered on the edge line
-        if side in ("S", "N"):
-            # Horizontal wall along this Y line
-            length = abs(x2 - x1)
-            wx = min(x1, x2)
-            wy = min(y1, y2) - wt / 2  # center on edge
-            ww = length
-            wd = wt
-        else:
-            # Vertical wall along this X line
-            length = abs(y2 - y1)
-            wx = min(x1, x2) - wt / 2  # center on edge
-            wy = min(y1, y2)
-            ww = wt
-            wd = length
-
-        # Has window? Only on exterior walls that are wide enough
-        has_window = is_ext and ((side in ("S","N") and ww >= 2.5) or (side in ("W","E") and wd >= 2.5))
-
+    for key, e in edges.items():
+        is_ext = e["is_perim"]
         walls.append({
-            "x": wx, "y": wy, "w": ww, "d": wd,
-            "thickness": wt, "is_exterior": is_ext,
-            "side": side, "rooms": info["rooms"],
-            "has_door": has_door, "has_window": has_window,
+            "p1": (e["x1"], e["y1"]),
+            "p2": (e["x2"], e["y2"]),
+            "thickness": EXT_T if is_ext else INT_T,
+            "is_exterior": is_ext,
+            "has_door": e["has_door"],
+            "rooms": e["rooms"],
         })
 
     return walls
 
 
-# ── Build walls from plan ────────────────────────────────────────────────────
-
-def build_walls(m, oh, body_ctx, storey_pl, walls, ceil_h, elements):
-    """Build all wall geometry from the planned wall segments."""
-    for w in walls:
-        wx, wy, ww, wd = w["x"], w["y"], w["w"], w["d"]
-        if ww <= 0 or wd <= 0:
-            continue
-
-        wall_solid = extrude(m, rect_profile(m, ww, wd), ceil_h, wx, wy, 0)
-        rep_type = "SweptSolid"
-
-        # Door opening
-        if w["has_door"]:
-            doff = 0.4
-            if w["side"] in ("S", "N"):
-                dx = wx + doff
-                void = extrude(m, rect_profile(m, DOOR_W, wd + 0.02), DOOR_H, dx, wy - 0.01, 0)
-            else:
-                dy = wy + doff
-                void = extrude(m, rect_profile(m, ww + 0.02, DOOR_W), DOOR_H, wx - 0.01, dy, 0)
-            wall_solid = m.createIfcBooleanClippingResult("DIFFERENCE", wall_solid, void)
-            rep_type = "Clipping"
-
-            # Door panel
-            if w["side"] in ("S", "N"):
-                dpx, dpy = dx + 0.025, wy + wd/2 - DOOR_T/2
-                dpw, dpd = DOOR_W - 0.05, DOOR_T
-            else:
-                dpx, dpy = wx + ww/2 - DOOR_T/2, wy + doff + 0.025
-                dpw, dpd = DOOR_T, DOOR_W - 0.05
-            ds, dr = make_shape(m, body_ctx, [extrude(m, rect_profile(m, dpw, dpd), DOOR_H - 0.05, dpx, dpy, 0)])
-            door = make_el(m, "IfcDoor", oh, f"Door", place(m, 0, 0, 0, rel=storey_pl), ds)
-            add_color(m, dr, "door")
-            elements.append(door)
-
-        # Window opening
-        if w["has_window"]:
-            if w["side"] in ("S", "N"):
-                winx = wx + ww/2 - WIN_W/2
-                wvoid = extrude(m, rect_profile(m, WIN_W, wd + 0.02), WIN_H, winx, wy - 0.01, WIN_SILL)
-            else:
-                winy = wy + wd/2 - WIN_W/2
-                wvoid = extrude(m, rect_profile(m, ww + 0.02, WIN_W), WIN_H, wx - 0.01, winy, WIN_SILL)
-            wall_solid = m.createIfcBooleanClippingResult("DIFFERENCE", wall_solid, wvoid)
-            rep_type = "Clipping"
-
-            # Glass pane
-            if w["side"] in ("S", "N"):
-                gpx, gpy = wx + ww/2 - WIN_W/2 + 0.02, wy + wd/2 - WIN_T/2
-                gpw, gpd = WIN_W - 0.04, WIN_T
-            else:
-                gpx, gpy = wx + ww/2 - WIN_T/2, wy + wd/2 - WIN_W/2 + 0.02
-                gpw, gpd = WIN_T, WIN_W - 0.04
-            ws, wr = make_shape(m, body_ctx, [extrude(m, rect_profile(m, gpw, gpd), WIN_H - 0.04, gpx, gpy, WIN_SILL + 0.02)])
-            win = make_el(m, "IfcWindow", oh, "Window", place(m, 0, 0, 0, rel=storey_pl), ws)
-            add_color(m, wr, "window")
-            elements.append(win)
-
-        # Build wall
-        color = "ext_wall" if w["is_exterior"] else "int_wall"
-        shape_w, rep_w = make_shape(m, body_ctx, [wall_solid], rep_type)
-        wall = make_el(m, "IfcWall", oh, f"Wall ({','.join(w['rooms'][:2])})",
-                       place(m, 0, 0, 0, rel=storey_pl), shape_w)
-        add_color(m, rep_w, color)
-        elements.append(wall)
-
-
-# ── Build room contents (floor, ceiling, fixtures, MEP) ──────────────────────
-
-def build_room_contents(m, oh, body_ctx, room, storey_pl, ceil_h, elements):
-    rx = float(room.get("x", 0))
-    ry = float(room.get("y", 0))
-    rw = float(room.get("width", 4))
-    rd = float(room.get("depth", 3))
-    rh = float(room.get("height", ceil_h))
-    rname = room.get("name", "Room")
-    rtype = room_type(rname)
-    ext = room.get("exterior", True)
-    wt = EXT_T if ext else INT_T
-
-    print(f"    Room: {rname:20} x={rx:6.2f} y={ry:6.2f} w={rw:5.2f} d={rd:5.2f}")
-
-    # Floor
-    s, r = make_shape(m, body_ctx, [extrude(m, rect_profile(m, rw, rd), FLOOR_T, rx, ry, -FLOOR_T)])
-    elements.append(make_el(m, "IfcSlab", oh, f"{rname} Floor", place(m,0,0,0,rel=storey_pl), s))
-    add_color(m, r, "floor")
-
-    # Ceiling
-    inner_x, inner_y = rx + wt, ry + wt
-    inner_w, inner_d = rw - 2*wt, rd - 2*wt
-    if inner_w > 0 and inner_d > 0:
-        s, r = make_shape(m, body_ctx, [extrude(m, rect_profile(m, inner_w, inner_d), CEIL_T, inner_x, inner_y, rh - CEIL_T)])
-        elements.append(make_el(m, "IfcCovering", oh, f"{rname} Ceiling", place(m,0,0,0,rel=storey_pl), s))
-        add_color(m, r, "ceiling")
-
-    # Light
-    s, r = make_shape(m, body_ctx, [extrude(m, circle_profile(m, 0.15), 0.03, rx+rw/2, ry+rd/2, rh-0.04)])
-    elements.append(make_el(m, "IfcLightFixture", oh, f"{rname} Light", place(m,0,0,0,rel=storey_pl), s))
-    add_color(m, r, "light")
-
-    # Duct
-    if rtype not in ("patio", "garage", "hallway") and inner_w > 1.0:
-        duct_len = inner_w - 0.2
-        s, r = make_shape(m, body_ctx, [extrude(m, rect_profile(m, duct_len, DUCT_W), DUCT_H,
-            inner_x + 0.1, ry + rd/2 - DUCT_W/2, rh - DUCT_H - 0.08)])
-        elements.append(make_el(m, "IfcDuctSegment", oh, f"{rname} Duct", place(m,0,0,0,rel=storey_pl), s))
-        add_color(m, r, "duct")
-
-    # Pipe (wet rooms — simple horizontal box)
-    if rtype in ("bathroom", "kitchen", "utility") and inner_d > 0.5:
-        pipe_len = inner_d - 0.2
-        s, r = make_shape(m, body_ctx, [extrude(m, rect_profile(m, PIPE_W, pipe_len), PIPE_H,
-            inner_x + 0.1, inner_y + 0.1, 0.08)])
-        elements.append(make_el(m, "IfcPipeSegment", oh, f"{rname} Pipe", place(m,0,0,0,rel=storey_pl), s))
-        add_color(m, r, "pipe")
-
-    # Fixtures
-    fixture_list = FIXTURES.get(rtype, [])
-    iw = max(inner_w, 0.5)
-    id_ = max(inner_d, 0.5)
-
-    for fx_data in fixture_list:
-        fname, fx, fy, fw, fd, fh, fcolor = fx_data
-        ax = inner_x + fx * iw - fw/2
-        ay = inner_y + fy * id_ - fd/2
-        ax = max(inner_x + 0.05, min(ax, inner_x + iw - fw - 0.05))
-        ay = max(inner_y + 0.05, min(ay, inner_y + id_ - fd - 0.05))
-
-        s, r = make_shape(m, body_ctx, [extrude(m, rect_profile(m, max(fw,0.1), max(fd,0.1)), max(fh,0.05), ax, ay, 0)])
-        ifc_type = "IfcFurnishingElement"
-        if "toilet" in fname.lower() or "sink" in fname.lower() or "shower" in fname.lower():
-            ifc_type = "IfcSanitaryTerminal"
-        elif any(x in fname.lower() for x in ["stove","fridge","heater","washer","rack"]):
-            ifc_type = "IfcElectricAppliance"
-        elements.append(make_el(m, ifc_type, oh, f"{rname} {fname}", place(m,0,0,0,rel=storey_pl), s))
-        add_color(m, r, fcolor)
-
-
-# ── Main ─────────────────────────────────────────────────────────────────────
+# ── Main generation ──────────────────────────────────────────────────────────
 
 def generate_ifc(spec, output_path=None):
     global _style_cache
@@ -434,78 +250,216 @@ def generate_ifc(spec, output_path=None):
 
     print(f"Generating IFC: {name}")
 
+    # ── Setup via API ────────────────────────────────────────────────────
     m = ifcopenshell.file(schema="IFC4")
-    app = m.createIfcApplication(m.createIfcOrganization(None,"BIM Studio",None,None,None),"1.0","BIM Studio","BIMSTUDIO")
-    person = m.createIfcPerson(None,"AI",None,None,None,None,None,None)
-    org = m.createIfcOrganization(None,"BIM Studio",None,None,None)
-    pao = m.createIfcPersonAndOrganization(person,org,None)
-    oh = m.createIfcOwnerHistory(pao,app,None,"ADDED",None,pao,app,int(datetime.now().timestamp()))
-    units = m.createIfcUnitAssignment([
-        m.createIfcSIUnit(None,"LENGTHUNIT",None,"METRE"),
-        m.createIfcSIUnit(None,"AREAUNIT",None,"SQUARE_METRE"),
-        m.createIfcSIUnit(None,"VOLUMEUNIT",None,"CUBIC_METRE"),
-        m.createIfcSIUnit(None,"PLANEANGLEUNIT",None,"RADIAN")])
-    geom_ctx, body_ctx = make_context(m)
-    wp = local_pl(m)
-    proj = m.createIfcProject(ifcopenshell.guid.new(),oh,name,None,None,None,None,[geom_ctx],units)
-    site = m.createIfcSite(ifcopenshell.guid.new(),oh,metadata.get("location","Site"),None,None,wp,None,None,"ELEMENT",None,None,None,None,None)
-    bldg = m.createIfcBuilding(ifcopenshell.guid.new(),oh,name,None,None,wp,None,None,"ELEMENT",None,None,None)
-    m.createIfcRelAggregates(ifcopenshell.guid.new(),oh,None,None,proj,[site])
-    m.createIfcRelAggregates(ifcopenshell.guid.new(),oh,None,None,site,[bldg])
+    proj = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcProject", name=name)
+    ifcopenshell.api.run("unit.assign_unit", m)
+    ctx = ifcopenshell.api.run("context.add_context", m, context_type="Model")
+    body = ifcopenshell.api.run("context.add_context", m,
+        context_type="Model", context_identifier="Body", target_view="MODEL_VIEW", parent=ctx)
 
-    ifc_storeys = []
+    site = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcSite",
+        name=metadata.get("location", "Site"))
+    bldg = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcBuilding", name=name)
+    ifcopenshell.api.run("aggregate.assign_object", m, products=[site], relating_object=proj)
+    ifcopenshell.api.run("aggregate.assign_object", m, products=[bldg], relating_object=site)
+
+    # ── Storeys ──────────────────────────────────────────────────────────
+    storeys = []
     for floor in floors:
-        elev = float(floor.get("elevation",0.0))
-        sp = local_pl(m,wp,0,0,elev)
-        st = m.createIfcBuildingStorey(ifcopenshell.guid.new(),oh,floor.get("name",f"Level {len(ifc_storeys)+1}"),None,None,sp,None,None,"ELEMENT",elev)
-        ifc_storeys.append(st)
-    if ifc_storeys:
-        m.createIfcRelAggregates(ifcopenshell.guid.new(),oh,None,None,bldg,ifc_storeys)
+        elev = float(floor.get("elevation", 0.0))
+        st = ifcopenshell.api.run("root.create_entity", m,
+            ifc_class="IfcBuildingStorey", name=floor.get("name", f"Level {len(storeys)+1}"))
+        ifcopenshell.api.run("geometry.edit_object_placement", m, product=st,
+            matrix=np.array([[1,0,0,0],[0,1,0,0],[0,0,1,elev],[0,0,0,1]], dtype=float))
+        storeys.append(st)
+    if storeys:
+        ifcopenshell.api.run("aggregate.assign_object", m, products=storeys, relating_object=bldg)
 
+    # ── Build each floor ─────────────────────────────────────────────────
     for fi, floor in enumerate(floors):
-        storey = ifc_storeys[fi]
-        elements = []
+        storey = storeys[fi]
         ceil_h_raw = floor.get("height", 2.7)
-        ceil_h = float(ceil_h_raw)/1000 if float(ceil_h_raw)>10 else float(ceil_h_raw)
+        ceil_h = float(ceil_h_raw)/1000 if float(ceil_h_raw) > 10 else float(ceil_h_raw)
+        elev = float(floor.get("elevation", 0.0))
 
-        if has_rooms:
-            rooms = floor.get("rooms", [])
+        if not has_rooms:
+            continue
 
-            # Plan and build walls (shared wall logic)
-            wall_plan = plan_walls(rooms)
-            print(f"  {len(wall_plan)} wall segments planned for {len(rooms)} rooms")
-            build_walls(m, oh, body_ctx, storey.ObjectPlacement, wall_plan, ceil_h, elements)
+        rooms = floor.get("rooms", [])
+        if not rooms:
+            continue
 
-            # Build room contents (floor, ceiling, furniture, MEP)
-            for room in rooms:
-                room["height"] = ceil_h
-                build_room_contents(m, oh, body_ctx, room, storey.ObjectPlacement, ceil_h, elements)
+        # ── Plan walls ───────────────────────────────────────────────
+        wall_plan = plan_walls(rooms)
+        print(f"  Floor '{floor.get('name')}': {len(wall_plan)} walls, {len(rooms)} rooms")
 
-            # Roof
-            if rooms:
-                min_x = min(float(r.get("x",0)) for r in rooms)
-                min_y = min(float(r.get("y",0)) for r in rooms)
-                max_x = max(float(r.get("x",0))+float(r.get("width",4)) for r in rooms)
-                max_y = max(float(r.get("y",0))+float(r.get("depth",3)) for r in rooms)
-                s, r = make_shape(m, body_ctx, [extrude(m, rect_profile(m, max_x-min_x, max_y-min_y), FLOOR_T, min_x, min_y, ceil_h)])
-                elements.append(make_el(m, "IfcRoof", oh, "Roof", place(m,0,0,0,rel=storey.ObjectPlacement), s))
-                add_color(m, r, "roof")
+        # ── Build walls using create_2pt_wall ────────────────────────
+        for w in wall_plan:
+            p1, p2 = w["p1"], w["p2"]
+            wall_name = f"Wall ({','.join(w['rooms'][:2])})"
+            color = "ext_wall" if w["is_exterior"] else "int_wall"
 
-            print(f"  Floor '{floor.get('name')}': {len(elements)} elements from {len(rooms)} rooms")
+            wall = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcWall", name=wall_name)
+            rep = ifcopenshell.api.run("geometry.create_2pt_wall", m,
+                element=wall, context=body,
+                p1=p1, p2=p2,
+                elevation=elev, height=ceil_h, thickness=w["thickness"])
+            color_rep(m, rep, color)
+            ifcopenshell.api.run("spatial.assign_container", m, products=[wall], relating_structure=storey)
 
-        if elements:
-            m.createIfcRelContainedInSpatialStructure(ifcopenshell.guid.new(),oh,None,None,elements,storey)
+            # Door
+            if w["has_door"]:
+                door = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcDoor", name="Door")
+                try:
+                    drep = ifcopenshell.api.run("geometry.add_door_representation", m,
+                        context=body, overall_height=2.1, overall_width=0.9,
+                        operation_type="SINGLE_SWING_LEFT")
+                    if drep:
+                        ifcopenshell.api.run("geometry.assign_representation", m, product=door, representation=drep)
+                        # Position door along wall
+                        dx = p1[0] + (p2[0]-p1[0]) * 0.3
+                        dy = p1[1] + (p2[1]-p1[1]) * 0.3
+                        # Calculate wall direction for door rotation
+                        vx = p2[0]-p1[0]
+                        vy = p2[1]-p1[1]
+                        length = math.sqrt(vx*vx + vy*vy)
+                        if length > 0:
+                            vx, vy = vx/length, vy/length
+                        else:
+                            vx, vy = 1, 0
+                        mat = np.array([
+                            [vx, -vy, 0, dx],
+                            [vy,  vx, 0, dy],
+                            [0,   0,  1, elev],
+                            [0,   0,  0, 1]], dtype=float)
+                        ifcopenshell.api.run("geometry.edit_object_placement", m, product=door, matrix=mat)
+                        color_rep(m, drep, "door")
+                        ifcopenshell.api.run("spatial.assign_container", m, products=[door], relating_structure=storey)
+                except Exception as e:
+                    logger.debug("Door failed: %s", e)
 
+            # Window on exterior walls
+            if w["is_exterior"]:
+                wlen = math.sqrt((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2)
+                if wlen >= 2.5:
+                    win = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcWindow", name="Window")
+                    try:
+                        wrep = ifcopenshell.api.run("geometry.add_window_representation", m,
+                            context=body, overall_height=1.2, overall_width=1.4)
+                        if wrep:
+                            ifcopenshell.api.run("geometry.assign_representation", m, product=win, representation=wrep)
+                            wx = p1[0] + (p2[0]-p1[0]) * 0.5
+                            wy = p1[1] + (p2[1]-p1[1]) * 0.5
+                            vx = p2[0]-p1[0]
+                            vy = p2[1]-p1[1]
+                            length = math.sqrt(vx*vx + vy*vy)
+                            if length > 0:
+                                vx, vy = vx/length, vy/length
+                            else:
+                                vx, vy = 1, 0
+                            mat = np.array([
+                                [vx, -vy, 0, wx],
+                                [vy,  vx, 0, wy],
+                                [0,   0,  1, elev + 0.9],
+                                [0,   0,  0, 1]], dtype=float)
+                            ifcopenshell.api.run("geometry.edit_object_placement", m, product=win, matrix=mat)
+                            color_rep(m, wrep, "window")
+                            ifcopenshell.api.run("spatial.assign_container", m, products=[win], relating_structure=storey)
+                    except Exception as e:
+                        logger.debug("Window failed: %s", e)
+
+        # ── Floor slabs, ceilings, furniture per room ────────────────
+        for room in rooms:
+            rx = float(room.get("x", 0))
+            ry = float(room.get("y", 0))
+            rw = float(room.get("width", 4))
+            rd = float(room.get("depth", 3))
+            rname = room.get("name", "Room")
+            rtype = room_type(rname)
+
+            print(f"    Room: {rname:20} x={rx:6.2f} y={ry:6.2f} w={rw:5.2f} d={rd:5.2f}")
+
+            # Floor slab with polyline outline
+            slab = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcSlab", name=f"{rname} Floor")
+            slab_outline = [(0,0),(rw,0),(rw,rd),(0,rd),(0,0)]
+            srep = ifcopenshell.api.run("geometry.add_slab_representation", m,
+                context=body, depth=0.2, polyline=slab_outline)
+            if srep:
+                ifcopenshell.api.run("geometry.assign_representation", m, product=slab, representation=srep)
+                place_element(m, slab, rx, ry, elev - 0.2)
+                color_rep(m, srep, "floor")
+                ifcopenshell.api.run("spatial.assign_container", m, products=[slab], relating_structure=storey)
+
+            # Duct
+            if rtype not in ("patio","garage","hallway") and rw > 1.5:
+                duct = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcDuctSegment", name=f"{rname} Duct")
+                duct_w = rw - 0.6
+                dshape, drep = box_rep(m, body, duct_w, 0.4, 0.15)
+                ifcopenshell.api.run("geometry.assign_representation", m, product=duct, representation=dshape)
+                place_element(m, duct, rx + 0.3, ry + rd/2 - 0.2, elev + ceil_h - 0.2)
+                color_rep(m, drep, "duct")
+                ifcopenshell.api.run("spatial.assign_container", m, products=[duct], relating_structure=storey)
+
+            # Pipe (wet rooms)
+            if rtype in ("bathroom","kitchen","utility") and rd > 1.0:
+                pipe = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcPipeSegment", name=f"{rname} Pipe")
+                pipe_len = rd - 0.6
+                pshape, prep = box_rep(m, body, 0.05, pipe_len, 0.05)
+                ifcopenshell.api.run("geometry.assign_representation", m, product=pipe, representation=pshape)
+                place_element(m, pipe, rx + 0.3, ry + 0.3, elev + 0.1)
+                color_rep(m, prep, "pipe")
+                ifcopenshell.api.run("spatial.assign_container", m, products=[pipe], relating_structure=storey)
+
+            # Fixtures
+            inner_x = rx + 0.15
+            inner_y = ry + 0.15
+            inner_w = max(rw - 0.3, 0.5)
+            inner_d = max(rd - 0.3, 0.5)
+
+            for fx_data in FIXTURES.get(rtype, []):
+                fname, fx, fy, fw, fd, fh, fcolor, fclass = fx_data
+                ax = inner_x + fx * inner_w - fw/2
+                ay = inner_y + fy * inner_d - fd/2
+                ax = max(inner_x, min(ax, inner_x + inner_w - fw))
+                ay = max(inner_y, min(ay, inner_y + inner_d - fd))
+
+                el = ifcopenshell.api.run("root.create_entity", m, ifc_class=fclass, name=f"{rname} {fname}")
+                fshape, frep = box_rep(m, body, max(fw,0.1), max(fd,0.1), max(fh,0.05))
+                ifcopenshell.api.run("geometry.assign_representation", m, product=el, representation=fshape)
+                place_element(m, el, ax, ay, elev)
+                color_rep(m, frep, fcolor)
+                ifcopenshell.api.run("spatial.assign_container", m, products=[el], relating_structure=storey)
+
+        # Roof
+        if rooms:
+            min_x = min(float(r.get("x",0)) for r in rooms)
+            min_y = min(float(r.get("y",0)) for r in rooms)
+            max_x = max(float(r.get("x",0))+float(r.get("width",4)) for r in rooms)
+            max_y = max(float(r.get("y",0))+float(r.get("depth",3)) for r in rooms)
+
+            roof = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcRoof", name="Roof")
+            rw = max_x - min_x
+            rd = max_y - min_y
+            roof_outline = [(0,0),(rw,0),(rw,rd),(0,rd),(0,0)]
+            rrep = ifcopenshell.api.run("geometry.add_slab_representation", m,
+                context=body, depth=0.25, polyline=roof_outline)
+            if rrep:
+                ifcopenshell.api.run("geometry.assign_representation", m, product=roof, representation=rrep)
+                place_element(m, roof, min_x, min_y, elev + ceil_h)
+                color_rep(m, rrep, "roof")
+                ifcopenshell.api.run("spatial.assign_container", m, products=[roof], relating_structure=storey)
+
+        print(f"  Floor complete")
+
+    # ── Metadata ─────────────────────────────────────────────────────────
     if metadata:
-        props = []
-        for k,v in metadata.items():
-            if v is None: continue
-            try: props.append(m.createIfcPropertySingleValue(str(k),None,m.create_entity("IfcLabel",wrappedValue=str(v)),None))
-            except: pass
+        pset = ifcopenshell.api.run("pset.add_pset", m, product=bldg, name="BIM_Studio_Info")
+        props = {str(k): str(v) for k, v in metadata.items() if v is not None}
         if props:
-            pset = m.createIfcPropertySet(ifcopenshell.guid.new(),oh,"BIM_Studio_Project_Info",None,props)
-            m.createIfcRelDefinesByProperties(ifcopenshell.guid.new(),oh,None,None,[bldg],pset)
+            ifcopenshell.api.run("pset.edit_pset", m, pset=pset, properties=props)
 
+    # ── Write ────────────────────────────────────────────────────────────
     if not output_path:
         output_path = f"generated_{name.replace(' ','_')}_{datetime.now().strftime('%H%M%S')}.ifc"
     m.write(output_path)
@@ -521,4 +475,4 @@ if __name__ == "__main__":
         {"name":"Bedroom","x":0,"y":5.5,"width":4.5,"depth":4,"exterior":True,"door_wall":"south"},
         {"name":"Bathroom","x":4.5,"y":5.5,"width":3.5,"depth":4,"exterior":True,"door_wall":"south"},
     ]}]}
-    generate_ifc(spec, "/tmp/test_v9.ifc")
+    generate_ifc(spec, "/tmp/test_v10.ifc")
