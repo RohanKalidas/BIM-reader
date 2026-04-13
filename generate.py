@@ -488,8 +488,8 @@ def generate_ifc(spec, output_path=None):
         if has_rooms:
             rooms = floor.get("rooms", [])
             for room in rooms:
-    print(f"    Room: {room.get('name'):20} x={room.get('x',0):6.2f} y={room.get('y',0):6.2f} w={room.get('width',0):5.2f} d={room.get('depth',0):5.2f}")
-    build_room(m, oh, body_ctx, room, storey.ObjectPlacement,
+                print(f"    Room: {room.get('name'):20} x={room.get('x',0):6.2f} y={room.get('y',0):6.2f} w={room.get('width',0):5.2f} d={room.get('depth',0):5.2f}")
+                build_room(m, oh, body_ctx, room, storey.ObjectPlacement,
                            ceil_h, built_walls, elements)
 
             # Roof slab
