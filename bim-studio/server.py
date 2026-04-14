@@ -933,6 +933,7 @@ def generate_stream():
                 start = full_text.index("<building_spec>") + len("<building_spec>")
                 end   = full_text.index("</building_spec>")
                 spec  = json.loads(full_text[start:end].strip())
+                spec  = ground_spec_with_library(spec)
                 print(f"Spec parsed: {spec.get('name')} | {len(spec.get('floors',[]))} floors")
             except Exception as e:
                 print(f"Spec parse error: {e}")
@@ -954,6 +955,7 @@ def generate_ifc_endpoint():
     try:
         sys.path.insert(0, REPO_DIR)
         from generate import generate_ifc
+        spec = ground_spec_with_library(spec)
         safe_name = spec.get("name", "building").replace(" ", "_").replace("/", "-")
         # Sanitize further
         safe_name = "".join(c for c in safe_name if c.isalnum() or c in "_-")
