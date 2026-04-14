@@ -82,7 +82,7 @@ def color_rep(m, rep, color_key):
 
 def box_rep(m, body, w, d, h):
     """Create a simple extruded rectangle representation."""
-    pts = [(0,0),(w,0),(w,d),(0,d),(0,0)]
+    pts = [[0.0,0.0],[float(w),0.0],[float(w),float(d)],[0.0,float(d)],[0.0,0.0]]
     if m.schema == "IFC2X3":
         curve = m.createIfcPolyline([m.createIfcCartesianPoint(p) for p in pts])
     else:
