@@ -567,11 +567,22 @@ async function initGenViewer(filename){
       var defaultColor=[0.82,0.82,0.82];
       var scene=xeokitViewer.scene;
       var metaScene=xeokitViewer.metaScene;
+      function tintRgb(rgb, seed){
+        var x=Math.abs(Math.sin(seed*12.9898)*43758.5453)%1;
+        var s=0.88+x*0.14;
+        return [Math.min(1,rgb[0]*s),Math.min(1,rgb[1]*s),Math.min(1,rgb[2]*s)];
+      }
       Object.values(scene.objects).forEach(function(obj){
         var col=defaultColor;
         if(metaScene){
           var meta=metaScene.metaObjects[obj.id];
           if(meta&&meta.type&&colorMap[meta.type]){col=colorMap[meta.type];}
+          if(meta&&meta.type){
+            var mt=meta.type;
+            if(mt.indexOf('Wall')>=0||mt==='IfcSlab'||mt==='IfcRoof'||mt==='IfcCovering'){
+              col=tintRgb(col,(obj.id||0)*0.0193);
+            }
+          }
         }
         obj.colorize=col;
         obj.opacity=1.0;

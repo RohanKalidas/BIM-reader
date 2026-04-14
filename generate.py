@@ -165,32 +165,28 @@ def place_element_oriented(
     ifcopenshell.api.run("geometry.edit_object_placement", m, product=el, matrix=m44)
 
 
-def fixture_orientation_adjustments(fname, fclass):
+def fixture_orientation_adjustments(fname, fclass, plan_rot_z=0.0):
     """
-    Returns (rot_z_deg, rot_x_deg) for library/box fixtures so common assets
-    face sensibly in our plan (x=east, y=north).
+    Returns (rot_z_deg, rot_x_deg) combining plan-facing (from door-aware layout)
+    with mesh-specific fixes for library IFC assets.
     """
     n = fname.lower()
     cat = fclass or ""
 
-    # Bed: headboard toward wall opposite door is handled by caller; base fix
-    # is 180° so head/foot match typical Revit exports (pillows away from wall).
+    bz, rx = 0.0, 0.0
+
     if "bed" in n:
-        return (180.0, 0.0)
+        bz = 180.0
+    elif "stove" in n or "range" in n or "oven" in n or "cook" in n:
+        bz = 180.0
+    elif "shower tray" in n or "sink" in n or "basin" in n:
+        bz, rx = 0.0, 0.0
+    elif cat == "IfcSanitaryTerminal" or "toilet" in n or n.strip() == "wc":
+        bz, rx = 0.0, -90.0
+    else:
+        bz, rx = 0.0, 0.0
 
-    # Cooking appliances: front faces room / away from wall
-    if "stove" in n or "range" in n or "oven" in n or "cook" in n:
-        return (180.0, 0.0)
-
-    # Flat trays / sinks — no tilt
-    if "shower tray" in n or "sink" in n or "basin" in n:
-        return (0.0, 0.0)
-
-    # Toilet / WC: lay geometry that web-ifc shows “on end” (local vs world Z)
-    if cat == "IfcSanitaryTerminal" or "toilet" in n or n.strip() == "wc":
-        return (0.0, -90.0)
-
-    return (0.0, 0.0)
+    return (plan_rot_z + bz, rx)
 
 # ── Room type / fixtures ────────────────────────────────────────────────────
 
@@ -348,6 +344,15 @@ def generate_ifc(spec, output_path=None):
         spec = process_spec(spec)
     except Exception as e:
         print(f"  Layout: {e}")
+
+    try:
+        from fixture_placement import plan_positions
+    except ImportError:
+        plan_positions = None  # noqa: F841
+    try:
+        from architectural_exterior import build_exterior_accents
+    except ImportError:
+        build_exterior_accents = None  # noqa: F841
 
     name = spec.get("name", "Building")
     floors = spec.get("floors", [])
@@ -550,15 +555,47 @@ def generate_ifc(spec, output_path=None):
             inner_w = max(rw - 0.3, 0.5)
             inner_d = max(rd - 0.3, 0.5)
 
-            for fx_data in FIXTURES.get(rtype, []):
-                fname, fx, fy, fw, fd, fh, fcolor, fclass = fx_data
-                fw, fd, fh = grounded_fixture_dims(grounding, fname, (fw, fd, fh))
-                ax = inner_x + fx * inner_w - fw/2
-                ay = inner_y + fy * inner_d - fd/2
-                ax = max(inner_x, min(ax, inner_x + inner_w - fw))
-                ay = max(inner_y, min(ay, inner_y + inner_d - fd))
+            fx_list = FIXTURES.get(rtype, [])
+            if plan_positions:
+                planned = plan_positions(rtype, room, fx_list)
+            else:
+                planned = []
+                for fx_data in fx_list:
+                    fname, fx, fy, fw, fd, fh, fcolor, fclass = fx_data
+                    fw, fd, fh = grounded_fixture_dims(grounding, fname, (fw, fd, fh))
+                    ax = inner_x + fx * inner_w - fw / 2
+                    ay = inner_y + fy * inner_d - fd / 2
+                    ax = max(inner_x, min(ax, inner_x + inner_w - fw))
+                    ay = max(inner_y, min(ay, inner_y + inner_d - fd))
+                    planned.append(
+                        {
+                            "fname": fname,
+                            "fw": fw,
+                            "fd": fd,
+                            "fh": fh,
+                            "fcolor": fcolor,
+                            "fclass": fclass,
+                            "ax": ax,
+                            "ay": ay,
+                            "plan_rot_z": 0.0,
+                        }
+                    )
 
-                el = ifcopenshell.api.run("root.create_entity", m, ifc_class=fclass, name=f"{rname} {fname}")
+            for p in planned:
+                fname = p["fname"]
+                fw = float(p["fw"])
+                fd = float(p["fd"])
+                fh = float(p["fh"])
+                fcolor = p["fcolor"]
+                fclass = p["fclass"]
+                ax = float(p["ax"])
+                ay = float(p["ay"])
+                plan_rz = float(p.get("plan_rot_z", 0.0))
+                fw, fd, fh = grounded_fixture_dims(grounding, fname, (fw, fd, fh))
+
+                el = ifcopenshell.api.run(
+                    "root.create_entity", m, ifc_class=fclass, name=f"{rname} {fname}"
+                )
                 fshape = None
                 frep = None
                 if geom_lib:
@@ -569,8 +606,10 @@ def generate_ifc(spec, output_path=None):
                         fshape = geom_lib.transplant_geometry(m, match, body)
                         if fshape:
                             ifcopenshell.api.run(
-                                "geometry.assign_representation", m,
-                                product=el, representation=fshape,
+                                "geometry.assign_representation",
+                                m,
+                                product=el,
+                                representation=fshape,
                             )
                             try:
                                 if fshape.Representations:
@@ -582,13 +621,20 @@ def generate_ifc(spec, output_path=None):
                         m, body, max(fw, 0.1), max(fd, 0.1), max(fh, 0.05)
                     )
                     ifcopenshell.api.run(
-                        "geometry.assign_representation", m,
-                        product=el, representation=fshape,
+                        "geometry.assign_representation",
+                        m,
+                        product=el,
+                        representation=fshape,
                     )
-                rz, rx = fixture_orientation_adjustments(fname, fclass)
+                rz, rx = fixture_orientation_adjustments(fname, fclass, plan_rz)
                 place_element_oriented(m, el, ax, ay, elev, fw, fd, rz, rx)
                 color_rep(m, frep, fcolor)
-                ifcopenshell.api.run("spatial.assign_container", m, products=[el], relating_structure=storey)
+                ifcopenshell.api.run(
+                    "spatial.assign_container",
+                    m,
+                    products=[el],
+                    relating_structure=storey,
+                )
 
         # Roof
         if rooms:
@@ -608,6 +654,23 @@ def generate_ifc(spec, output_path=None):
                 place_element(m, roof, min_x, min_y, elev + ceil_h)
                 color_rep(m, rrep, "roof")
                 ifcopenshell.api.run("spatial.assign_container", m, products=[roof], relating_structure=storey)
+
+            if fi == 0 and build_exterior_accents and rooms:
+                build_exterior_accents(
+                    m,
+                    body,
+                    storey,
+                    min_x,
+                    min_y,
+                    max_x,
+                    max_y,
+                    elev,
+                    ceil_h,
+                    metadata,
+                    color_rep,
+                    place_element,
+                    box_rep,
+                )
 
         print(f"  Floor complete")
 

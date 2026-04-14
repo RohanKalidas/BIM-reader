@@ -735,6 +735,10 @@ ROOM LAYOUT STRATEGY:
 7. Private rooms (bedrooms, bathrooms) go in another row
 8. Every room gets exterior=true if it touches the building perimeter
 
+ARCHITECTURE STYLE (metadata) — REQUIRED when the user names a style:
+- "architectural_style": short string, e.g. "ranch", "neoclassical", "colonial", "craftsman", "modern", "contemporary", "mediterranean", "industrial". The generator adds simple exterior massing hints (porch, portico, canopy) — not full detail, but not a plain box when a style is set.
+- "front_elevation": which side of the footprint is the main entrance — "south", "north", "east", or "west" (default "south"). Must match how rooms are laid out (public / entry side).
+
 FIXTURE TYPES (auto-populated based on room name):
 - "Living Room" / "Lounge" — sofa, coffee table, TV stand, light
 - "Kitchen" — counter, sink, stove, refrigerator, light
@@ -785,6 +789,8 @@ EXAMPLE SPEC (one-bedroom apartment, 8m x 9.5m footprint):
     }
   ],
   "metadata": {
+    "architectural_style": "ranch",
+    "front_elevation": "south",
     "location": "City, Country",
     "building_type": "Residential",
     "estimated_cost_usd": 300000,
