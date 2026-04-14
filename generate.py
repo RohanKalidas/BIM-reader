@@ -81,7 +81,8 @@ def color_rep(m, rep, color_key):
     if style and rep:
         try:
             ifcopenshell.api.run("style.assign_representation_styles", m,
-                shape_representation=rep, styles=[style])        except Exception:
+                shape_representation=rep, styles=[style])       
+        except Exception:
             pass
 
 
