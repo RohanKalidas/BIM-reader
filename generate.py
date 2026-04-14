@@ -249,7 +249,20 @@ def plan_walls(rooms):
             "rooms": e["rooms"],
         })
 
+
     return walls
+
+
+def grounded_fixture_dims(grounding, fixture_name, fallback_dims):
+    """Use library-derived fixture dimensions when present."""
+    defaults = grounding.get("fixtures", {})
+    dims = defaults.get(fixture_name.lower(), {}) if isinstance(defaults, dict) else {}
+    fw, fd, fh = fallback_dims
+    return (
+        float(dims.get("width_m", fw) or fw),
+        float(dims.get("depth_m", fd) or fd),
+        float(dims.get("height_m", fh) or fh),
+    )
 
 
 # ── Main generation ──────────────────────────────────────────────────────────
@@ -267,6 +280,7 @@ def generate_ifc(spec, output_path=None):
     name = spec.get("name", "Building")
     floors = spec.get("floors", [])
     metadata = spec.get("metadata", {})
+    grounding = get_grounding(spec)
     has_rooms = any(f.get("rooms") for f in floors)
 
     print(f"Generating IFC: {name}")
@@ -316,25 +330,38 @@ def generate_ifc(spec, output_path=None):
         print(f"  Floor '{floor.get('name')}': {len(wall_plan)} walls, {len(rooms)} rooms")
 
         # ── Build walls using create_2pt_wall ────────────────────────
-        for w in wall_plan:
-            p1, p2 = w["p1"], w["p2"]
+        for w in wall_plan:            p1, p2 = w["p1"], w["p2"]
             wall_name = f"Wall ({','.join(w['rooms'][:2])})"
             color = "ext_wall" if w["is_exterior"] else "int_wall"
+            wall_thickness = w["thickness"]
+            if w["is_exterior"]:
+                wall_thickness = float(
+                    grounding["wall_defaults"].get("exterior_thickness_m", wall_thickness) or wall_thickness
+                )
+            else:
+                wall_thickness = float(
+                    grounding["wall_defaults"].get("interior_thickness_m", wall_thickness) or wall_thickness
+                )
 
             wall = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcWall", name=wall_name)
             rep = ifcopenshell.api.run("geometry.create_2pt_wall", m,
                 element=wall, context=body,
                 p1=p1, p2=p2,
-                elevation=elev, height=ceil_h, thickness=w["thickness"])
-            color_rep(m, rep, color)
+               
+                elevation=elev, height=ceil_h, thickness=wall_thickness)
+            if rep:
+                ifcopenshell.api.run("geometry.assign_representation", m, product=wall, representation=rep)
+                color_rep(m, rep, color)
             ifcopenshell.api.run("spatial.assign_container", m, products=[wall], relating_structure=storey)
 
             # Door
             if w["has_door"]:
                 door = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcDoor", name="Door")
                 try:
+                    door_width = float(grounding["openings"].get("door_width", 0.9) or 0.9)
+                    door_height = float(grounding["openings"].get("door_height", 2.1) or 2.1)
                     drep = ifcopenshell.api.run("geometry.add_door_representation", m,
-                        context=body, overall_height=2.1, overall_width=0.9,
+                        context=body, overall_height=door_height, overall_width=door_width,
                         operation_type="SINGLE_SWING_LEFT")
                     if drep:
                         ifcopenshell.api.run("geometry.assign_representation", m, product=door, representation=drep)
@@ -366,8 +393,10 @@ def generate_ifc(spec, output_path=None):
                 if wlen >= 2.5:
                     win = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcWindow", name="Window")
                     try:
+                        window_width = float(grounding["openings"].get("window_width", 1.4) or 1.4)
+                        window_height = float(grounding["openings"].get("window_height", 1.2) or 1.2)
                         wrep = ifcopenshell.api.run("geometry.add_window_representation", m,
-                            context=body, overall_height=1.2, overall_width=1.4)
+                             context=body, overall_height=window_height, overall_width=window_width)
                         if wrep:
                             ifcopenshell.api.run("geometry.assign_representation", m, product=win, representation=wrep)
                             wx = p1[0] + (p2[0]-p1[0]) * 0.5
