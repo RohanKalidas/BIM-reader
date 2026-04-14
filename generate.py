@@ -293,7 +293,15 @@ def generate_ifc(spec, output_path=None):
     ctx = ifcopenshell.api.run("context.add_context", m, context_type="Model")
     body = ifcopenshell.api.run("context.add_context", m,
         context_type="Model", context_identifier="Body", target_view="MODEL_VIEW", parent=ctx)
-
+    geom_lib = None
+    try:
+        from database.db import get_db_connection
+        from extractor.geometry_transplant import GeometryLibrary
+        _uploads = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+        geom_lib = GeometryLibrary(get_db_connection, upload_folder=_uploads)
+    except Exception as e:
+        logger.debug("Geometry library unavailable (fixtures will use boxes): %s", e)
+    
     site = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcSite",
         name=metadata.get("location", "Site"))
     bldg = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcBuilding", name=name)
@@ -478,8 +486,32 @@ def generate_ifc(spec, output_path=None):
                 ay = max(inner_y, min(ay, inner_y + inner_d - fd))
 
                 el = ifcopenshell.api.run("root.create_entity", m, ifc_class=fclass, name=f"{rname} {fname}")
-                fshape, frep = box_rep(m, body, max(fw,0.1), max(fd,0.1), max(fh,0.05))
-                ifcopenshell.api.run("geometry.assign_representation", m, product=el, representation=fshape)
+                fshape = None
+                frep = None
+                if geom_lib:
+                    match = geom_lib.find_component(
+                        fname, fclass, target_w=fw, target_d=fd, target_h=fh
+                    )
+                    if match:
+                        fshape = geom_lib.transplant_geometry(m, match, body)
+                        if fshape:
+                            ifcopenshell.api.run(
+                                "geometry.assign_representation", m,
+                                product=el, representation=fshape,
+                            )
+                            try:
+                                if fshape.Representations:
+                                    frep = fshape.Representations[0]
+                            except Exception:
+                                frep = None
+                if fshape is None:
+                    fshape, frep = box_rep(
+                        m, body, max(fw, 0.1), max(fd, 0.1), max(fh, 0.05)
+                    )
+                    ifcopenshell.api.run(
+                        "geometry.assign_representation", m,
+                        product=el, representation=fshape,
+                    )
                 place_element(m, el, ax, ay, elev)
                 color_rep(m, frep, fcolor)
                 ifcopenshell.api.run("spatial.assign_container", m, products=[el], relating_structure=storey)
