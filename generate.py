@@ -121,6 +121,77 @@ def place_element(m, el, x, y, z):
     ifcopenshell.api.run("geometry.edit_object_placement", m, product=el,
         matrix=np.array([[1,0,0,x],[0,1,0,y],[0,0,1,z],[0,0,0,1]], dtype=float))
 
+
+def _mat_rot_x(rad):
+    c, s = math.cos(rad), math.sin(rad)
+    return np.array(
+        [[1, 0, 0, 0], [0, c, -s, 0], [0, s, c, 0], [0, 0, 0, 1]], dtype=float
+    )
+
+
+def _mat_rot_z(rad):
+    c, s = math.cos(rad), math.sin(rad)
+    return np.array(
+        [[c, -s, 0, 0], [s, c, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=float
+    )
+
+
+def _mat_translate(tx, ty, tz):
+    return np.array(
+        [[1, 0, 0, tx], [0, 1, 0, ty], [0, 0, 1, tz], [0, 0, 0, 1]], dtype=float
+    )
+
+
+def place_element_oriented(
+    m, el, ax, ay, z, fw, fd, rot_z_deg=0.0, rot_x_deg=0.0
+):
+    """
+    Place a product whose box footprint is fw x fd on the floor at (ax, ay),
+    with rotations applied about the footprint centre on the floor plane.
+    rot_z: spin in plan (fixes bed/stove facing wall). rot_x: tilt (fixes
+    some library sanitary models that load vertical in world Z-up viewers).
+    """
+    rz = math.radians(rot_z_deg)
+    rx = math.radians(rot_x_deg)
+    cx, cy = float(fw) / 2.0, float(fd) / 2.0
+    # M = T(ax,ay,z) * T(cx,cy,0) * Rz * Rx * T(-cx,-cy,0)
+    m44 = (
+        _mat_translate(ax, ay, z)
+        @ _mat_translate(cx, cy, 0.0)
+        @ _mat_rot_z(rz)
+        @ _mat_rot_x(rx)
+        @ _mat_translate(-cx, -cy, 0.0)
+    )
+    ifcopenshell.api.run("geometry.edit_object_placement", m, product=el, matrix=m44)
+
+
+def fixture_orientation_adjustments(fname, fclass):
+    """
+    Returns (rot_z_deg, rot_x_deg) for library/box fixtures so common assets
+    face sensibly in our plan (x=east, y=north).
+    """
+    n = fname.lower()
+    cat = fclass or ""
+
+    # Bed: headboard toward wall opposite door is handled by caller; base fix
+    # is 180° so head/foot match typical Revit exports (pillows away from wall).
+    if "bed" in n:
+        return (180.0, 0.0)
+
+    # Cooking appliances: front faces room / away from wall
+    if "stove" in n or "range" in n or "oven" in n or "cook" in n:
+        return (180.0, 0.0)
+
+    # Flat trays / sinks — no tilt
+    if "shower tray" in n or "sink" in n or "basin" in n:
+        return (0.0, 0.0)
+
+    # Toilet / WC: lay geometry that web-ifc shows “on end” (local vs world Z)
+    if cat == "IfcSanitaryTerminal" or "toilet" in n or n.strip() == "wc":
+        return (0.0, -90.0)
+
+    return (0.0, 0.0)
+
 # ── Room type / fixtures ────────────────────────────────────────────────────
 
 def room_type(name):
@@ -293,6 +364,8 @@ def generate_ifc(spec, output_path=None):
     ctx = ifcopenshell.api.run("context.add_context", m, context_type="Model")
     body = ifcopenshell.api.run("context.add_context", m,
         context_type="Model", context_identifier="Body", target_view="MODEL_VIEW", parent=ctx)
+
+    # Optional: transplant real meshes from uploaded IFC library (PostgreSQL + uploads/)
     geom_lib = None
     try:
         from database.db import get_db_connection
@@ -301,7 +374,7 @@ def generate_ifc(spec, output_path=None):
         geom_lib = GeometryLibrary(get_db_connection, upload_folder=_uploads)
     except Exception as e:
         logger.debug("Geometry library unavailable (fixtures will use boxes): %s", e)
-    
+
     site = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcSite",
         name=metadata.get("location", "Site"))
     bldg = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcBuilding", name=name)
@@ -512,7 +585,8 @@ def generate_ifc(spec, output_path=None):
                         "geometry.assign_representation", m,
                         product=el, representation=fshape,
                     )
-                place_element(m, el, ax, ay, elev)
+                rz, rx = fixture_orientation_adjustments(fname, fclass)
+                place_element_oriented(m, el, ax, ay, elev, fw, fd, rz, rx)
                 color_rep(m, frep, fcolor)
                 ifcopenshell.api.run("spatial.assign_container", m, products=[el], relating_structure=storey)
 
