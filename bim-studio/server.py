@@ -46,6 +46,165 @@ def safe_float(v):
         return None
 
 
+def _safe_dimension_m(mm_value, fallback):
+    value = safe_float(mm_value)
+    if value is None or value <= 0:
+        return fallback
+    return round(value / 1000.0, 3)
+
+
+def _find_component_defaults(cursor, categories, terms=(), fallback=None):
+    fallback = fallback or {}
+    clauses = []
+    params = []
+    if categories:
+        clauses.append("c.category = ANY(%s)")
+        params.append(list(categories))
+    if terms:
+        like_parts = []
+        for term in terms:
+            like_parts.append(
+                "(LOWER(COALESCE(c.family_name,'')) LIKE %s OR LOWER(COALESCE(c.type_name,'')) LIKE %s)"
+            )
+            params.extend([f"%{term.lower()}%", f"%{term.lower()}%"])
+        clauses.append("(" + " OR ".join(like_parts) + ")")
+
+    where_sql = " AND ".join(clauses) if clauses else "TRUE"
+    params.append(1)
+    query = f"""
+        SELECT
+            AVG(NULLIF(c.width_mm, 0)) AS width_mm,
+            AVG(NULLIF(c.length_mm, 0)) AS length_mm,
+            AVG(NULLIF(c.height_mm, 0)) AS height_mm,
+            COUNT(*) AS count
+        FROM (
+            SELECT c.*
+            FROM library l
+            JOIN components c ON c.id = l.component_id
+            WHERE {where_sql}
+            UNION ALL
+            SELECT c.*
+            FROM components c
+            JOIN projects p ON p.id = c.project_id
+            WHERE p.status = 'done' AND {where_sql}
+            LIMIT %s
+        ) c
+    """
+    params = params[:-1] + params[:-1] + [params[-1]]
+    try:
+        cursor.execute(query, params)
+        row = cursor.fetchone()
+    except Exception as e:
+        logger.debug("Library grounding query failed: %s", e)
+        return dict(fallback)
+
+    if not row or not row.get("count"):
+        return dict(fallback)
+
+    return {
+        "width_m": _safe_dimension_m(row.get("width_mm"), fallback.get("width_m")),
+        "depth_m": _safe_dimension_m(row.get("length_mm"), fallback.get("depth_m")),
+        "height_m": _safe_dimension_m(row.get("height_mm"), fallback.get("height_m")),
+        "sample_count": int(row.get("count") or 0),
+    }
+
+
+def _find_wall_defaults(cursor):
+    fallback = {
+        "exterior_thickness_m": 0.20,
+        "interior_thickness_m": 0.12,
+    }
+    try:
+        cursor.execute("""
+            SELECT
+                AVG(CASE WHEN LOWER(COALESCE(w.function, '')) LIKE '%external%' THEN NULLIF(w.total_thickness, 0) END) AS ext_mm,
+                AVG(CASE WHEN LOWER(COALESCE(w.function, '')) NOT LIKE '%external%' THEN NULLIF(w.total_thickness, 0) END) AS int_mm
+            FROM wall_types w
+            JOIN components c ON c.id = w.component_id
+            JOIN projects p ON p.id = c.project_id
+            WHERE p.status = 'done'
+        """)
+        row = cursor.fetchone()
+    except Exception as e:
+        logger.debug("Wall grounding query failed: %s", e)
+        return fallback
+
+    if not row:
+        return fallback
+
+    return {
+        "exterior_thickness_m": _safe_dimension_m(row.get("ext_mm"), fallback["exterior_thickness_m"]),
+        "interior_thickness_m": _safe_dimension_m(row.get("int_mm"), fallback["interior_thickness_m"]),
+    }
+
+
+def ground_spec_with_library(spec):
+    if not isinstance(spec, dict):
+        return spec
+
+    grounded = json.loads(json.dumps(spec))
+    metadata = grounded.setdefault("metadata", {})
+
+    fixture_queries = {
+        "door": {"categories": ["IfcDoor"], "terms": ["door"], "fallback": {"width_m": 0.9, "depth_m": 0.1, "height_m": 2.1}},
+        "window": {"categories": ["IfcWindow"], "terms": ["window"], "fallback": {"width_m": 1.4, "depth_m": 0.15, "height_m": 1.2}},
+        "toilet": {"categories": ["IfcSanitaryTerminal"], "terms": ["toilet", "wc"], "fallback": {"width_m": 0.38, "depth_m": 0.65, "height_m": 0.45}},
+        "sink": {"categories": ["IfcSanitaryTerminal"], "terms": ["sink", "basin"], "fallback": {"width_m": 0.5, "depth_m": 0.4, "height_m": 0.85}},
+        "shower tray": {"categories": ["IfcSanitaryTerminal"], "terms": ["shower"], "fallback": {"width_m": 0.9, "depth_m": 0.9, "height_m": 0.1}},
+        "counter": {"categories": ["IfcFurniture", "IfcFurnishingElement"], "terms": ["counter", "worktop"], "fallback": {"width_m": 2.0, "depth_m": 0.6, "height_m": 0.9}},
+        "stove": {"categories": ["IfcElectricAppliance"], "terms": ["stove", "oven", "range"], "fallback": {"width_m": 0.6, "depth_m": 0.6, "height_m": 0.9}},
+        "fridge": {"categories": ["IfcElectricAppliance"], "terms": ["fridge", "refrigerator"], "fallback": {"width_m": 0.7, "depth_m": 0.7, "height_m": 1.8}},
+        "bed": {"categories": ["IfcFurniture"], "terms": ["bed"], "fallback": {"width_m": 1.6, "depth_m": 2.0, "height_m": 0.5}},
+        "wardrobe": {"categories": ["IfcFurniture"], "terms": ["wardrobe", "closet"], "fallback": {"width_m": 1.2, "depth_m": 0.6, "height_m": 2.1}},
+        "nightstand": {"categories": ["IfcFurniture"], "terms": ["nightstand", "side table"], "fallback": {"width_m": 0.45, "depth_m": 0.4, "height_m": 0.5}},
+        "sofa": {"categories": ["IfcFurniture"], "terms": ["sofa", "couch"], "fallback": {"width_m": 2.2, "depth_m": 0.9, "height_m": 0.8}},
+        "coffee table": {"categories": ["IfcFurniture"], "terms": ["coffee table"], "fallback": {"width_m": 1.0, "depth_m": 0.55, "height_m": 0.42}},
+        "tv unit": {"categories": ["IfcFurniture", "IfcFurnishingElement"], "terms": ["tv", "media"], "fallback": {"width_m": 1.5, "depth_m": 0.4, "height_m": 0.5}},
+        "table": {"categories": ["IfcFurniture"], "terms": ["table", "desk"], "fallback": {"width_m": 1.6, "depth_m": 0.9, "height_m": 0.75}},
+        "chair": {"categories": ["IfcFurniture"], "terms": ["chair", "seat"], "fallback": {"width_m": 0.45, "depth_m": 0.45, "height_m": 0.85}},
+        "desk": {"categories": ["IfcFurniture"], "terms": ["desk"], "fallback": {"width_m": 1.4, "depth_m": 0.7, "height_m": 0.75}},
+        "rack": {"categories": ["IfcElectricAppliance"], "terms": ["rack", "server"], "fallback": {"width_m": 0.6, "depth_m": 0.8, "height_m": 2.0}},
+        "heater": {"categories": ["IfcElectricAppliance"], "terms": ["heater", "boiler"], "fallback": {"width_m": 0.55, "depth_m": 0.55, "height_m": 1.5}},
+        "washer": {"categories": ["IfcElectricAppliance"], "terms": ["washer", "washing machine"], "fallback": {"width_m": 0.6, "depth_m": 0.6, "height_m": 0.9}},
+    }
+
+    grounding = {
+        "source": "library+database",
+        "wall_defaults": {
+            "exterior_thickness_m": 0.20,
+            "interior_thickness_m": 0.12,
+        },
+        "openings": {
+            "door_width": 0.9,
+            "door_height": 2.1,
+            "window_width": 1.4,
+            "window_height": 1.2,
+        },
+        "fixtures": {},
+    }
+
+    try:
+        with get_db_connection(cursor_factory=psycopg2.extras.RealDictCursor) as (conn, cursor):
+            grounding["wall_defaults"] = _find_wall_defaults(cursor)
+            door_dims = _find_component_defaults(cursor, ["IfcDoor"], ["door"], fixture_queries["door"]["fallback"])
+            window_dims = _find_component_defaults(cursor, ["IfcWindow"], ["window"], fixture_queries["window"]["fallback"])
+            grounding["openings"] = {
+                "door_width": float(door_dims.get("width_m") or 0.9),
+                "door_height": float(door_dims.get("height_m") or 2.1),
+                "window_width": float(window_dims.get("width_m") or 1.4),
+                "window_height": float(window_dims.get("height_m") or 1.2),
+            }
+            for name, query in fixture_queries.items():
+                grounding["fixtures"][name] = _find_component_defaults(
+                    cursor, query["categories"], query["terms"], query["fallback"]
+                )
+    except Exception as e:
+        logger.debug("Spec grounding failed: %s", e)
+
+    metadata["grounding"] = grounding
+    return grounded
+
+
 def run_pipeline(filepath):
     """Run pipeline on a single IFC file. Returns (project_id, stats, cached)."""
     filename = os.path.basename(filepath)
