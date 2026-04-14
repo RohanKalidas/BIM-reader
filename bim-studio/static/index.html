@@ -252,8 +252,12 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
 .view-btn:disabled{opacity:0.3;cursor:not-allowed;}
 #view-viewer-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;}
 #view-bar{display:flex;align-items:center;gap:12px;padding:0 18px;height:42px;background:var(--ink-light);border-bottom:1px solid var(--rule2);flex-shrink:0;}
-.view-bar-title{font-family:var(--display);font-size:14px;font-style:italic;color:#fff;flex:1;}
+.view-bar-title{font-family:var(--display);font-size:14px;font-style:italic;color:#fff;flex:1;min-width:0;}
 #view-status{font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.3);}
+#view-viewer-tools{display:flex;gap:8px;align-items:center;flex-shrink:0;margin-left:auto;}
+.view-tool-btn{font-family:var(--mono);font-size:8px;letter-spacing:0.08em;text-transform:uppercase;padding:7px 10px;border:1px solid var(--rule2);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.55);cursor:pointer;transition:all 0.12s;white-space:nowrap;}
+.view-tool-btn:hover{color:#fff;border-color:rgba(255,255,255,0.25);}
+.view-tool-btn.active{border-color:rgba(42,184,122,0.55);color:var(--green);background:rgba(42,184,122,0.1);}
 #gen-aps-viewer{flex:1;position:relative;background:#0d0d0d;}
 #xeokit-wrap{flex:1;position:relative;background:#0d0d0d;display:none;}
 #xeokit-canvas{width:100%;height:100%;display:block;outline:none;}
@@ -406,6 +410,10 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
     <div id="view-bar">
       <span class="view-bar-title" id="view-building-name">No model loaded</span>
       <span id="view-status">&#8212;</span>
+      <div id="view-viewer-tools">
+        <button type="button" class="view-tool-btn" id="btn-ghost-shell" title="Walls &amp; roof semi-transparent (this view only, not saved to IFC)">Ghost shell</button>
+        <button type="button" class="view-tool-btn" id="btn-reset-camera" title="Frame the whole model">Reset view</button>
+      </div>
     </div>
     <div id="gen-aps-viewer"><div id="gen-viewer-empty"><div class="gen-empty-headline">Awaiting generation</div><div class="gen-empty-sub">Describe a building in the Generate tab</div></div></div>
     <div id="xeokit-wrap">
@@ -463,6 +471,29 @@ async function initViewer(urn){
 }
 
 var xeokitViewer=null;
+var genXeokitModel=null;
+var genGhostMode=false;
+
+/** Walls + roof (and IFC ceilings) semi-transparent — viewer-only, does not change the IFC file. */
+function applyGenGhostMode(){
+  if(!xeokitViewer||!xeokitViewer.scene)return;
+  var scene=xeokitViewer.scene;
+  var metaScene=xeokitViewer.metaScene;
+  var shellTypes=new Set([
+    'IfcWall','IfcWallStandardCase','IfcWallElementedCase','IfcCurtainWall',
+    'IfcRoof','IfcCovering'
+  ]);
+  Object.values(scene.objects).forEach(function(obj){
+    if(!obj||obj.destroyed)return;
+    var meta=metaScene&&metaScene.metaObjects[obj.id];
+    var t=meta&&meta.type;
+    if(genGhostMode&&t&&shellTypes.has(t)){
+      obj.opacity=0.14;
+    }else if(obj.opacity!==undefined){
+      obj.opacity=1.0;
+    }
+  });
+}
 
 async function initGenViewer(filename){
   // filename = the generated IFC filename, served from /api/generate/download
@@ -546,6 +577,9 @@ async function initGenViewer(filename){
         obj.opacity=1.0;
       });
 
+      genXeokitModel=model;
+      applyGenGhostMode();
+
       // Fit camera with good isometric angle
       var aabb=model.aabb;
       var cx=(aabb[0]+aabb[3])/2;
@@ -579,6 +613,33 @@ async function initGenViewer(filename){
     document.getElementById('view-status').textContent='Error';
   }
 }
+
+(function(){
+  var bg=document.getElementById('btn-ghost-shell');
+  var br=document.getElementById('btn-reset-camera');
+  if(bg)bg.onclick=function(){
+    genGhostMode=!genGhostMode;
+    this.classList.toggle('active',genGhostMode);
+    applyGenGhostMode();
+  };
+  if(br)br.onclick=function(){
+    if(!xeokitViewer||!genXeokitModel||!genXeokitModel.aabb)return;
+    var aabb=genXeokitModel.aabb;
+    var cx=(aabb[0]+aabb[3])/2;
+    var cy=(aabb[1]+aabb[4])/2;
+    var cz=(aabb[2]+aabb[5])/2;
+    var dx=aabb[3]-aabb[0];
+    var dy=aabb[4]-aabb[1];
+    var dz=aabb[5]-aabb[2];
+    var size=Math.max(dx,dy,dz);
+    xeokitViewer.cameraFlight.flyTo({
+      eye:[cx+size*1.5, cy+size*1.2, cz+size*1.5],
+      look:[cx, cy*0.3, cz],
+      up:[0,1,0],
+      duration:0.65
+    });
+  };
+})();
 
 function buildGlobalIdMap(){
   viewer.getObjectTree(function(tree){
