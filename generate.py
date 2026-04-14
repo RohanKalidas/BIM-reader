@@ -331,7 +331,8 @@ def generate_ifc(spec, output_path=None):
         print(f"  Floor '{floor.get('name')}': {len(wall_plan)} walls, {len(rooms)} rooms")
 
         # ── Build walls using create_2pt_wall ────────────────────────
-        for w in wall_plan:            p1, p2 = w["p1"], w["p2"]
+        for w in wall_plan:            
+            p1, p2 = w["p1"], w["p2"]
             wall_name = f"Wall ({','.join(w['rooms'][:2])})"
             color = "ext_wall" if w["is_exterior"] else "int_wall"
             wall_thickness = w["thickness"]
