@@ -81,9 +81,23 @@ def color_rep(m, rep, color_key):
     if style and rep:
         try:
             ifcopenshell.api.run("style.assign_representation_styles", m,
-                shape_representation=rep, styles=[style])
-        except Exception:
+                shape_representation=rep, styles=[style])        except Exception:
             pass
+
+
+def get_grounding(spec):
+    """Return generation defaults learned from the component library when available."""
+    metadata = spec.get("metadata", {}) if isinstance(spec, dict) else {}
+    grounding = metadata.get("grounding", {}) if isinstance(metadata, dict) else {}
+    openings = dict(DEFAULT_GROUNDED_OPENINGS)
+    openings.update(grounding.get("openings", {}) if isinstance(grounding, dict) else {})
+    fixture_defaults = grounding.get("fixtures", {}) if isinstance(grounding, dict) else {}
+    wall_defaults = grounding.get("wall_defaults", {}) if isinstance(grounding, dict) else {}
+    return {
+        "openings": openings,
+        "fixtures": fixture_defaults if isinstance(fixture_defaults, dict) else {},
+        "wall_defaults": wall_defaults if isinstance(wall_defaults, dict) else {},
+    }
 
 # ── Simple geometry helpers (for furniture/MEP that API doesn't cover) ───────
 
