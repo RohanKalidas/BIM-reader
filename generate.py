@@ -469,6 +469,7 @@ def generate_ifc(spec, output_path=None):
 
             for fx_data in FIXTURES.get(rtype, []):
                 fname, fx, fy, fw, fd, fh, fcolor, fclass = fx_data
+                fw, fd, fh = grounded_fixture_dims(grounding, fname, (fw, fd, fh))
                 ax = inner_x + fx * inner_w - fw/2
                 ay = inner_y + fy * inner_d - fd/2
                 ax = max(inner_x, min(ax, inner_x + inner_w - fw))
