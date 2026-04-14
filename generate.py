@@ -53,6 +53,13 @@ COLORS = {
 
 _style_cache = {}
 
+DEFAULT_GROUNDED_OPENINGS = {
+    "door_width": 0.9,
+    "door_height": 2.1,
+    "window_width": 1.4,
+    "window_height": 1.2,
+}
+
 def get_style(m, color_key):
     """Get or create a named surface style."""
     if color_key not in COLORS:
