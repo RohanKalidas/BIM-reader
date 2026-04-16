@@ -12,6 +12,12 @@ All attribute access uses safe wrappers so the same code runs on both.
 
 import os
 import sys
+
+# Repo root on path so `extractor.*` imports work when running this file as a script
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
 import logging
 import ifcopenshell
 import ifcopenshell.util.element as util
@@ -22,6 +28,7 @@ from datetime import datetime
 from collections import defaultdict
 
 from database.db import get_db_connection
+from extractor.geometry_cache import GeometryCacheWriter
 
 logger = logging.getLogger(__name__)
 
@@ -30,11 +37,17 @@ COMMIT_BATCH_SIZE = 100
 
 # ── Database helpers ─────────────────────────────────────────────────────────
 
-def create_project(cursor, filename):
-    cursor.execute(
-        "INSERT INTO projects (name, filename, status) VALUES (%s, %s, 'processing') RETURNING id",
-        (filename.replace(".ifc", ""), filename)
-    )
+def create_project(cursor, filename, ifc_schema):
+    try:
+        cursor.execute(
+            "INSERT INTO projects (name, filename, status, ifc_schema) VALUES (%s, %s, 'processing', %s) RETURNING id",
+            (filename.replace(".ifc", ""), filename, ifc_schema),
+        )
+    except Exception:
+        cursor.execute(
+            "INSERT INTO projects (name, filename, status) VALUES (%s, %s, 'processing') RETURNING id",
+            (filename.replace(".ifc", ""), filename),
+        )
     return cursor.fetchone()[0]
 
 
@@ -135,11 +148,37 @@ def get_type_name(element):
     return ""
 
 
+def _storey_for_structure(structure):
+    """
+    Walk up the spatial tree until we hit an IfcBuildingStorey.
+    Furniture, fixtures, etc. are often contained in IfcSpace, which is
+    aggregated into IfcBuildingStorey via IfcRelAggregates.
+    """
+    seen = set()
+    cur = structure
+    while cur is not None and cur.id() not in seen:
+        seen.add(cur.id())
+        if cur.is_a('IfcBuildingStorey'):
+            return cur
+        # IfcSpace / nested structure is Decomposed from its parent via IfcRelAggregates.
+        parent = None
+        try:
+            for rel in (cur.Decomposes or []):
+                if rel.is_a('IfcRelAggregates'):
+                    parent = rel.RelatingObject
+                    break
+        except Exception:
+            parent = None
+        cur = parent
+    return None
+
+
 def get_storey(element):
     """
     Get (level_name, elevation) for an element.
     IFC4: element.ContainedInStructure
     IFC2X3: element.ContainedIn
+    Handles elements contained in IfcSpace by walking up to the parent IfcBuildingStorey.
     """
     for attr in ('ContainedInStructure', 'ContainedIn'):
         try:
@@ -147,10 +186,12 @@ def get_storey(element):
             if not rels:
                 continue
             for rel in rels:
-                if rel.is_a('IfcRelContainedInSpatialStructure'):
-                    storey = rel.RelatingStructure
-                    if storey.is_a('IfcBuildingStorey'):
-                        return storey.Name, storey.Elevation
+                if not rel.is_a('IfcRelContainedInSpatialStructure'):
+                    continue
+                structure = rel.RelatingStructure
+                storey = _storey_for_structure(structure)
+                if storey is not None:
+                    return storey.Name, storey.Elevation
         except Exception as e:
             logger.debug("get_storey attr=%s failed for %s: %s", attr, element.GlobalId, e)
     return None, None
@@ -432,9 +473,15 @@ def extract(filepath):
     print(f"Schema: {schema}")
 
     with get_db_connection() as (conn, cursor):
-        project_id = create_project(cursor, filename)
+        project_id = create_project(cursor, filename, schema)
+        try:
+            cursor.execute("UPDATE projects SET ifc_schema = %s WHERE id = %s", (schema, project_id))
+        except Exception:
+            pass
         conn.commit()  # commit project row so it exists even if we crash
         print(f"Created project record (id={project_id})")
+
+        geom_cache = GeometryCacheWriter(project_id, schema)
 
         counts                   = defaultdict(int)
         revit_id_to_component_id = {}
@@ -523,6 +570,15 @@ def extract(filepath):
             )
             revit_id_to_component_id[revit_id] = component_id
 
+            if geom_cache.try_add(model, element):
+                try:
+                    cursor.execute(
+                        "UPDATE components SET has_geometry = TRUE WHERE id = %s",
+                        (component_id,),
+                    )
+                except Exception as e:
+                    logger.debug("has_geometry update skipped: %s", e)
+
             # ── Spatial data ─────────────────────────────────────────────
             pos_x, pos_y, pos_z, rot_x, rot_y, rot_z = extract_placement(element)
             bounding_box = extract_bounding_box(element)
@@ -575,6 +631,10 @@ def extract(filepath):
             if processed % COMMIT_BATCH_SIZE == 0:
                 conn.commit()
                 print(f"  Committed {processed} components...")
+
+        geom_cache.write_if_nonempty()
+        if geom_cache.count:
+            print(f"  Geometry cache: {geom_cache.count} elements with shape data → {geom_cache.path}")
 
         # ── Spaces ───────────────────────────────────────────────────────
         print("Extracting spaces...")

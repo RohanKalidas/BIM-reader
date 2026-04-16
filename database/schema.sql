@@ -8,7 +8,8 @@ CREATE TABLE projects (
     filename        TEXT NOT NULL,
     uploaded_at     TIMESTAMP DEFAULT NOW(),
     processed_at    TIMESTAMP,
-    status          TEXT DEFAULT 'pending'
+    status          TEXT DEFAULT 'pending',
+    ifc_schema      TEXT DEFAULT 'IFC4'
 );
 
 -- The core table. Every extracted component from every project lives here.
@@ -26,6 +27,7 @@ CREATE TABLE components (
     area_m2         FLOAT,
     volume_m3       FLOAT,
     quality_score   FLOAT,
+    has_geometry    BOOLEAN DEFAULT FALSE,
     created_at      TIMESTAMP DEFAULT NOW()
 );
 
@@ -116,6 +118,7 @@ CREATE INDEX idx_components_project     ON components(project_id);
 CREATE INDEX idx_components_category    ON components(category);
 CREATE INDEX idx_components_family      ON components(family_name);
 CREATE INDEX idx_components_parameters  ON components USING GIN(parameters);
+CREATE INDEX idx_components_has_geometry ON components(has_geometry) WHERE has_geometry = TRUE;
 CREATE INDEX idx_spatial_component      ON spatial_data(component_id);
 CREATE INDEX idx_relationships_project  ON relationships(project_id);
 CREATE INDEX idx_relationships_a        ON relationships(component_a_id);

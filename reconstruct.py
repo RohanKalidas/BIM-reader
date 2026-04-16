@@ -6,6 +6,11 @@ Uses centralized database module with context managers.
 
 import os
 import sys
+
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
 import math
 import json
 import logging
@@ -17,6 +22,12 @@ import numpy as np
 from datetime import datetime
 
 from database.db import get_db_connection
+from extractor.geometry_cache import (
+    open_geometry_cache,
+    copy_cached_geometry_to_element,
+    copy_unit_assignment_to_model,
+    default_unit_assignment,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +42,22 @@ def load_project(cursor, project_id):
 
 def load_components(cursor, project_id):
     """Full component + spatial data, ordered bottom-up so floors are created first."""
-    cursor.execute("""
+    sql = """
+        SELECT
+            c.id, c.category, c.family_name, c.type_name,
+            c.revit_id, c.parameters,
+            COALESCE(c.has_geometry, FALSE) AS has_geometry,
+            c.width_mm, c.height_mm, c.length_mm,
+            c.area_m2, c.volume_m3,
+            s.pos_x, s.pos_y, s.pos_z,
+            s.rot_x, s.rot_y, s.rot_z,
+            s.bounding_box, s.level, s.elevation
+        FROM components c
+        LEFT JOIN spatial_data s ON s.component_id = c.id
+        WHERE c.project_id = %s
+        ORDER BY COALESCE(s.pos_z, 0), c.category
+    """
+    sql_legacy = """
         SELECT
             c.id, c.category, c.family_name, c.type_name,
             c.revit_id, c.parameters,
@@ -44,7 +70,15 @@ def load_components(cursor, project_id):
         LEFT JOIN spatial_data s ON s.component_id = c.id
         WHERE c.project_id = %s
         ORDER BY COALESCE(s.pos_z, 0), c.category
-    """, (project_id,))
+    """
+    try:
+        cursor.execute(sql, (project_id,))
+    except Exception:
+        cursor.execute(sql_legacy, (project_id,))
+        rows = cursor.fetchall()
+        for r in rows:
+            r["has_geometry"] = False
+        return rows
     return cursor.fetchall()
 
 
@@ -99,13 +133,15 @@ def euler_to_matrix(rot_x_deg, rot_y_deg, rot_z_deg):
     return r
 
 
-def make_ifc_placement(model, pos_x, pos_y, pos_z, rot_x, rot_y, rot_z):
+def make_ifc_placement(model, pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, scale=1.0):
     """
     Build an IfcLocalPlacement from stored position and Euler angles.
+    `scale` converts DB coordinates (in source file units, typically mm) into
+    the output model's length unit (e.g. 0.001 if output is metres and DB is mm).
     """
-    x = float(pos_x or 0.0)
-    y = float(pos_y or 0.0)
-    z = float(pos_z or 0.0)
+    x = float(pos_x or 0.0) * scale
+    y = float(pos_y or 0.0) * scale
+    z = float(pos_z or 0.0) * scale
 
     r = euler_to_matrix(rot_x, rot_y, rot_z)
 
@@ -115,6 +151,231 @@ def make_ifc_placement(model, pos_x, pos_y, pos_z, rot_x, rot_y, rot_z):
 
     axis2 = model.createIfcAxis2Placement3D(location, axis, ref_dir)
     return model.createIfcLocalPlacement(None, axis2)
+
+
+# ---------------------------------------------------------------------------
+# Placeholder geometry (viewers need Product.Representation)
+# ---------------------------------------------------------------------------
+
+def _to_float(value, default=None):
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+_SI_PREFIX_FACTORS = {
+    None: 1.0, "EXA": 1e18, "PETA": 1e15, "TERA": 1e12, "GIGA": 1e9,
+    "MEGA": 1e6, "KILO": 1e3, "HECTO": 1e2, "DECA": 1e1,
+    "DECI": 1e-1, "CENTI": 1e-2, "MILLI": 1e-3, "MICRO": 1e-6,
+    "NANO": 1e-9, "PICO": 1e-12, "FEMTO": 1e-15, "ATTO": 1e-18,
+}
+
+
+def length_unit_metres_factor(model) -> float:
+    """
+    Return 1 output-length-unit expressed in metres, e.g. 0.001 for mm, 1.0 for m.
+    DB stores values in the source file units (which the output also uses), so to
+    keep this number-space consistent we use 1.0 (no conversion) almost always.
+    """
+    try:
+        proj = model.by_type("IfcProject")[0]
+        for u in (proj.UnitsInContext.Units or []):
+            if not u.is_a("IfcSIUnit"):
+                continue
+            if u.UnitType != "LENGTHUNIT":
+                continue
+            prefix = getattr(u, "Prefix", None)
+            return _SI_PREFIX_FACTORS.get(prefix, 1.0)
+    except Exception:
+        pass
+    return 1.0
+
+
+# Cap placeholder boxes so bad bbox / unit metadata cannot create km-scale solids.
+# Expressed in metres — actual cap in output units is derived from `length_unit_metres_factor`.
+_MAX_PLACEHOLDER_DIM_M = 50.0
+_MIN_PLACEHOLDER_DIM_M = 0.05
+# Default when no dimension info is available (metres).
+_DEFAULT_PLACEHOLDER_DIM_M = 0.2
+
+# These are voids, logical hosts, or non-visible containers. Drawing a placeholder
+# box for them is what produces "extra artefacts" (phantom cubes, transparent boxes
+# on roofs, discs at the origin). Leave them without a Body representation.
+_NO_PLACEHOLDER_CATEGORIES = {
+    "IfcOpeningElement",       # voids, not solids
+    "IfcCurtainWall",          # host only; real geometry is on IfcMember/IfcPlate
+    "IfcSpace",                # abstract volume; placeholders look like stray boxes
+    "IfcElementAssembly",      # container for children that carry their own geometry
+    "IfcVirtualElement",       # by definition has no physical geometry
+    "IfcGrid",
+    "IfcAnnotation",
+    "IfcOpeningStandardCase",
+}
+
+
+def _dims_in_output_units(comp, unit_m):
+    """
+    Return (width, depth, height, has_real_dims) in the output file's length unit.
+    DB stores width_mm/height_mm/length_mm literally in millimetres, and bounding
+    box values in the source IFC's length unit (mm for Revit exports). We convert
+    to metres first (internal), then scale into output units.
+    `unit_m` = length of 1 output unit expressed in metres (e.g. 0.001 for mm).
+    """
+    to_m_mm = 0.001
+    w_m = (_to_float(comp.get("width_mm")) or 0) * to_m_mm or None
+    h_m = (_to_float(comp.get("height_mm")) or 0) * to_m_mm or None
+    l_m = (_to_float(comp.get("length_mm")) or 0) * to_m_mm or None
+
+    bb = comp.get("bounding_box") or {}
+    bb_w = bb_d = bb_h = None
+    if isinstance(bb, dict) and bb:
+        # Bounding box is in source file units. Assume mm (typical Revit export).
+        # If someone feeds a metres-based IFC this will overestimate 1000x; we cap
+        # below so it won't blow out the scene.
+        mx, mn = _to_float(bb.get("max_x")), _to_float(bb.get("min_x"))
+        my, ny = _to_float(bb.get("max_y")), _to_float(bb.get("min_y"))
+        mz, nz = _to_float(bb.get("max_z")), _to_float(bb.get("min_z"))
+        if mx is not None and mn is not None:
+            bb_w = (mx - mn) * to_m_mm
+        if my is not None and ny is not None:
+            bb_d = (my - ny) * to_m_mm
+        if mz is not None and nz is not None:
+            bb_h = (mz - nz) * to_m_mm
+
+    width_m = w_m or bb_w
+    depth_m = l_m or bb_d or w_m
+    height_m = h_m or bb_h
+    has_real_dims = any(v is not None and v > 0 for v in (width_m, depth_m, height_m))
+
+    width_m = width_m or _DEFAULT_PLACEHOLDER_DIM_M
+    depth_m = depth_m or _DEFAULT_PLACEHOLDER_DIM_M
+    height_m = height_m or _DEFAULT_PLACEHOLDER_DIM_M
+
+    width_m = min(max(width_m, _MIN_PLACEHOLDER_DIM_M), _MAX_PLACEHOLDER_DIM_M)
+    depth_m = min(max(depth_m, _MIN_PLACEHOLDER_DIM_M), _MAX_PLACEHOLDER_DIM_M)
+    height_m = min(max(height_m, _MIN_PLACEHOLDER_DIM_M), _MAX_PLACEHOLDER_DIM_M)
+
+    # Scale metres into the output model's length unit (e.g. 1m -> 1000 when unit is mm).
+    to_out = 1.0 / (unit_m or 1.0)
+    return (
+        width_m * to_out,
+        depth_m * to_out,
+        height_m * to_out,
+        has_real_dims,
+    )
+
+
+def _dims_from_component(comp):
+    """Legacy helper (returns metres). Kept for callers that still want metres."""
+    w, d, h, has = _dims_in_output_units(comp, 1.0)
+    return w, d, h, has
+
+
+def _component_dims_m(comp):
+    """Backwards-compatible tuple-only dims getter (metres)."""
+    w, d, h, _ = _dims_from_component(comp)
+    return w, d, h
+
+
+def should_attach_placeholder(comp) -> bool:
+    """
+    Decide whether to emit a placeholder box for a component that has no cached
+    source geometry. Suppresses the main sources of visible artefacts in viewers.
+    """
+    category = comp.get("category") or ""
+    if category in _NO_PLACEHOLDER_CATEGORIES:
+        return False
+    # Skip MEP flow elements with no dims — they become tiny random boxes.
+    if category.startswith("IfcFlow") or category in {
+        "IfcDuctSegment",
+        "IfcDuctFitting",
+        "IfcPipeSegment",
+        "IfcPipeFitting",
+        "IfcCableCarrierSegment",
+        "IfcCableCarrierFitting",
+    }:
+        _, _, _, has_dims = _dims_from_component(comp)
+        if not has_dims:
+            return False
+    # If nothing but the 0.2m default would be used AND we have no placement,
+    # we'd be planting identical cubes on top of each other at the origin.
+    _, _, _, has_dims = _dims_from_component(comp)
+    no_placement = comp.get("pos_x") is None
+    if no_placement and not has_dims:
+        return False
+    return True
+
+
+def create_geometry_context(model, schema="IFC4"):
+    """IfcGeometricRepresentationContext + Body context (subcontext on IFC4)."""
+    origin = model.create_entity("IfcCartesianPoint", Coordinates=(0.0, 0.0, 0.0))
+    wcs = model.create_entity("IfcAxis2Placement3D", Location=origin, Axis=None, RefDirection=None)
+    ctx = model.create_entity(
+        "IfcGeometricRepresentationContext",
+        ContextIdentifier="Model",
+        ContextType="Model",
+        CoordinateSpaceDimension=3,
+        Precision=1.0e-5,
+        WorldCoordinateSystem=wcs,
+        TrueNorth=None,
+    )
+    if "IFC4" in schema or "IFC4X3" in schema:
+        body = model.create_entity(
+            "IfcGeometricRepresentationSubContext",
+            ContextIdentifier="Body",
+            ContextType="Model",
+            ParentContext=ctx,
+            TargetView="MODEL_VIEW",
+        )
+    else:
+        body = ctx
+    return ctx, body
+
+
+def attach_placeholder_extrusion(model, body_context, element, comp, unit_m=1.0):
+    """
+    Attach a simple extruded rectangle so the product has Body geometry.
+    Dimensions are emitted in the output file's length unit.
+    """
+    width, depth, height, _ = _dims_in_output_units(comp, unit_m)
+
+    p0 = model.create_entity("IfcCartesianPoint", Coordinates=(0.0, 0.0))
+    p1 = model.create_entity("IfcCartesianPoint", Coordinates=(width, 0.0))
+    p2 = model.create_entity("IfcCartesianPoint", Coordinates=(width, depth))
+    p3 = model.create_entity("IfcCartesianPoint", Coordinates=(0.0, depth))
+    p4 = model.create_entity("IfcCartesianPoint", Coordinates=(0.0, 0.0))
+    polyline = model.create_entity("IfcPolyline", Points=[p0, p1, p2, p3, p4])
+    profile = model.create_entity("IfcArbitraryClosedProfileDef", ProfileType="AREA", OuterCurve=polyline)
+
+    pos = model.create_entity(
+        "IfcAxis2Placement3D",
+        Location=model.create_entity("IfcCartesianPoint", Coordinates=(0.0, 0.0, 0.0)),
+        Axis=model.create_entity("IfcDirection", DirectionRatios=(0.0, 0.0, 1.0)),
+        RefDirection=model.create_entity("IfcDirection", DirectionRatios=(1.0, 0.0, 0.0)),
+    )
+    solid = model.create_entity(
+        "IfcExtrudedAreaSolid",
+        SweptArea=profile,
+        Position=pos,
+        ExtrudedDirection=model.create_entity("IfcDirection", DirectionRatios=(0.0, 0.0, 1.0)),
+        Depth=height,
+    )
+    shape = model.create_entity(
+        "IfcShapeRepresentation",
+        ContextOfItems=body_context,
+        RepresentationIdentifier="Body",
+        RepresentationType="SweptSolid",
+        Items=[solid],
+    )
+    element.Representation = model.create_entity(
+        "IfcProductDefinitionShape",
+        Name=None,
+        Description=None,
+        Representations=[shape],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -432,9 +693,16 @@ def reconstruct(project_id, output_path=None):
               f"{len(relationships)} relationships, "
               f"{len(spaces)} spaces")
 
+    ifc_schema = project.get("ifc_schema") or "IFC4"
+    geom_cache_model = open_geometry_cache(project_id)
+    if geom_cache_model:
+        n_cached = sum(1 for c in components if c.get("has_geometry"))
+        print(f"Geometry cache open ({n_cached} components may use source shapes)")
+
     # --- Build the IFC model ---
     print("\nBuilding IFC model...")
-    model = ifcopenshell.file(schema="IFC4")
+    model = ifcopenshell.file(schema=ifc_schema)
+    geom_context, body_context = create_geometry_context(model, ifc_schema)
 
     # Owner history
     application = model.create_entity(
@@ -461,15 +729,22 @@ def reconstruct(project_id, output_path=None):
     )
 
     # Project -> Site -> Building hierarchy
-    units = model.create_entity(
-        "IfcUnitAssignment",
-        Units=[
-            model.create_entity("IfcSIUnit", UnitType="LENGTHUNIT",    Name="METRE"),
-            model.create_entity("IfcSIUnit", UnitType="AREAUNIT",      Name="SQUARE_METRE"),
-            model.create_entity("IfcSIUnit", UnitType="VOLUMEUNIT",    Name="CUBIC_METRE"),
-            model.create_entity("IfcSIUnit", UnitType="PLANEANGLEUNIT",Name="RADIAN"),
-        ]
-    )
+    # Match source IFC length unit (e.g. mm) so placement + cached geometry numbers agree.
+    units = None
+    if geom_cache_model:
+        units = copy_unit_assignment_to_model(model, geom_cache_model)
+    if units is None:
+        src_name = os.path.basename(project.get("filename") or "")
+        if src_name:
+            src_path = os.path.join(_ROOT, "uploads", src_name)
+            if os.path.isfile(src_path):
+                try:
+                    src_ifc = ifcopenshell.open(src_path)
+                    units = copy_unit_assignment_to_model(model, src_ifc)
+                except Exception as e:
+                    logger.debug("Could not read units from %s: %s", src_path, e)
+    if units is None:
+        units = default_unit_assignment(model)
     world_origin = model.create_entity("IfcCartesianPoint", Coordinates=(0.0, 0.0, 0.0))
     world_axis   = model.create_entity(
         "IfcAxis2Placement3D",
@@ -482,8 +757,17 @@ def reconstruct(project_id, output_path=None):
         GlobalId=ifcopenshell.guid.new(),
         OwnerHistory=owner_history,
         Name=project["name"],
-        UnitsInContext=units
+        RepresentationContexts=[geom_context],
+        UnitsInContext=units,
     )
+
+    # One output length unit expressed in metres (e.g. 0.001 for mm, 1.0 for m).
+    unit_m = length_unit_metres_factor(model)
+    # DB coordinates (pos_x, elevation, bbox, etc.) are in the source file's length
+    # unit, and the output declares the same unit. So the scale from DB → output is 1.
+    # `width_mm / height_mm / length_mm` are always mm and handled inside the placeholder.
+    db_to_out_scale = 1.0
+    print(f"Output length unit: 1 unit = {unit_m} m  (DB→output scale = {db_to_out_scale})")
     ifc_site = model.create_entity(
         "IfcSite",
         GlobalId=ifcopenshell.guid.new(),
@@ -527,7 +811,9 @@ def reconstruct(project_id, output_path=None):
             seen_levels[level] = elevation
 
     for level_name, elevation in sorted(seen_levels.items(), key=lambda x: (x[1] or 0)):
-        elev = float(elevation or 0.0)
+        e = _to_float(elevation, 0.0) or 0.0
+        # DB stores elevation in source units (same as output), no conversion needed.
+        elev = e * db_to_out_scale
         storey_placement = model.create_entity(
             "IfcLocalPlacement",
             PlacementRelTo=world_placement,
@@ -575,13 +861,26 @@ def reconstruct(project_id, output_path=None):
             placement = make_ifc_placement(
                 model,
                 comp["pos_x"], comp["pos_y"], comp["pos_z"],
-                comp["rot_x"], comp["rot_y"], comp["rot_z"]
+                comp["rot_x"], comp["rot_y"], comp["rot_z"],
+                scale=db_to_out_scale,
             )
         else:
             placement = world_placement
             skipped += 1
 
         element = create_element(model, category, guid, name, placement)
+        geom_ok = False
+        if comp.get("has_geometry") and geom_cache_model and guid:
+            try:
+                cache_el = geom_cache_model.by_guid(guid)
+                if cache_el is not None:
+                    geom_ok = copy_cached_geometry_to_element(
+                        model, body_context, cache_el, element, owner_history
+                    )
+            except Exception as e:
+                logger.debug("Geometry cache copy failed for %s: %s", guid, e)
+        if not geom_ok and should_attach_placeholder(comp):
+            attach_placeholder_extrusion(model, body_context, element, comp, unit_m=unit_m)
         component_map[db_id] = element
 
         level = comp["level"]
@@ -615,8 +914,7 @@ def reconstruct(project_id, output_path=None):
 
     # --- Write output ---
     if not output_path:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_path = f"reconstructed_project_{project_id}_{timestamp}.ifc"
+        output_path = f"reconstructed_with_geom_{project_id}.ifc"
 
     model.write(output_path)
 
