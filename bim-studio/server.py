@@ -733,11 +733,56 @@ ROOM LAYOUT STRATEGY:
 5. Public rooms (living, kitchen, dining) go in one row
 6. Corridors/hallways span the full building width as their own row
 7. Private rooms (bedrooms, bathrooms) go in another row
-8. Every room gets exterior=true if it touches the building perimeter
+8. ALWAYS include a small utility / mechanical room (1.2m x 1.5m minimum) somewhere interior. Name it "Utility", "Mechanical", or "Mech". The generator places the air handler, water heater, and electrical panel here. Without it they get placed in the nearest room, which looks odd.
+9. Every room gets exterior=true if it touches the building perimeter
 
-ARCHITECTURE STYLE (metadata) — REQUIRED when the user names a style:
-- "architectural_style": short string, e.g. "ranch", "neoclassical", "colonial", "craftsman", "modern", "contemporary", "mediterranean", "industrial". The generator adds simple exterior massing hints (porch, portico, canopy) — not full detail, but not a plain box when a style is set.
-- "front_elevation": which side of the footprint is the main entrance — "south", "north", "east", or "west" (default "south"). Must match how rooms are laid out (public / entry side).
+MEP IS AUTOMATIC — do not list ducts, pipes, outlets, panels, diffusers, or
+smoke detectors in the rooms array. The generator populates every
+conditioned room with:
+- 1 ceiling supply diffuser + branch duct (IfcAirTerminal + IfcDuctSegment)
+- 1 return grille for rooms > 9 m²
+- 1 ceiling light fixture + 2 wall outlets (IfcLightFixture, IfcOutlet)
+- 1 smoke detector (IfcFireSuppressionTerminal)
+- In wet rooms: cold + hot water pipes and a DWV stack (IfcPipeSegment)
+- Central equipment in the utility room: air handler (IfcUnitaryEquipment),
+  water heater (IfcTank), electrical panel (IfcElectricDistributionBoard)
+- Outdoor condenser on a pad beside the building
+- For commercial buildings: sprinkler head per room (IfcFireSuppressionTerminal)
+
+In your briefing to the user, describe the MEP system ("central split-system
+heat pump, 2.5 tons sized for 800 sqft in zone 2A climate; standard 40-gal
+electric water heater; 100A main panel") so they know what they're getting.
+Do NOT mention every duct or outlet — just the sized equipment.
+
+ARCHITECTURE STYLE (metadata) — ALWAYS set this. Never leave the building style-less.
+
+REQUIRED fields:
+- "architectural_style": one of the built-in keys below, OR any descriptive phrase the user gives (the generator has fuzzy aliasing — "queen anne" -> victorian, "greek revival" -> neoclassical, "tuscan" -> mediterranean, "mcm" -> mid_century_modern, etc.).
+  Built-in keys:
+    victorian, tudor, colonial, neoclassical, craftsman, farmhouse, ranch,
+    modern, contemporary, mid_century_modern, industrial,
+    mediterranean, spanish_revival, cape_cod,
+    commercial_office, warehouse
+- "front_elevation": "south" | "north" | "east" | "west". Must match how rooms are laid out (public / entry side).
+- "style_palette": an object of hex colors overriding the style defaults. Use this when the user specifies colors ("dark green Victorian", "white modern with black trim"). Example:
+    "style_palette": {
+      "ext_wall": "#AE4C5D",
+      "trim": "#F0E8D6",
+      "roof": "#3B2F2F",
+      "accent": "#5A2F4A",
+      "window_glass": "#8FC8E8"
+    }
+  Keys: ext_wall, int_wall, floor, roof, ceiling, trim, accent, window_glass. Any omitted key falls back to the style default.
+- "style_notes": 1-2 sentences explaining the massing/massing choices ("steep cross-gable with full-width wraparound porch, turret at southwest corner"). Helps the user understand the design decision.
+
+PICKING A STYLE WHEN THE USER DOESN'T NAME ONE:
+- Florida / Gulf coast residential -> mediterranean or spanish_revival
+- New England residential -> cape_cod or colonial
+- Midwest / Texas suburban -> ranch or farmhouse
+- Urban loft conversion -> industrial
+- Office / tech HQ -> commercial_office or modern
+- When the user says "classic", "traditional", or "old style" -> colonial or victorian depending on era cues
+- Default if truly ambiguous -> contemporary
 
 FIXTURE TYPES (auto-populated based on room name):
 - "Living Room" / "Lounge" — sofa, coffee table, TV stand, light
@@ -784,13 +829,21 @@ EXAMPLE SPEC (one-bedroom apartment, 8m x 9.5m footprint):
         {"name":"Kitchen",      "x":5.0, "y":0.0, "width":3.0, "depth":4.0, "exterior":true},
         {"name":"Hallway",      "x":0.0, "y":4.0, "width":8.0, "depth":1.5, "exterior":false},
         {"name":"Bedroom",      "x":0.0, "y":5.5, "width":4.5, "depth":4.0, "exterior":true},
-        {"name":"Bathroom",     "x":4.5, "y":5.5, "width":3.5, "depth":4.0, "exterior":true}
+        {"name":"Bathroom",     "x":4.5, "y":5.5, "width":2.0, "depth":4.0, "exterior":true},
+        {"name":"Utility",      "x":6.5, "y":5.5, "width":1.5, "depth":4.0, "exterior":true}
       ]
     }
   ],
   "metadata": {
     "architectural_style": "ranch",
     "front_elevation": "south",
+    "style_palette": {
+      "ext_wall": "#D1BF94",
+      "trim": "#E6DCBE",
+      "accent": "#80593A",
+      "roof": "#5A4F40"
+    },
+    "style_notes": "Long low-profile ranch with hip roof, deep eaves, wide horizontal windows facing the south garden.",
     "location": "City, Country",
     "building_type": "Residential",
     "estimated_cost_usd": 300000,
