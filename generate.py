@@ -32,24 +32,76 @@ logger = logging.getLogger(__name__)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # ── Color palette ────────────────────────────────────────────────────────────
+# COLORS is rebuilt per-generation inside generate_ifc() from the style system,
+# but these are the defaults when no style is set.
 
-COLORS = {
+DEFAULT_COLORS = {
+    # architecture
     "ext_wall":     (0.92, 0.87, 0.78, 0.0),
     "int_wall":     (0.95, 0.95, 0.93, 0.0),
-    "floor":        (0.75, 0.72, 0.68, 0.0),
-    "roof":         (0.55, 0.50, 0.45, 0.0),
+    "floor":        (0.72, 0.64, 0.50, 0.0),   # warm oak default (was beige)
+    "roof":         (0.45, 0.40, 0.36, 0.0),
+    "ceiling":      (0.96, 0.96, 0.95, 0.0),
     "door":         (0.55, 0.35, 0.17, 0.0),
-    "window":       (0.6,  0.78, 0.92, 0.3),
-    "furniture":    (0.7,  0.6,  0.45, 0.0),
+    "window":       (0.55, 0.78, 0.92, 0.20),  # was 0.3 transparency — reduced so it shows
+    "window_frame": (0.25, 0.25, 0.26, 0.0),
+    "trim":         (0.98, 0.97, 0.94, 0.0),
+
+    # furniture / appliances
+    "furniture":    (0.70, 0.60, 0.45, 0.0),
     "bed":          (0.85, 0.82, 0.78, 0.0),
     "sofa":         (0.45, 0.50, 0.55, 0.0),
     "appliance":    (0.85, 0.85, 0.87, 0.0),
     "sanitaryware": (0.97, 0.97, 0.97, 0.0),
-    "duct":         (0.5,  0.7,  0.85, 0.0),
-    "pipe":         (0.3,  0.5,  0.75, 0.0),
-    "light":        (1.0,  0.95, 0.8,  0.0),
-    "ceiling":      (0.96, 0.96, 0.96, 0.0),
+
+    # HVAC — blues
+    "duct":             (0.40, 0.62, 0.85, 0.0),  # legacy key
+    "duct_supply":      (0.30, 0.62, 0.88, 0.0),  # cool blue for supply
+    "duct_return":      (0.85, 0.55, 0.30, 0.0),  # warm orange for return
+    "air_terminal":     (0.70, 0.86, 0.98, 0.0),  # supply diffuser
+    "air_terminal_return": (0.98, 0.82, 0.60, 0.0),
+    "hvac_equipment":   (0.55, 0.62, 0.72, 0.0),  # AHU / condenser grey-blue
+
+    # Plumbing — cold/hot/waste
+    "pipe":             (0.40, 0.55, 0.75, 0.0),
+    "pipe_cold":        (0.30, 0.55, 0.88, 0.0),  # cold water = blue
+    "pipe_hot":         (0.90, 0.30, 0.30, 0.0),  # hot water = red
+    "pipe_dwv":         (0.40, 0.35, 0.30, 0.0),  # waste = dark brown
+    "plumbing_equipment": (0.75, 0.75, 0.78, 0.0),
+
+    # Electrical — yellows / cream
+    "light":        (1.00, 0.95, 0.70, 0.0),
+    "outlet":       (0.95, 0.88, 0.50, 0.0),
+    "elec_panel":   (0.35, 0.30, 0.28, 0.0),
+
+    # Fire — reds
+    "fire_device":  (0.90, 0.25, 0.22, 0.0),
+
+    # Exterior accents
+    "accent":       (0.55, 0.35, 0.25, 0.0),
 }
+
+# The active palette for this generation (mutated by _build_palette).
+COLORS = dict(DEFAULT_COLORS)
+
+
+def _build_palette(metadata):
+    """
+    Build the active COLORS palette from metadata.architectural_style +
+    metadata.style_palette (hex overrides from the AI).
+
+    Falls back to DEFAULT_COLORS if styles.py isn't importable.
+    """
+    palette = dict(DEFAULT_COLORS)
+    try:
+        from styles import palette_from_metadata
+        style_palette = palette_from_metadata(metadata or {})
+        # style_palette keys map onto our COLORS keys where they exist.
+        for k, v in style_palette.items():
+            palette[k] = v
+    except Exception as e:
+        logger.debug("styles.py not available or failed: %s", e)
+    return palette
 
 _style_cache = {}
 
@@ -360,7 +412,21 @@ def generate_ifc(spec, output_path=None):
     grounding = get_grounding(spec)
     has_rooms = any(f.get("rooms") for f in floors)
 
-    print(f"Generating IFC: {name}")
+    # Rebuild the active COLORS palette from the architectural style.
+    # This mutates the module-level COLORS dict so get_style() picks up the new values.
+    global COLORS
+    COLORS = _build_palette(metadata)
+
+    style_key = ""
+    try:
+        from styles import resolve_style
+        style_key = resolve_style(metadata.get("architectural_style", ""))
+    except Exception:
+        pass
+    if style_key:
+        print(f"Generating IFC: {name}  |  style={style_key}")
+    else:
+        print(f"Generating IFC: {name}")
 
     # ── Setup via API ────────────────────────────────────────────────────
     m = ifcopenshell.file(schema="IFC4")
@@ -475,37 +541,62 @@ def generate_ifc(spec, output_path=None):
                 except Exception as e:
                     logger.debug("Door failed: %s", e)
 
-            # Window on exterior walls
+            # Windows on exterior walls.
+            # - min wall length 1.8 m (was 2.5 m — too restrictive for small apartments)
+            # - long walls (> 5 m) get 2 evenly spaced windows
+            # - window width / height / sill pulled from the active style first,
+            #   then from grounding, then from defaults
             if w["is_exterior"]:
                 wlen = math.sqrt((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2)
-                if wlen >= 2.5:
-                    win = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcWindow", name="Window")
+                if wlen >= 1.8:
+                    # Style-aware defaults
                     try:
-                        window_width = float(grounding["openings"].get("window_width", 1.4) or 1.4)
-                        window_height = float(grounding["openings"].get("window_height", 1.2) or 1.2)
-                        wrep = ifcopenshell.api.run("geometry.add_window_representation", m,
-                             context=body, overall_height=window_height, overall_width=window_width)
-                        if wrep:
-                            ifcopenshell.api.run("geometry.assign_representation", m, product=win, representation=wrep)
-                            wx = p1[0] + (p2[0]-p1[0]) * 0.5
-                            wy = p1[1] + (p2[1]-p1[1]) * 0.5
-                            vx = p2[0]-p1[0]
-                            vy = p2[1]-p1[1]
-                            length = math.sqrt(vx*vx + vy*vy)
-                            if length > 0:
-                                vx, vy = vx/length, vy/length
-                            else:
-                                vx, vy = 1, 0
-                            mat = np.array([
-                                [vx, -vy, 0, wx],
-                                [vy,  vx, 0, wy],
-                                [0,   0,  1, elev + 0.9],
-                                [0,   0,  0, 1]], dtype=float)
-                            ifcopenshell.api.run("geometry.edit_object_placement", m, product=win, matrix=mat)
-                            color_rep(m, wrep, "window")
-                            ifcopenshell.api.run("spatial.assign_container", m, products=[win], relating_structure=storey)
-                    except Exception as e:
-                        logger.debug("Window failed: %s", e)
+                        from styles import get_style
+                        st = get_style(metadata.get("architectural_style", ""))
+                        win_w_default = float(st.get("window_width_m", 1.2))
+                        win_h_default = float(st.get("window_height_m", 1.4))
+                        win_sill_default = float(st.get("window_sill_m", 0.9))
+                    except Exception:
+                        win_w_default, win_h_default, win_sill_default = 1.2, 1.4, 0.9
+
+                    window_width = float(grounding["openings"].get("window_width", win_w_default) or win_w_default)
+                    window_height = float(grounding["openings"].get("window_height", win_h_default) or win_h_default)
+                    window_sill = win_sill_default
+
+                    # How many windows fit comfortably? 1 for 1.8-5m, 2 for >5m.
+                    n_windows = 2 if wlen > 5.0 else 1
+                    # Fractions along the wall for each window center
+                    if n_windows == 1:
+                        fractions = [0.5]
+                    else:
+                        fractions = [0.3, 0.7]
+
+                    for frac in fractions:
+                        try:
+                            win = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcWindow", name="Window")
+                            wrep = ifcopenshell.api.run("geometry.add_window_representation", m,
+                                 context=body, overall_height=window_height, overall_width=window_width)
+                            if wrep:
+                                ifcopenshell.api.run("geometry.assign_representation", m, product=win, representation=wrep)
+                                wx = p1[0] + (p2[0]-p1[0]) * frac
+                                wy = p1[1] + (p2[1]-p1[1]) * frac
+                                vx = p2[0]-p1[0]
+                                vy = p2[1]-p1[1]
+                                length = math.sqrt(vx*vx + vy*vy)
+                                if length > 0:
+                                    vx, vy = vx/length, vy/length
+                                else:
+                                    vx, vy = 1, 0
+                                mat = np.array([
+                                    [vx, -vy, 0, wx],
+                                    [vy,  vx, 0, wy],
+                                    [0,   0,  1, elev + window_sill],
+                                    [0,   0,  0, 1]], dtype=float)
+                                ifcopenshell.api.run("geometry.edit_object_placement", m, product=win, matrix=mat)
+                                color_rep(m, wrep, "window")
+                                ifcopenshell.api.run("spatial.assign_container", m, products=[win], relating_structure=storey)
+                        except Exception as e:
+                            logger.debug("Window failed: %s", e)
 
         # ── Floor slabs, ceilings, furniture per room ────────────────
         for room in rooms:
@@ -529,25 +620,10 @@ def generate_ifc(spec, output_path=None):
                 color_rep(m, srep, "floor")
                 ifcopenshell.api.run("spatial.assign_container", m, products=[slab], relating_structure=storey)
 
-            # Duct
-            if rtype not in ("patio","garage","hallway") and rw > 1.5:
-                duct = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcDuctSegment", name=f"{rname} Duct")
-                duct_w = rw - 0.6
-                dshape, drep = box_rep(m, body, duct_w, 0.4, 0.15)
-                ifcopenshell.api.run("geometry.assign_representation", m, product=duct, representation=dshape)
-                place_element(m, duct, rx + 0.3, ry + rd/2 - 0.2, elev + ceil_h - 0.2)
-                color_rep(m, drep, "duct")
-                ifcopenshell.api.run("spatial.assign_container", m, products=[duct], relating_structure=storey)
-
-            # Pipe (wet rooms)
-            if rtype in ("bathroom","kitchen","utility") and rd > 1.0:
-                pipe = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcPipeSegment", name=f"{rname} Pipe")
-                pipe_len = rd - 0.6
-                pshape, prep = box_rep(m, body, 0.05, pipe_len, 0.05)
-                ifcopenshell.api.run("geometry.assign_representation", m, product=pipe, representation=pshape)
-                place_element(m, pipe, rx + 0.3, ry + 0.3, elev + 0.1)
-                color_rep(m, prep, "pipe")
-                ifcopenshell.api.run("spatial.assign_container", m, products=[pipe], relating_structure=storey)
+            # NOTE: per-room duct/pipe blocks previously lived here.
+            # They are replaced by mep_systems.build_mep() which runs once per
+            # floor below, producing a coordinated HVAC/plumbing/electrical system
+            # instead of disconnected stubs. See mep_systems.py.
 
             # Fixtures
             inner_x = rx + 0.15
@@ -636,6 +712,40 @@ def generate_ifc(spec, output_path=None):
                     relating_structure=storey,
                 )
 
+        # ── Ceiling slab (per-floor, one piece) ────────────────────────
+        # Added so the interior reads as a finished room from the viewer.
+        # Ghost mode (IfcCovering) will thin this to 14% opacity.
+        if rooms:
+            cmin_x = min(float(r.get("x",0)) for r in rooms)
+            cmin_y = min(float(r.get("y",0)) for r in rooms)
+            cmax_x = max(float(r.get("x",0))+float(r.get("width",4)) for r in rooms)
+            cmax_y = max(float(r.get("y",0))+float(r.get("depth",3)) for r in rooms)
+            cw = cmax_x - cmin_x
+            cd = cmax_y - cmin_y
+            ceiling = ifcopenshell.api.run("root.create_entity", m, ifc_class="IfcCovering", name="Ceiling")
+            c_outline = [(0,0),(cw,0),(cw,cd),(0,cd),(0,0)]
+            crep = ifcopenshell.api.run("geometry.add_slab_representation", m,
+                context=body, depth=0.05, polyline=c_outline)
+            if crep:
+                ifcopenshell.api.run("geometry.assign_representation", m, product=ceiling, representation=crep)
+                place_element(m, ceiling, cmin_x, cmin_y, elev + ceil_h - 0.05)
+                color_rep(m, crep, "ceiling")
+                ifcopenshell.api.run("spatial.assign_container", m, products=[ceiling], relating_structure=storey)
+
+        # ── MEP systems (HVAC, plumbing, electrical, fire) ─────────────
+        try:
+            from mep_systems import build_mep
+            build_mep(
+                m, body, storey, rooms, elev, ceil_h,
+                box_rep=box_rep,
+                place_element=place_element,
+                color_rep=color_rep,
+                metadata=metadata,
+            )
+            print(f"    MEP: HVAC + plumbing + electrical + fire installed")
+        except Exception as e:
+            logger.warning("MEP build failed on floor '%s': %s", floor.get("name"), e)
+
         # Roof
         if rooms:
             min_x = min(float(r.get("x",0)) for r in rooms)
@@ -677,7 +787,20 @@ def generate_ifc(spec, output_path=None):
     # ── Metadata ─────────────────────────────────────────────────────────
     if metadata:
         pset = ifcopenshell.api.run("pset.add_pset", m, product=bldg, name="BIM_Studio_Info")
-        props = {str(k): str(v) for k, v in metadata.items() if v is not None}
+        # Flatten the metadata dict. Nested objects like style_palette and
+        # cost_breakdown are exploded into "style_palette_<key>" scalar props
+        # so xeokit's property-set reader can actually access them.
+        props = {}
+        for k, v in metadata.items():
+            if v is None:
+                continue
+            if isinstance(v, dict):
+                for sk, sv in v.items():
+                    if sv is None:
+                        continue
+                    props[f"{k}_{sk}"] = str(sv)
+            else:
+                props[str(k)] = str(v)
         if props:
             ifcopenshell.api.run("pset.edit_pset", m, pset=pset, properties=props)
 
