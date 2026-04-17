@@ -483,51 +483,16 @@ function applyGenGhostMode(){
     'IfcWall','IfcWallStandardCase','IfcWallElementedCase','IfcCurtainWall',
     'IfcRoof','IfcCovering'
   ]);
-  // Apply colors to every object. Re-runs until every object has a
-  // metaObject resolved — web-ifc populates these asynchronously and a
-  // single pass at 'loaded' misses ~10-20% of objects in practice.
-  function applyColors(){
-        var unresolved = 0;
-        Object.values(scene.objects).forEach(function(obj){
-          if(!obj||obj.destroyed) return;
-          var col = defaultColor;
-          var meta = metaScene && metaScene.metaObjects[obj.id];
-          if(meta && meta.type){
-            if(colorMap[meta.type]) col = colorMap[meta.type];
-            // Distinguish pipes by name (cold/hot/waste) since they share IfcPipeSegment
-            if(meta.type === 'IfcPipeSegment'){
-              var n = (meta.name || '').toLowerCase();
-              if(n.indexOf('hot') >= 0)      col = [0.90,0.30,0.30];
-              else if(n.indexOf('dwv') >= 0 || n.indexOf('waste') >= 0 || n.indexOf('vent') >= 0) col = [0.40,0.35,0.30];
-              else if(n.indexOf('refrig') >= 0) col = [0.40,0.35,0.55];
-            }
-            if(meta.type === 'IfcAirTerminal'){
-              var an = (meta.name || '').toLowerCase();
-              if(an.indexOf('return') >= 0) col = [0.98,0.82,0.60];
-            }
-            // subtle per-object tint so walls/slabs don't read as one solid mass
-            var mt = meta.type;
-            if(mt.indexOf('Wall') >= 0 || mt === 'IfcSlab' || mt === 'IfcRoof' || mt === 'IfcCovering'){
-              col = tintRgb(col, (obj.id || 0) * 0.0193);
-            }
-          } else {
-            unresolved++;
-          }
-          obj.colorize = col;
-          obj.opacity = 1.0;
-        });
-        return unresolved;
-      }
-
-      // Pass 1 immediately, then retry a few times with backoff to catch
-      // objects whose metaObjects arrive a tick late.
-      applyColors();
-      var retries = 0;
-      var retryTimer = setInterval(function(){
-        var unresolved = applyColors();
-        retries++;
-        if(unresolved === 0 || retries >= 8){ clearInterval(retryTimer); }
-      }, 120);
+  Object.values(scene.objects).forEach(function(obj){
+    if(!obj||obj.destroyed)return;
+    var meta=metaScene&&metaScene.metaObjects[obj.id];
+    var t=meta&&meta.type;
+    if(genGhostMode&&t&&shellTypes.has(t)){
+      obj.opacity=0.14;
+    }else if(obj.opacity!==undefined){
+      obj.opacity=1.0;
+    }
+  });
 }
 
 async function initGenViewer(filename){
@@ -693,21 +658,51 @@ async function initGenViewer(filename){
         var s=0.88+x*0.14;
         return [Math.min(1,rgb[0]*s),Math.min(1,rgb[1]*s),Math.min(1,rgb[2]*s)];
       }
-      Object.values(scene.objects).forEach(function(obj){
-        var col=defaultColor;
-        if(metaScene){
-          var meta=metaScene.metaObjects[obj.id];
-          if(meta&&meta.type&&colorMap[meta.type]){col=colorMap[meta.type];}
-          if(meta&&meta.type){
-            var mt=meta.type;
-            if(mt.indexOf('Wall')>=0||mt==='IfcSlab'||mt==='IfcRoof'||mt==='IfcCovering'){
-              col=tintRgb(col,(obj.id||0)*0.0193);
+      // Apply colors to every object. Re-runs until every object has a
+      // metaObject resolved — web-ifc populates these asynchronously and a
+      // single pass at 'loaded' misses ~10-20% of objects in practice.
+      function applyColors(){
+        var unresolved = 0;
+        Object.values(scene.objects).forEach(function(obj){
+          if(!obj||obj.destroyed) return;
+          var col = defaultColor;
+          var meta = metaScene && metaScene.metaObjects[obj.id];
+          if(meta && meta.type){
+            if(colorMap[meta.type]) col = colorMap[meta.type];
+            // Distinguish pipes by name (cold/hot/waste) since they share IfcPipeSegment
+            if(meta.type === 'IfcPipeSegment'){
+              var n = (meta.name || '').toLowerCase();
+              if(n.indexOf('hot') >= 0)      col = [0.90,0.30,0.30];
+              else if(n.indexOf('dwv') >= 0 || n.indexOf('waste') >= 0 || n.indexOf('vent') >= 0) col = [0.40,0.35,0.30];
+              else if(n.indexOf('refrig') >= 0) col = [0.40,0.35,0.55];
             }
+            if(meta.type === 'IfcAirTerminal'){
+              var an = (meta.name || '').toLowerCase();
+              if(an.indexOf('return') >= 0) col = [0.98,0.82,0.60];
+            }
+            // subtle per-object tint so walls/slabs don't read as one solid mass
+            var mt = meta.type;
+            if(mt.indexOf('Wall') >= 0 || mt === 'IfcSlab' || mt === 'IfcRoof' || mt === 'IfcCovering'){
+              col = tintRgb(col, (obj.id || 0) * 0.0193);
+            }
+          } else {
+            unresolved++;
           }
-        }
-        obj.colorize=col;
-        obj.opacity=1.0;
-      });
+          obj.colorize = col;
+          obj.opacity = 1.0;
+        });
+        return unresolved;
+      }
+
+      // Pass 1 immediately, then retry a few times with backoff to catch
+      // objects whose metaObjects arrive a tick late.
+      applyColors();
+      var retries = 0;
+      var retryTimer = setInterval(function(){
+        var unresolved = applyColors();
+        retries++;
+        if(unresolved === 0 || retries >= 8){ clearInterval(retryTimer); }
+      }, 120);
 
       genXeokitModel=model;
       applyGenGhostMode();
