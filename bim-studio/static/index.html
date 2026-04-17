@@ -483,16 +483,51 @@ function applyGenGhostMode(){
     'IfcWall','IfcWallStandardCase','IfcWallElementedCase','IfcCurtainWall',
     'IfcRoof','IfcCovering'
   ]);
-  Object.values(scene.objects).forEach(function(obj){
-    if(!obj||obj.destroyed)return;
-    var meta=metaScene&&metaScene.metaObjects[obj.id];
-    var t=meta&&meta.type;
-    if(genGhostMode&&t&&shellTypes.has(t)){
-      obj.opacity=0.14;
-    }else if(obj.opacity!==undefined){
-      obj.opacity=1.0;
-    }
-  });
+  // Apply colors to every object. Re-runs until every object has a
+  // metaObject resolved — web-ifc populates these asynchronously and a
+  // single pass at 'loaded' misses ~10-20% of objects in practice.
+  function applyColors(){
+        var unresolved = 0;
+        Object.values(scene.objects).forEach(function(obj){
+          if(!obj||obj.destroyed) return;
+          var col = defaultColor;
+          var meta = metaScene && metaScene.metaObjects[obj.id];
+          if(meta && meta.type){
+            if(colorMap[meta.type]) col = colorMap[meta.type];
+            // Distinguish pipes by name (cold/hot/waste) since they share IfcPipeSegment
+            if(meta.type === 'IfcPipeSegment'){
+              var n = (meta.name || '').toLowerCase();
+              if(n.indexOf('hot') >= 0)      col = [0.90,0.30,0.30];
+              else if(n.indexOf('dwv') >= 0 || n.indexOf('waste') >= 0 || n.indexOf('vent') >= 0) col = [0.40,0.35,0.30];
+              else if(n.indexOf('refrig') >= 0) col = [0.40,0.35,0.55];
+            }
+            if(meta.type === 'IfcAirTerminal'){
+              var an = (meta.name || '').toLowerCase();
+              if(an.indexOf('return') >= 0) col = [0.98,0.82,0.60];
+            }
+            // subtle per-object tint so walls/slabs don't read as one solid mass
+            var mt = meta.type;
+            if(mt.indexOf('Wall') >= 0 || mt === 'IfcSlab' || mt === 'IfcRoof' || mt === 'IfcCovering'){
+              col = tintRgb(col, (obj.id || 0) * 0.0193);
+            }
+          } else {
+            unresolved++;
+          }
+          obj.colorize = col;
+          obj.opacity = 1.0;
+        });
+        return unresolved;
+      }
+
+      // Pass 1 immediately, then retry a few times with backoff to catch
+      // objects whose metaObjects arrive a tick late.
+      applyColors();
+      var retries = 0;
+      var retryTimer = setInterval(function(){
+        var unresolved = applyColors();
+        retries++;
+        if(unresolved === 0 || retries >= 8){ clearInterval(retryTimer); }
+      }, 120);
 }
 
 async function initGenViewer(filename){
@@ -521,6 +556,36 @@ async function initGenViewer(filename){
     xeokitViewer.camera.eye=[10,10,10];
     xeokitViewer.camera.look=[0,0,0];
     xeokitViewer.camera.up=[0,1,0];
+
+    // Read metadata.style_palette stashed on the IfcBuilding property set.
+    // generate.py writes these as "style_palette_ext_wall", "_floor", etc.
+    // (strings of the form "#RRGGBB"). The helper returns an object keyed
+    // by semantic name -> [r,g,b] floats, or null if no palette was set.
+    function readStylePaletteFromModel(viewer){
+      if(!viewer || !viewer.metaScene) return null;
+      var keys = ['ext_wall','int_wall','floor','roof','ceiling','trim','accent','window_glass'];
+      var out = {};
+      var found = false;
+      var meta = viewer.metaScene.metaObjects;
+      Object.keys(meta || {}).forEach(function(id){
+        var m = meta[id];
+        if(!m || m.type !== 'IfcBuilding') return;
+        var props = (m.propertySets || []).concat(m.properties || []);
+        // xeokit flattens some psets into m.attributes
+        var source = m.attributes || {};
+        keys.forEach(function(k){
+          var attr = 'style_palette_' + k;
+          var v = source[attr];
+          if(typeof v === 'string' && v.charAt(0) === '#' && v.length === 7){
+            var r = parseInt(v.substr(1,2),16)/255;
+            var g = parseInt(v.substr(3,2),16)/255;
+            var b = parseInt(v.substr(5,2),16)/255;
+            if(!isNaN(r)&&!isNaN(g)&&!isNaN(b)){ out[k] = [r,g,b]; found = true; }
+          }
+        });
+      });
+      return found ? out : null;
+    }
 
     // Load web-ifc WASM and pass the IfcAPI instance explicitly
     var WebIFC=await import('https://cdn.jsdelivr.net/npm/web-ifc@0.0.51/web-ifc-api.js');
