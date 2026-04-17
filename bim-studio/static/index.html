@@ -546,25 +546,81 @@ async function initGenViewer(filename){
       document.getElementById('view-status').textContent='Ready';
 
       // Color by IFC type using xeokit metaobjects
-      var colorMap={
-        'IfcWall':[0.90,0.88,0.82],'IfcWallStandardCase':[0.90,0.88,0.82],
-        'IfcWallElementedCase':[0.90,0.88,0.82],
-        'IfcSlab':[0.75,0.73,0.68],'IfcRoof':[0.62,0.55,0.48],
-        'IfcColumn':[0.55,0.65,0.78],'IfcColumnStandardCase':[0.55,0.65,0.78],
-        'IfcBeam':[0.50,0.60,0.75],'IfcBeamStandardCase':[0.50,0.60,0.75],
-        'IfcDoor':[0.65,0.42,0.22],'IfcWindow':[0.60,0.82,0.95],
-        'IfcStair':[0.78,0.72,0.58],'IfcRailing':[0.38,0.38,0.40],
-        'IfcCovering':[0.80,0.76,0.68],
-        'IfcFurniture':[0.78,0.60,0.38],'IfcFurnishingElement':[0.78,0.60,0.38],
-        'IfcDuctSegment':[0.28,0.62,0.82],'IfcDuctFitting':[0.28,0.62,0.82],
-        'IfcPipeSegment':[0.82,0.38,0.28],'IfcPipeFitting':[0.82,0.38,0.28],
-        'IfcLightFixture':[0.98,0.95,0.65],
-        'IfcElectricAppliance':[0.48,0.50,0.62],
-        'IfcSanitaryTerminal':[0.72,0.88,0.92],
-        'IfcFireSuppressionTerminal':[0.90,0.28,0.28],
-        'IfcBuildingElementProxy':[0.70,0.70,0.70],
+      // Base color map — expanded with every MEP class generate.py can emit.
+      // The palette below can be overridden by a `style_palette` stored on the
+      // IfcBuilding property set (read below).
+      var basePalette={
+        // Architecture — warm neutrals
+        'IfcWall':              [0.90,0.86,0.76],
+        'IfcWallStandardCase':  [0.90,0.86,0.76],
+        'IfcWallElementedCase': [0.90,0.86,0.76],
+        'IfcSlab':              [0.72,0.64,0.50],  // warm oak default floor
+        'IfcRoof':              [0.45,0.40,0.36],
+        'IfcCovering':          [0.96,0.96,0.95],  // ceilings
+        'IfcColumn':            [0.88,0.84,0.74],
+        'IfcColumnStandardCase':[0.88,0.84,0.74],
+        'IfcBeam':              [0.72,0.62,0.45],
+        'IfcBeamStandardCase':  [0.72,0.62,0.45],
+        'IfcDoor':              [0.55,0.35,0.18],
+        'IfcWindow':            [0.55,0.78,0.92],
+        'IfcStair':             [0.78,0.72,0.58],
+        'IfcRailing':           [0.38,0.38,0.40],
+        // Furniture
+        'IfcFurniture':         [0.78,0.60,0.38],
+        'IfcFurnishingElement': [0.78,0.60,0.38],
+        'IfcSanitaryTerminal':  [0.96,0.96,0.96],
+        'IfcElectricAppliance': [0.78,0.80,0.85],
+        // HVAC — blues (supply) / warm (equipment)
+        'IfcDuctSegment':       [0.30,0.62,0.88],
+        'IfcDuctFitting':       [0.30,0.62,0.88],
+        'IfcAirTerminal':       [0.70,0.86,0.98],
+        'IfcUnitaryEquipment':  [0.55,0.62,0.72],  // AHU / condenser
+        'IfcFan':               [0.55,0.62,0.72],
+        'IfcBoiler':            [0.85,0.55,0.30],
+        'IfcChiller':           [0.55,0.62,0.72],
+        // Plumbing — distinctive per stream
+        'IfcPipeSegment':       [0.30,0.55,0.88],  // default = cold supply blue
+        'IfcPipeFitting':       [0.30,0.55,0.88],
+        'IfcValve':             [0.60,0.35,0.22],
+        'IfcTank':              [0.72,0.72,0.72],  // water heater body
+        'IfcFlowMeter':         [0.85,0.55,0.30],
+        // Electrical — yellows
+        'IfcLightFixture':      [1.00,0.95,0.70],
+        'IfcOutlet':            [0.95,0.88,0.50],
+        'IfcSwitchingDevice':   [0.90,0.84,0.45],
+        'IfcElectricDistributionBoard': [0.35,0.30,0.28],
+        'IfcCableCarrierSegment':       [0.30,0.30,0.32],
+        'IfcCableSegment':              [0.30,0.30,0.32],
+        // Fire — reds
+        'IfcFireSuppressionTerminal':   [0.90,0.25,0.22],
+        'IfcAlarm':                     [0.90,0.25,0.22],
+        // Generic catch-all
+        'IfcBuildingElementProxy':      [0.70,0.70,0.70],
       };
-      var defaultColor=[0.82,0.82,0.82];
+
+      // Start from the base palette, then overlay style_palette from the IFC
+      // property set if the AI included one (see server.py system prompt).
+      var colorMap = Object.assign({}, basePalette);
+      var stylePaletteOverride = readStylePaletteFromModel(xeokitViewer);
+      if(stylePaletteOverride){
+        // style_palette keys use semantic names (ext_wall, floor, roof,
+        // window_glass, accent, trim). Map them to IFC classes.
+        var map = {
+          ext_wall:     ['IfcWall','IfcWallStandardCase','IfcWallElementedCase','IfcColumn','IfcColumnStandardCase'],
+          floor:        ['IfcSlab'],
+          roof:         ['IfcRoof'],
+          ceiling:      ['IfcCovering'],
+          accent:       ['IfcDoor'],
+          window_glass: ['IfcWindow'],
+        };
+        Object.keys(map).forEach(function(k){
+          if(stylePaletteOverride[k]){
+            map[k].forEach(function(cls){ colorMap[cls] = stylePaletteOverride[k]; });
+          }
+        });
+      }
+
+      var defaultColor=[0.78,0.74,0.66];  // warm beige, not invisible against dark bg
       var scene=xeokitViewer.scene;
       var metaScene=xeokitViewer.metaScene;
       function tintRgb(rgb, seed){
