@@ -1,300 +1,167 @@
 """
-Lightweight exterior massing hints from metadata.architectural_style.
-Not a full architectural model — adds porch slabs, columns, pediment, gable hints.
+architectural_exterior.py — Exterior accent dispatcher.
+
+BIM Studio v11 approach: the AI emits a list of feature dicts in
+metadata.exterior_features, and this module dispatches each one to a
+primitive builder in exterior_primitives.py.
+
+Backwards compatible: if metadata contains no exterior_features but has
+a legacy architectural_style like "victorian" or "farmhouse", we fall back
+to a small set of default features per style so old specs still render
+with some character.
 """
 
-from typing import Any, Callable, Dict, Tuple
+from typing import Any, Callable, Dict, List
 
-import ifcopenshell.api
-import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
 
 
-def _norm_style(metadata: Dict[str, Any]) -> str:
-    s = (
+def _style_key(metadata: Dict[str, Any]) -> str:
+    return str(
         metadata.get("architectural_style")
         or metadata.get("exterior_style")
         or metadata.get("style")
         or ""
-    )
-    return str(s).lower()
+    ).lower().strip()
+
+
+# When the AI doesn't emit exterior_features, these defaults give a building
+# some character based on its declared style. Claude should almost always
+# emit features itself — these are a safety net, not the main path.
+_DEFAULT_FEATURES_BY_STYLE: Dict[str, List[Dict[str, Any]]] = {
+    "victorian": [
+        {"type": "turret",    "corner": "sw", "radius": 1.3, "cap": "conical", "spire": True},
+        {"type": "porch",     "sides": ["south"], "depth": 1.8, "column_style": "turned", "has_roof": True},
+        {"type": "gable",     "side": "south", "height": 1.8, "width": 2.6},
+        {"type": "dormer",    "side": "south", "position": 0.3},
+    ],
+    "tudor": [
+        {"type": "half_timber_band", "side": "south", "count": 6},
+        {"type": "gable",            "side": "south", "height": 2.0, "width": 3.0},
+        {"type": "chimney",          "height": 5.0},
+    ],
+    "farmhouse": [
+        {"type": "porch",    "sides": ["south"], "depth": 2.0, "column_style": "square",
+                             "column_color_key": "accent", "has_roof": True},
+        {"type": "gable",    "side": "south", "height": 1.6, "width": 2.8, "color_key": "trim"},
+    ],
+    "cape_cod": [
+        {"type": "dormer",  "side": "south", "position": 0.3},
+        {"type": "dormer",  "side": "south", "position": 0.7},
+        {"type": "shutter", "side": "south", "position": 0.2},
+        {"type": "shutter", "side": "south", "position": 0.5},
+        {"type": "shutter", "side": "south", "position": 0.8},
+    ],
+    "colonial": [
+        {"type": "portico", "side": "south", "width": 3.5, "column_count": 4, "pediment": True},
+        {"type": "shutter", "side": "south", "position": 0.25},
+        {"type": "shutter", "side": "south", "position": 0.75},
+    ],
+    "neoclassical": [
+        {"type": "portico", "side": "south", "width": 5.5, "column_count": 6, "pediment": True, "projection": 2.2},
+    ],
+    "craftsman": [
+        {"type": "porch", "sides": ["south"], "depth": 1.8, "column_style": "square",
+                          "column_size": 0.28, "has_roof": True},
+        {"type": "gable", "side": "south", "height": 1.3, "width": 3.8, "color_key": "roof"},
+    ],
+    "ranch": [
+        {"type": "porch",  "sides": ["south"], "depth": 1.4, "column_style": "square", "has_roof": True},
+        {"type": "canopy", "side": "south", "position": 0.7, "width": 2.0, "projection": 0.9},
+    ],
+    "modern": [
+        {"type": "canopy",  "side": "south", "position": 0.5, "width": 3.5, "projection": 1.4},
+        {"type": "parapet", "height": 0.8},
+    ],
+    "contemporary": [
+        {"type": "canopy",  "side": "south", "position": 0.5, "width": 3.5, "projection": 1.4},
+        {"type": "parapet", "height": 0.8},
+    ],
+    "mid_century_modern": [
+        {"type": "canopy",       "side": "south", "width": 4.5, "projection": 1.8},
+        {"type": "vertical_fin", "side": "south", "count": 5, "depth": 0.4},
+    ],
+    "industrial": [
+        {"type": "parapet", "height": 1.2, "stepped": False},
+    ],
+    "mediterranean": [
+        {"type": "parapet", "height": 0.7},
+        {"type": "awning",  "side": "south", "position": 0.5, "width": 1.8},
+    ],
+    "spanish_revival": [
+        {"type": "parapet", "height": 0.7},
+        {"type": "awning",  "side": "south", "position": 0.3, "width": 1.6},
+        {"type": "awning",  "side": "south", "position": 0.7, "width": 1.6},
+    ],
+    "commercial_office": [
+        {"type": "parapet", "height": 1.0},
+        {"type": "canopy",  "side": "south", "width": 4.5, "projection": 1.5},
+    ],
+    "warehouse": [
+        {"type": "parapet", "height": 0.9},
+    ],
+}
+
+
+def _resolve_default_features(style: str) -> List[Dict[str, Any]]:
+    """Look up default features, using styles.resolve_style aliases if available."""
+    if not style:
+        return []
+    try:
+        from styles import resolve_style
+        key = resolve_style(style)
+    except Exception:
+        key = style.strip().lower().replace("-", "_").replace(" ", "_")
+    return _DEFAULT_FEATURES_BY_STYLE.get(key, [])
 
 
 def build_exterior_accents(
-    m,
-    body,
-    storey,
-    min_x: float,
-    min_y: float,
-    max_x: float,
-    max_y: float,
-    elev: float,
-    ceil_h: float,
+    m, body, storey,
+    min_x: float, min_y: float, max_x: float, max_y: float,
+    elev: float, ceil_h: float,
     metadata: Dict[str, Any],
     color_rep: Callable,
     place_element: Callable,
     box_rep: Callable,
 ) -> None:
-    """Mutates IFC model with decorative exterior elements."""
-    st = _norm_style(metadata)
-    if not st or st in ("default", "simple", "box", "rectangular"):
-        return
+    """
+    Main entry point. Signature unchanged from v10 so generate.py can keep
+    calling us the same way.
 
+    Priority order:
+    1. metadata.exterior_features explicitly set by the AI
+    2. default features for metadata.architectural_style
+    3. nothing (plain box)
+    """
     w = max_x - min_x
     d = max_y - min_y
     if w < 2 or d < 2:
         return
 
-    front = (metadata.get("front_elevation") or "south").lower().strip()
-    if front not in ("south", "north", "east", "west"):
-        front = "south"
+    bounds = (min_x, min_y, max_x, max_y)
 
-    if "neo" in st or "classical" in st or "colonial" in st:
-        _neoclassical_portico(
-            m,
-            body,
-            storey,
-            min_x,
-            min_y,
-            max_x,
-            max_y,
-            elev,
-            ceil_h,
-            front,
-            color_rep,
-            place_element,
-            box_rep,
-        )
-    if "ranch" in st or "craftsman" in st or "bungalow" in st or "mediterranean" in st:
-        _ranch_porch_and_gable(
-            m,
-            body,
-            storey,
-            min_x,
-            min_y,
-            max_x,
-            max_y,
-            elev,
-            ceil_h,
-            front,
-            color_rep,
-            place_element,
-            box_rep,
-        )
-    if "modern" in st or "contemporary" in st:
-        _modern_canopy(
-            m,
-            body,
-            storey,
-            min_x,
-            min_y,
-            max_x,
-            max_y,
-            elev,
-            ceil_h,
-            front,
-            color_rep,
-            place_element,
-            box_rep,
-        )
-
-
-def _front_frame(
-    min_x: float,
-    min_y: float,
-    max_x: float,
-    max_y: float,
-    front: str,
-) -> Tuple[float, float, float, float, str]:
-    """Returns (fx0, fy0, fx1, fy1, axis) for front segment."""
-    if front == "south":
-        return min_x, min_y, max_x, min_y, "x"
-    if front == "north":
-        return min_x, max_y, max_x, max_y, "x"
-    if front == "west":
-        return min_x, min_y, min_x, max_y, "y"
-    return max_x, min_y, max_x, max_y, "y"
-
-
-def _neoclassical_portico(
-    m,
-    body,
-    storey,
-    min_x,
-    min_y,
-    max_x,
-    max_y,
-    elev,
-    ceil_h,
-    front,
-    color_rep,
-    place_element,
-    box_rep,
-):
-    fx0, fy0, fx1, fy1, axis = _front_frame(min_x, min_y, max_x, max_y, front)
-    cx = (fx0 + fx1) / 2
-    cy = (fy0 + fy1) / 2
-    span = abs(fx1 - fx0) if axis == "x" else abs(fy1 - fy0)
-    col_w = 0.45
-    col_d = 0.45
-    col_h = max(ceil_h * 0.72, 2.4)
-    xs = np.linspace(
-        cx - span * 0.32, cx + span * 0.32, num=4, dtype=float
-    ).tolist()
-
-    for i, xv in enumerate(xs):
-        col = ifcopenshell.api.run(
-            "root.create_entity", m, ifc_class="IfcColumn", name=f"Portico Column {i+1}"
-        )
-        sh, rep = box_rep(m, body, col_w, col_d, col_h)
-        ifcopenshell.api.run(
-            "geometry.assign_representation", m, product=col, representation=sh
-        )
-        if axis == "x":
-            place_element(m, col, float(xv) - col_w / 2, fy0 - col_d / 2, elev)
-        else:
-            place_element(m, col, fx0 - col_w / 2, float(xv) - col_d / 2, elev)
-        color_rep(m, rep, "ext_wall")
-        ifcopenshell.api.run(
-            "spatial.assign_container", m, products=[col], relating_structure=storey
-        )
-
-    # Triangular pediment (thin slab)
-    ped_w = span * 0.55
-    ped_h = 0.35
-    ped = ifcopenshell.api.run(
-        "root.create_entity", m, ifc_class="IfcPlate", name="Pediment"
-    )
-    tri = [(0, 0), (ped_w, 0), (ped_w / 2, ped_h), (0, 0)]
     try:
-        prep = ifcopenshell.api.run(
-            "geometry.add_slab_representation",
-            m,
-            context=body,
-            depth=0.12,
-            polyline=tri,
-        )
-        if prep:
-            ifcopenshell.api.run(
-                "geometry.assign_representation", m, product=ped, representation=prep
-            )
-            if axis == "x":
-                place_element(m, ped, cx - ped_w / 2, fy0 - 0.25, elev + col_h)
-            else:
-                place_element(m, ped, fx0 - 0.25, cy - ped_w / 2, elev + col_h)
-            color_rep(m, prep, "ext_wall")
-            ifcopenshell.api.run(
-                "spatial.assign_container", m, products=[ped], relating_structure=storey
-            )
-    except Exception:
-        pass
-
-
-def _ranch_porch_and_gable(
-    m,
-    body,
-    storey,
-    min_x,
-    min_y,
-    max_x,
-    max_y,
-    elev,
-    ceil_h,
-    front,
-    color_rep,
-    place_element,
-    box_rep,
-):
-    depth_porch = min(2.0, max(1.2, (max_y - min_y) * 0.22))
-    w = max_x - min_x
-    if front == "south":
-        porch = ifcopenshell.api.run(
-            "root.create_entity", m, ifc_class="IfcSlab", name="Front Porch"
-        )
-        outline = [
-            (0, 0),
-            (w + 0.4, 0),
-            (w + 0.4, depth_porch),
-            (0, depth_porch),
-            (0, 0),
-        ]
-        prep = ifcopenshell.api.run(
-            "geometry.add_slab_representation",
-            m,
-            context=body,
-            depth=0.18,
-            polyline=outline,
-        )
-        if prep:
-            ifcopenshell.api.run(
-                "geometry.assign_representation", m, product=porch, representation=prep
-            )
-            place_element(m, porch, min_x - 0.2, min_y - depth_porch, elev - 0.05)
-            color_rep(m, prep, "floor")
-            ifcopenshell.api.run(
-                "spatial.assign_container", m, products=[porch], relating_structure=storey
-            )
-    elif front == "north":
-        porch = ifcopenshell.api.run(
-            "root.create_entity", m, ifc_class="IfcSlab", name="Front Porch"
-        )
-        outline = [(0, 0), (w + 0.4, 0), (w + 0.4, depth_porch), (0, depth_porch), (0, 0)]
-        prep = ifcopenshell.api.run(
-            "geometry.add_slab_representation",
-            m,
-            context=body,
-            depth=0.18,
-            polyline=outline,
-        )
-        if prep:
-            ifcopenshell.api.run(
-                "geometry.assign_representation", m, product=porch, representation=prep
-            )
-            place_element(m, porch, min_x - 0.2, max_y, elev - 0.05)
-            color_rep(m, prep, "floor")
-            ifcopenshell.api.run(
-                "spatial.assign_container", m, products=[porch], relating_structure=storey
-            )
-
-def _modern_canopy(
-    m,
-    body,
-    storey,
-    min_x,
-    min_y,
-    max_x,
-    max_y,
-    elev,
-    ceil_h,
-    front,
-    color_rep,
-    place_element,
-    box_rep,
-):
-    w = max_x - min_x
-    can = ifcopenshell.api.run(
-        "root.create_entity", m, ifc_class="IfcSlab", name="Entry canopy"
-    )
-    outline = [(0, 0), (min(w * 0.5, 6), 0), (min(w * 0.5, 6), 1.2), (0, 1.2), (0, 0)]
-    prep = ifcopenshell.api.run(
-        "geometry.add_slab_representation",
-        m,
-        context=body,
-        depth=0.22,
-        polyline=outline,
-    )
-    if not prep:
+        from exterior_primitives import build_exterior_features
+    except ImportError as e:
+        logger.warning("exterior_primitives not importable: %s", e)
         return
-    ifcopenshell.api.run(
-        "geometry.assign_representation", m, product=can, representation=prep
-    )
-    cx = (min_x + max_x) / 2
-    if front == "south":
-        place_element(m, can, cx - min(w * 0.5, 6) / 2, min_y - 1.0, elev + ceil_h - 0.35)
-    elif front == "north":
-        place_element(m, can, cx - min(w * 0.5, 6) / 2, max_y - 0.2, elev + ceil_h - 0.35)
-    else:
-        place_element(m, can, min_x + (max_x - min_x) / 2 - 3, min_y, elev + ceil_h - 0.35)
-    color_rep(m, prep, "roof")
-    ifcopenshell.api.run(
-        "spatial.assign_container", m, products=[can], relating_structure=storey
+
+    features = metadata.get("exterior_features")
+    source = "AI-emitted"
+
+    if not features:
+        style = _style_key(metadata)
+        features = _resolve_default_features(style)
+        source = f"default-for-{style}" if style else "none"
+
+    if not features:
+        logger.info("No exterior features to build (style=%r).", _style_key(metadata))
+        return
+
+    logger.info("Building %d exterior features (%s)", len(features), source)
+    build_exterior_features(
+        m, body, storey, bounds, elev, ceil_h, features,
+        box_rep=box_rep, place_element=place_element, color_rep=color_rep,
     )
