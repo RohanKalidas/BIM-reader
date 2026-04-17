@@ -658,51 +658,68 @@ async function initGenViewer(filename){
         var s=0.88+x*0.14;
         return [Math.min(1,rgb[0]*s),Math.min(1,rgb[1]*s),Math.min(1,rgb[2]*s)];
       }
-      // Apply colors to every object. Re-runs until every object has a
-      // metaObject resolved — web-ifc populates these asynchronously and a
-      // single pass at 'loaded' misses ~10-20% of objects in practice.
+      // Apply colors. Walks metaScene.metaObjects (the authoritative IFC
+      // type source) and finds matching scene entities — this catches
+      // objects materialized by xeokit's batching layer *after* initial load,
+      // which scene.objects doesn't always surface on the first pass.
       function applyColors(){
-        var unresolved = 0;
-        Object.values(scene.objects).forEach(function(obj){
-          if(!obj||obj.destroyed) return;
+        var applied = 0;
+        var missed = 0;
+        var metaObjs = (metaScene && metaScene.metaObjects) || {};
+        Object.keys(metaObjs).forEach(function(id){
+          var meta = metaObjs[id];
+          if(!meta || !meta.type) return;
+          var obj = scene.objects[id];
+          if(!obj || obj.destroyed){ missed++; return; }
           var col = defaultColor;
-          var meta = metaScene && metaScene.metaObjects[obj.id];
-          if(meta && meta.type){
-            if(colorMap[meta.type]) col = colorMap[meta.type];
-            // Distinguish pipes by name (cold/hot/waste) since they share IfcPipeSegment
-            if(meta.type === 'IfcPipeSegment'){
-              var n = (meta.name || '').toLowerCase();
-              if(n.indexOf('hot') >= 0)      col = [0.90,0.30,0.30];
-              else if(n.indexOf('dwv') >= 0 || n.indexOf('waste') >= 0 || n.indexOf('vent') >= 0) col = [0.40,0.35,0.30];
-              else if(n.indexOf('refrig') >= 0) col = [0.40,0.35,0.55];
-            }
-            if(meta.type === 'IfcAirTerminal'){
-              var an = (meta.name || '').toLowerCase();
-              if(an.indexOf('return') >= 0) col = [0.98,0.82,0.60];
-            }
-            // subtle per-object tint so walls/slabs don't read as one solid mass
-            var mt = meta.type;
-            if(mt.indexOf('Wall') >= 0 || mt === 'IfcSlab' || mt === 'IfcRoof' || mt === 'IfcCovering'){
-              col = tintRgb(col, (obj.id || 0) * 0.0193);
-            }
-          } else {
-            unresolved++;
+          if(colorMap[meta.type]) col = colorMap[meta.type];
+          // Pipes / returns disambiguate by name
+          if(meta.type === 'IfcPipeSegment'){
+            var n = (meta.name || '').toLowerCase();
+            if(n.indexOf('hot') >= 0)        col = [0.90,0.30,0.30];
+            else if(n.indexOf('dwv') >= 0 || n.indexOf('waste') >= 0 || n.indexOf('vent') >= 0) col = [0.40,0.35,0.30];
+            else if(n.indexOf('refrig') >= 0) col = [0.40,0.35,0.55];
+          }
+          if(meta.type === 'IfcAirTerminal'){
+            var an = (meta.name || '').toLowerCase();
+            if(an.indexOf('return') >= 0) col = [0.98,0.82,0.60];
+          }
+          // Per-object tint on large shell elements
+          var mt = meta.type;
+          if(mt.indexOf('Wall') >= 0 || mt === 'IfcSlab' || mt === 'IfcRoof' || mt === 'IfcCovering'){
+            // use the entity ID's char codes as a seed (string id)
+            var seed = 0;
+            var sid = String(id);
+            for(var i=0;i<sid.length;i++){ seed += sid.charCodeAt(i); }
+            col = tintRgb(col, seed * 0.017);
           }
           obj.colorize = col;
           obj.opacity = 1.0;
+          applied++;
         });
-        return unresolved;
+        return {applied: applied, missed: missed};
       }
 
-      // Pass 1 immediately, then retry a few times with backoff to catch
-      // objects whose metaObjects arrive a tick late.
+      // Run once immediately, then every 200ms for up to 5 seconds, then
+      // one final pass. This catches batched geometry that xeokit
+      // materializes over multiple animation frames.
       applyColors();
       var retries = 0;
       var retryTimer = setInterval(function(){
-        var unresolved = applyColors();
+        var r = applyColors();
         retries++;
-        if(unresolved === 0 || retries >= 8){ clearInterval(retryTimer); }
-      }, 120);
+        if(retries >= 25){ clearInterval(retryTimer); applyColors(); }
+      }, 200);
+
+      // Also hook scene.on('tick') for one second — any entities created
+      // by VBOBatchingTrianglesLayer mid-render get coloured as soon as
+      // they appear, instead of waiting for the next 200ms poll.
+      var tickCount = 0;
+      var tickSub = scene.on('tick', function(){
+        applyColors();
+        tickCount++;
+        if(tickCount > 60 && tickSub){ scene.off(tickSub); tickSub = null; }
+      });
 
       genXeokitModel=model;
       applyGenGhostMode();
