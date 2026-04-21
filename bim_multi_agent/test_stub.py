@@ -19,7 +19,7 @@ from unittest.mock import patch
 # Stub the anthropic import before anything else loads
 sys.modules.setdefault("anthropic", type(sys)("anthropic"))  # minimal stub
 
-from schemas import (  # noqa: E402
+from .schemas import (  # noqa: E402
     AgentRun,
     Brief,
     Facade,
@@ -126,7 +126,7 @@ def test_schemas_validate():
 # ── Test 2: merge_to_spec produces generate.py-compatible shape ─────────────
 
 def test_merge_to_spec():
-    from orchestrator import merge_to_spec
+    from .orchestrator import merge_to_spec
     spec = merge_to_spec(SAMPLE_BRIEF, SAMPLE_LAYOUT, SAMPLE_FACADE, SAMPLE_MEP)
 
     # The spec must have these top-level keys (matching generate.py today)
@@ -161,7 +161,7 @@ def test_merge_to_spec():
 # ── Test 3: Facade palette overrides brief palette ──────────────────────────
 
 def test_facade_overrides_brief_palette():
-    from orchestrator import merge_to_spec
+    from .orchestrator import merge_to_spec
 
     facade_with_override = Facade(
         exterior_features=SAMPLE_FACADE.exterior_features,
@@ -178,8 +178,8 @@ def test_facade_overrides_brief_palette():
 # ── Test 4: Edit path reuses cached agent runs ──────────────────────────────
 
 def test_edit_path_reuses_runs():
-    from orchestrator import edit_building, merge_to_spec
-    from schemas import PipelineResult
+    from .orchestrator import edit_building, merge_to_spec
+    from .schemas import PipelineResult
 
     base = PipelineResult(
         spec=merge_to_spec(SAMPLE_BRIEF, SAMPLE_LAYOUT, SAMPLE_FACADE, SAMPLE_MEP),
