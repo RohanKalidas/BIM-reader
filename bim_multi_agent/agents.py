@@ -26,20 +26,20 @@ from typing import Optional
 
 import anthropic
 
-from schemas import (
+from .schemas import (
     AgentRun,
     Brief,
     Facade,
     Layout,
     MEPStrategy,
 )
-from prompts import (
+from .prompts import (
     BRIEF_AGENT_PROMPT,
     FACADE_AGENT_PROMPT_TEMPLATE,
     LAYOUT_AGENT_PROMPT,
     MEP_AGENT_PROMPT,
 )
-from component_library import build_primitive_reference
+from .component_library import build_primitive_reference
 
 logger = logging.getLogger(__name__)
 
