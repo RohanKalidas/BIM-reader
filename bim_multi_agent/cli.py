@@ -76,10 +76,10 @@ def _dump_result(result, path: str) -> None:
 
 def _load_result(path: str):
     """Load a prior PipelineResult from disk."""
-    from schemas import AgentRun, Brief, Facade, Layout, MEPStrategy, PipelineResult
+    from .schemas import AgentRun, Brief, Facade, Layout, MEPStrategy, PipelineResult
     payload = json.loads(Path(path).read_text())
     # Rebuild spec from parts instead of trusting saved spec
-    from orchestrator import merge_to_spec
+    from .orchestrator import merge_to_spec
     brief = Brief(**payload["brief"])
     layout = Layout(**payload["layout"])
     facade = Facade(**payload["facade"])
@@ -116,7 +116,7 @@ def _print_summary(result) -> None:
 # ── Commands ────────────────────────────────────────────────────────────────
 
 def cmd_generate(args: argparse.Namespace) -> int:
-    from orchestrator import generate_building_multi_agent
+    from .orchestrator import generate_building_multi_agent
     t0 = time.time()
     result = generate_building_multi_agent(
         args.prompt,
@@ -131,7 +131,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
 
 
 def cmd_edit(args: argparse.Namespace) -> int:
-    from orchestrator import edit_building
+    from .orchestrator import edit_building
     prev = _load_result(args.load)
     print(f"\nLoaded prior result ({prev.total_duration_s}s). Running edit on {args.target}...\n")
     result = edit_building(prev, args.edit_request, target=args.target)
