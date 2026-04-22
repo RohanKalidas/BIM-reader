@@ -47,9 +47,20 @@ The Brief schema is:
 }
 
 RULES:
+- If the user is terse ("Victorian cottage", "modern house"), EXPAND the
+  style_notes to specify which architectural features the building should have.
+  For Victorian: name the turret/porch/gable/dormer/chimney configuration.
+  For modern: name the parapet/canopy/fin/material details.
+  For Tudor: name half-timbering, steep gables, prominent chimney.
+  For Colonial: name portico, shutters, central chimney.
+  Be opinionated — the facade agent reads style_notes literally to pick features.
 - If the user doesn't specify a style, pick one that fits the vibe they described.
 - If the user specifies colors ("deep green siding"), translate to specific hex values in style_palette.
 - If the user doesn't specify colors, pick a tasteful palette appropriate to the style.
+- style_palette MUST include keys: ext_wall, trim, roof, accent, AND window_glass.
+  - window_glass: dark blue-gray (e.g. #2C3E50) for traditional styles.
+  - window_glass: light/near-clear (e.g. #B8C8D0 or #A8B8C0) for modern/contemporary.
+  - Optional bonus keys: floor, ceiling, int_wall — fill in if the style suggests them.
 - For climate_zone: US city? Look up the ASHRAE zone. Otherwise leave null.
 - program should be HUMAN language. "3 bedrooms" not "BedroomCount=3".
 - total_sqft should be reasonable for the program. A 1BR apartment is 500-900 sqft,
@@ -73,7 +84,8 @@ EXAMPLE OUTPUT:
     "ext_wall": "#2D4A3E",
     "trim": "#F0E8D6",
     "roof": "#3B2F2F",
-    "accent": "#1F3529"
+    "accent": "#1F3529",
+    "window_glass": "#2C3E50"
   },
   "total_sqft": 800,
   "floors_count": 1,
@@ -235,6 +247,51 @@ RULES:
    is Victorian, you need things like turret, porch, gable, dormer, chimney.
    If it's Modern, you want parapet, canopy, vertical_fin. If it's Colonial,
    portico + shutters + chimney.
+
+   STYLE-FEATURE MINIMUMS (you MUST satisfy these for the named style):
+   - victorian / queen_anne / italianate / gothic_revival:
+       MUST include EITHER a turret OR (gable + dormer);
+       MUST include porch on front_elevation;
+       SHOULD include chimney; MAY include bay_window, shutters
+   - tudor:
+       MUST include half_timber_band on front_elevation;
+       MUST include gable; SHOULD include chimney with substantial height (5m+)
+   - colonial / neoclassical / federal:
+       MUST include portico on front_elevation;
+       SHOULD include shutters flanking front windows;
+       SHOULD include chimney
+   - modern / contemporary / minimalist / international:
+       MUST include parapet (flat roof);
+       SHOULD include canopy at entry;
+       MAY include vertical_fins
+   - mid_century_modern:
+       MUST include deep canopy on front_elevation (projection >= 1.5m);
+       SHOULD include vertical_fins or pergola
+   - craftsman / bungalow / arts_and_crafts:
+       MUST include porch with square columns (column_size >= 0.25m);
+       MUST include forward-facing gable
+   - spanish / mediterranean / spanish_revival:
+       MUST include parapet (low height ~0.7m);
+       SHOULD include awnings over windows; MAY include pergola
+   - farmhouse / modern_farmhouse:
+       MUST include full-width porch on front_elevation (depth >= 1.8m);
+       MUST include gable; SHOULD include chimney; SHOULD include shutters
+   - art_deco:
+       MUST include stepped parapet (stepped: true);
+       SHOULD include vertical_fins; MAY include canopy at entry
+   - brutalist:
+       MUST include thick parapet (height >= 1.2m, thickness >= 0.25m);
+       MUST include vertical_fins; NO decorative ornament (no shutters/turrets)
+   - japandi / japanese / scandinavian:
+       MUST include deep overhanging canopy (projection >= 1.3m);
+       SHOULD include pergola; minimal ornament
+   - cape_cod / saltbox:
+       MUST include 2+ dormers on front_elevation;
+       SHOULD include shutters; SHOULD include chimney
+
+   If brief.architectural_style doesn't match any above, infer from the style
+   name + style_notes what the visual signatures are and pick primitives accordingly.
+
 3. Don't randomly scatter features. A turret goes at a CORNER. Shutters flank
    WINDOWS. A gable is over an ENTRY or over the longest roof span. A chimney
    sits where the fireplace is logical (interior wall or exterior wall near
