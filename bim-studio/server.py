@@ -25,6 +25,31 @@ from database.db import get_db_connection
 from aps_upload import upload_to_aps, get_token
 load_dotenv()
 
+# ── Multi-agent pipeline import (with graceful fallback) ─────────────────
+# Makes bim_multi_agent/ importable regardless of cwd. BASE_DIR is
+# bim-studio/; the package lives one level up in BIM-reader/bim_multi_agent/.
+_MULTI_AGENT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+if _MULTI_AGENT_DIR not in sys.path:
+    sys.path.insert(0, _MULTI_AGENT_DIR)
+
+try:
+    from bim_multi_agent.orchestrator import generate_building_multi_agent, edit_building
+    from bim_multi_agent.agents import (
+        run_brief_agent, run_layout_agent, run_facade_agent, run_mep_agent,
+    )
+    from bim_multi_agent.orchestrator import merge_to_spec as ma_merge_to_spec
+    from bim_multi_agent.schemas import PipelineResult as _MA_PipelineResult
+    _MULTI_AGENT_AVAILABLE = True
+    print("[multi_agent] pipeline loaded successfully")
+except Exception as _ma_err:
+    print(f"[multi_agent] import failed, /api/generate/multi_agent will 500: {_ma_err}")
+    _MULTI_AGENT_AVAILABLE = False
+
+# In-memory cache of the last PipelineResult per building name. Used by
+# the edit endpoint to avoid re-running the full pipeline. Persists until
+# Flask restart — replace with Redis/DB for production.
+_LAST_RESULTS = {}
+
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder="static")
@@ -1002,6 +1027,165 @@ def generate_stream():
 
     return Response(stream_with_context(generate()), mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+# ── Multi-agent generation ──────────────────────────────────────────────
+@app.route("/api/generate/multi_agent", methods=["POST"])
+def generate_multi_agent_stream():
+    """
+    Multi-agent generation endpoint. SSE contract matches /api/generate/stream
+    so the existing frontend JS works unchanged: it streams 'text' events for
+    progress, emits one 'spec' event when the building_spec is ready (which
+    triggers the frontend's autoGenerateAndView), then 'done'.
+
+    Flow: Brief (Sonnet) → Layout (Haiku) → Facade + MEP in parallel (Haiku)
+          → merge_to_spec → ground_spec_with_library → stream.
+    """
+    if not _MULTI_AGENT_AVAILABLE:
+        return jsonify({"error": "Multi-agent pipeline not available — check bim_multi_agent/ imports"}), 500
+
+    data = request.json or {}
+    message = (data.get("message") or "").strip()
+    if not message:
+        return jsonify({"error": "Empty prompt"}), 400
+
+    def _sse(obj):
+        return f"data: {json.dumps(obj)}\n\n"
+
+    def generate():
+        import time as _time
+        import concurrent.futures
+        try:
+            yield _sse({"type": "text", "text":
+                "**Multi-agent pipeline** — 4 specialists coordinating.\n\n"})
+            yield _sse({"type": "text", "text":
+                "**Step 1/4: Brief agent** setting design intent...\n"})
+
+            t0 = _time.time()
+
+            # Step 1: Brief (Sonnet)
+            brief, brief_run = run_brief_agent(message)
+            yield _sse({"type": "text", "text":
+                f"✓ Style: **{brief.architectural_style}**, "
+                f"{brief.total_sqft:.0f} sqft, {brief.floors_count} floor(s)  \n"
+                f"Notes: {brief.style_notes}\n\n"})
+
+            # Step 2: Layout (Haiku)
+            yield _sse({"type": "text", "text":
+                "**Step 2/4: Layout agent** placing rooms...\n"})
+            layout, layout_run = run_layout_agent(brief)
+            room_names = [r.name for f in layout.floors for r in f.rooms]
+            yield _sse({"type": "text", "text":
+                f"✓ {len(layout.floors)} floor(s), "
+                f"{layout.footprint_width:.1f}m × {layout.footprint_depth:.1f}m, "
+                f"{len(room_names)} rooms: {', '.join(room_names)}\n\n"})
+
+            # Steps 3+4: Facade + MEP in parallel (Haiku)
+            yield _sse({"type": "text", "text":
+                "**Step 3+4/4: Facade + MEP** running in parallel...\n"})
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                facade_future = pool.submit(run_facade_agent, brief, layout)
+                mep_future    = pool.submit(run_mep_agent, brief, layout)
+                facade, facade_run = facade_future.result()
+                mep, mep_run       = mep_future.result()
+
+            feature_summary = ", ".join(f.type for f in facade.exterior_features)
+            yield _sse({"type": "text", "text":
+                f"✓ Facade: {len(facade.exterior_features)} features ({feature_summary})  \n"
+                f"✓ MEP: {mep.hvac_type}, {mep.hvac_zones} zone(s), equipment in {mep.equipment_location}\n\n"})
+
+            # Merge into the spec shape generate.py expects
+            building_spec = ma_merge_to_spec(brief, layout, facade, mep)
+            spec_dict = building_spec.model_dump()
+            spec_dict = ground_spec_with_library(spec_dict)
+
+            total = _time.time() - t0
+            yield _sse({"type": "text", "text":
+                f"**Done in {total:.1f}s** — "
+                f"brief={brief_run.duration_s}s, "
+                f"layout={layout_run.duration_s}s, "
+                f"facade={facade_run.duration_s}s, "
+                f"mep={mep_run.duration_s}s.  \n"
+                f"Generating 3D model...\n"})
+
+            # Cache full PipelineResult so the edit endpoint can reuse it
+            result = _MA_PipelineResult(
+                spec=building_spec, brief=brief, layout=layout,
+                facade=facade, mep=mep,
+                runs=[brief_run, layout_run, facade_run, mep_run],
+                total_duration_s=round(total, 2),
+            )
+            cache_key = spec_dict.get("name", "building")
+            _LAST_RESULTS[cache_key] = result
+
+            # Emit the spec — frontend's SSE handler triggers IFC build + xeokit load
+            yield _sse({"type": "spec", "spec": spec_dict})
+            yield _sse({"type": "done"})
+
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            print(f"[multi_agent] error: {e}\n{tb}")
+            yield _sse({"type": "text", "text": f"\n\n**Pipeline error:** {e}\n"})
+            yield _sse({"type": "done"})
+
+    return Response(stream_with_context(generate()), mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.route("/api/generate/multi_agent/edit", methods=["POST"])
+def generate_multi_agent_edit():
+    """
+    Re-run one specialist with an edit request. This is the killer demo:
+    edits cost 1 agent call (~3-6s) vs. full regen (~17s).
+
+    Request:
+      { "edit_request": str, "target": "facade"|"mep"|"layout"|"brief",
+        "cache_key": str (optional) }
+    """
+    if not _MULTI_AGENT_AVAILABLE:
+        return jsonify({"error": "Multi-agent pipeline not available"}), 500
+
+    data = request.json or {}
+    edit_request = (data.get("edit_request") or "").strip()
+    target = data.get("target", "facade")
+    cache_key = data.get("cache_key")
+
+    if not edit_request:
+        return jsonify({"error": "Missing edit_request"}), 400
+    if target not in ("brief", "layout", "facade", "mep"):
+        return jsonify({"error": f"Invalid target: {target}"}), 400
+
+    if cache_key and cache_key in _LAST_RESULTS:
+        prev = _LAST_RESULTS[cache_key]
+    elif _LAST_RESULTS:
+        cache_key = next(reversed(_LAST_RESULTS))
+        prev = _LAST_RESULTS[cache_key]
+    else:
+        return jsonify({"error": "No previous generation to edit"}), 404
+
+    try:
+        result = edit_building(prev, edit_request, target=target)
+        _LAST_RESULTS[cache_key] = result
+        spec_dict = result.spec.model_dump()
+        spec_dict = ground_spec_with_library(spec_dict)
+        return jsonify({
+            "status": "done",
+            "spec": spec_dict,
+            "cache_key": cache_key,
+            "target": target,
+            "edit_request": edit_request,
+            "total_duration_s": result.total_duration_s,
+            "agents": [
+                {"agent": r.agent, "duration_s": r.duration_s,
+                 "input_tokens": r.input_tokens, "output_tokens": r.output_tokens}
+                for r in result.runs
+            ],
+        })
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/generate/ifc", methods=["POST"])
