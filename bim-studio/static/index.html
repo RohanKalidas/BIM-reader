@@ -1361,7 +1361,7 @@ async function sendGenMessage(){
   addGenMessage('user',msg,false);genHistory.push({role:'user',content:msg});addGenTyping();
   var fullText='',aiMsg=null;
   try{
-    var res=await fetch('/api/generate/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,history:genHistory.slice(-8),session_spec:genSpec})});
+    var res=await fetch('/api/generate/multi_agent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,history:genHistory.slice(-8),session_spec:genSpec})});
     var reader=res.body.getReader(),decoder=new TextDecoder();var buffer='';
     while(true){
       // Pause: wait until unpaused
