@@ -1136,12 +1136,25 @@ def generate_multi_agent_stream():
 @app.route("/api/generate/multi_agent/edit", methods=["POST"])
 def generate_multi_agent_edit():
     """
-    Re-run one specialist with an edit request. This is the killer demo:
-    edits cost 1 agent call (~3-6s) vs. full regen (~17s).
+    Re-run one specialist with an edit request. Surgical by default —
+    only the targeted agent runs. Set cascade=True to also rerun downstream
+    agents (only meaningful for 'layout' and 'brief' targets).
 
     Request:
-      { "edit_request": str, "target": "facade"|"mep"|"layout"|"brief",
-        "cache_key": str (optional) }
+      {
+        "edit_request": str,
+        "target": "palette"|"materials"|"facade"|"mep"|"layout"|"brief",
+        "cascade": bool (optional, default false),
+        "cache_key": str (optional)
+      }
+
+    Edit cost by target (rough):
+      palette   — no LLM call, instant. For "change to red brick".
+      materials — 1 Haiku call, ~5s. For "swap clapboard for stucco".
+      facade    — 1 Haiku call, ~6s. For "add a cupola and change the style".
+      mep       — 1 Haiku call, ~5s. For "switch to gas heating".
+      layout    — 1 Haiku call, ~5s (+cascade ~11s). For "add a bedroom".
+      brief     — 1 Sonnet call, ~5s (+cascade ~17s). For style/sqft changes.
     """
     if not _MULTI_AGENT_AVAILABLE:
         return jsonify({"error": "Multi-agent pipeline not available"}), 500
@@ -1149,12 +1162,16 @@ def generate_multi_agent_edit():
     data = request.json or {}
     edit_request = (data.get("edit_request") or "").strip()
     target = data.get("target", "facade")
+    cascade = bool(data.get("cascade", False))
     cache_key = data.get("cache_key")
 
+    VALID_TARGETS = {"palette", "materials", "facade", "mep", "layout", "brief"}
     if not edit_request:
         return jsonify({"error": "Missing edit_request"}), 400
-    if target not in ("brief", "layout", "facade", "mep"):
-        return jsonify({"error": f"Invalid target: {target}"}), 400
+    if target not in VALID_TARGETS:
+        return jsonify({
+            "error": f"Invalid target: {target}. Must be one of {sorted(VALID_TARGETS)}."
+        }), 400
 
     if cache_key and cache_key in _LAST_RESULTS:
         prev = _LAST_RESULTS[cache_key]
@@ -1162,10 +1179,10 @@ def generate_multi_agent_edit():
         cache_key = next(reversed(_LAST_RESULTS))
         prev = _LAST_RESULTS[cache_key]
     else:
-        return jsonify({"error": "No previous generation to edit"}), 404
+        return jsonify({"error": "No previous generation to edit. Generate a building first."}), 404
 
     try:
-        result = edit_building(prev, edit_request, target=target)
+        result = edit_building(prev, edit_request, target=target, cascade=cascade)
         _LAST_RESULTS[cache_key] = result
         spec_dict = result.spec.model_dump()
         spec_dict = ground_spec_with_library(spec_dict)
@@ -1174,6 +1191,7 @@ def generate_multi_agent_edit():
             "spec": spec_dict,
             "cache_key": cache_key,
             "target": target,
+            "cascade": cascade,
             "edit_request": edit_request,
             "total_duration_s": result.total_duration_s,
             "agents": [
