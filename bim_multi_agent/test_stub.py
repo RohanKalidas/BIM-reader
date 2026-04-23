@@ -14,12 +14,19 @@ from __future__ import annotations
 
 import json
 import sys
+import os
 from unittest.mock import patch
 
 # Stub the anthropic import before anything else loads
 sys.modules.setdefault("anthropic", type(sys)("anthropic"))  # minimal stub
 
-from .schemas import (  # noqa: E402
+# Support running directly (python test_stub.py from inside bim_multi_agent/)
+# AND via python -m bim_multi_agent.test_stub from the repo root.
+_PKG_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _PKG_ROOT not in sys.path:
+    sys.path.insert(0, _PKG_ROOT)
+
+from bim_multi_agent.schemas import (  # noqa: E402
     AgentRun,
     Brief,
     Facade,
@@ -126,7 +133,7 @@ def test_schemas_validate():
 # ── Test 2: merge_to_spec produces generate.py-compatible shape ─────────────
 
 def test_merge_to_spec():
-    from .orchestrator import merge_to_spec
+    from bim_multi_agent.orchestrator import merge_to_spec
     spec = merge_to_spec(SAMPLE_BRIEF, SAMPLE_LAYOUT, SAMPLE_FACADE, SAMPLE_MEP)
 
     # The spec must have these top-level keys (matching generate.py today)
@@ -161,7 +168,7 @@ def test_merge_to_spec():
 # ── Test 3: Facade palette overrides brief palette ──────────────────────────
 
 def test_facade_overrides_brief_palette():
-    from .orchestrator import merge_to_spec
+    from bim_multi_agent.orchestrator import merge_to_spec
 
     facade_with_override = Facade(
         exterior_features=SAMPLE_FACADE.exterior_features,
@@ -178,8 +185,8 @@ def test_facade_overrides_brief_palette():
 # ── Test 4: Edit path reuses cached agent runs ──────────────────────────────
 
 def test_edit_path_reuses_runs():
-    from .orchestrator import edit_building, merge_to_spec
-    from .schemas import PipelineResult
+    from bim_multi_agent.orchestrator import edit_building, merge_to_spec
+    from bim_multi_agent.schemas import PipelineResult
 
     base = PipelineResult(
         spec=merge_to_spec(SAMPLE_BRIEF, SAMPLE_LAYOUT, SAMPLE_FACADE, SAMPLE_MEP),
@@ -221,10 +228,10 @@ def test_edit_path_reuses_runs():
         call_count["brief"] += 1
         return SAMPLE_BRIEF, AgentRun(agent="brief_agent", duration_s=0, input_tokens=0, output_tokens=0)
 
-    with patch("orchestrator.run_facade_agent", side_effect=fake_facade), \
-         patch("orchestrator.run_mep_agent", side_effect=fake_mep), \
-         patch("orchestrator.run_layout_agent", side_effect=fake_layout), \
-         patch("orchestrator.run_brief_agent", side_effect=fake_brief):
+    with patch("bim_multi_agent.orchestrator.run_facade_agent", side_effect=fake_facade), \
+         patch("bim_multi_agent.orchestrator.run_mep_agent", side_effect=fake_mep), \
+         patch("bim_multi_agent.orchestrator.run_layout_agent", side_effect=fake_layout), \
+         patch("bim_multi_agent.orchestrator.run_brief_agent", side_effect=fake_brief):
 
         # Edit just the facade
         result = edit_building(base, "Make it modern with a flat roof", target="facade")
@@ -240,25 +247,101 @@ def test_edit_path_reuses_runs():
 
     # Try an MEP-only edit too
     call_count = {"facade": 0, "mep": 0, "layout": 0, "brief": 0}
-    with patch("orchestrator.run_facade_agent", side_effect=fake_facade), \
-         patch("orchestrator.run_mep_agent", side_effect=fake_mep), \
-         patch("orchestrator.run_layout_agent", side_effect=fake_layout), \
-         patch("orchestrator.run_brief_agent", side_effect=fake_brief):
+    with patch("bim_multi_agent.orchestrator.run_facade_agent", side_effect=fake_facade), \
+         patch("bim_multi_agent.orchestrator.run_mep_agent", side_effect=fake_mep), \
+         patch("bim_multi_agent.orchestrator.run_layout_agent", side_effect=fake_layout), \
+         patch("bim_multi_agent.orchestrator.run_brief_agent", side_effect=fake_brief):
         result = edit_building(base, "Switch to gas heating", target="mep")
     assert call_count == {"facade": 0, "mep": 1, "layout": 0, "brief": 0}, \
         f"unexpected calls on MEP edit: {call_count}"
     print("✓ MEP edit only re-runs MEP agent")
 
-    # A layout edit should cascade to facade + MEP
+    # Default behavior: layout edit does NOT cascade to facade+MEP
     call_count = {"facade": 0, "mep": 0, "layout": 0, "brief": 0}
-    with patch("orchestrator.run_facade_agent", side_effect=fake_facade), \
-         patch("orchestrator.run_mep_agent", side_effect=fake_mep), \
-         patch("orchestrator.run_layout_agent", side_effect=fake_layout), \
-         patch("orchestrator.run_brief_agent", side_effect=fake_brief):
+    with patch("bim_multi_agent.orchestrator.run_facade_agent", side_effect=fake_facade), \
+         patch("bim_multi_agent.orchestrator.run_mep_agent", side_effect=fake_mep), \
+         patch("bim_multi_agent.orchestrator.run_layout_agent", side_effect=fake_layout), \
+         patch("bim_multi_agent.orchestrator.run_brief_agent", side_effect=fake_brief):
         result = edit_building(base, "Add a basement", target="layout")
+    assert call_count == {"facade": 0, "mep": 0, "layout": 1, "brief": 0}, \
+        f"layout edit without cascade should only rerun layout: {call_count}"
+    print("✓ layout edit (cascade=False, default) only re-runs layout")
+
+    # Opt-in cascading: layout edit with cascade=True re-runs facade + MEP
+    call_count = {"facade": 0, "mep": 0, "layout": 0, "brief": 0}
+    with patch("bim_multi_agent.orchestrator.run_facade_agent", side_effect=fake_facade), \
+         patch("bim_multi_agent.orchestrator.run_mep_agent", side_effect=fake_mep), \
+         patch("bim_multi_agent.orchestrator.run_layout_agent", side_effect=fake_layout), \
+         patch("bim_multi_agent.orchestrator.run_brief_agent", side_effect=fake_brief):
+        result = edit_building(base, "Add a basement", target="layout", cascade=True)
     assert call_count == {"facade": 1, "mep": 1, "layout": 1, "brief": 0}, \
-        f"layout edit should cascade to facade + MEP: {call_count}"
-    print("✓ layout edit cascades to facade + MEP (but not brief)")
+        f"layout edit with cascade=True should also rerun facade + MEP: {call_count}"
+    print("✓ layout edit (cascade=True) re-runs facade + MEP")
+
+    # Brief edit by default does NOT cascade
+    call_count = {"facade": 0, "mep": 0, "layout": 0, "brief": 0}
+    with patch("bim_multi_agent.orchestrator.run_facade_agent", side_effect=fake_facade), \
+         patch("bim_multi_agent.orchestrator.run_mep_agent", side_effect=fake_mep), \
+         patch("bim_multi_agent.orchestrator.run_layout_agent", side_effect=fake_layout), \
+         patch("bim_multi_agent.orchestrator.run_brief_agent", side_effect=fake_brief):
+        result = edit_building(base, "Make it 1800 sqft", target="brief")
+    assert call_count == {"facade": 0, "mep": 0, "layout": 0, "brief": 1}, \
+        f"brief edit without cascade should only rerun brief: {call_count}"
+    print("✓ brief edit (cascade=False, default) only re-runs brief")
+
+
+def test_palette_edit():
+    """palette target should update colors without any LLM call."""
+    from bim_multi_agent.orchestrator import edit_building, merge_to_spec
+    from bim_multi_agent.schemas import PipelineResult
+
+    base = PipelineResult(
+        spec=merge_to_spec(SAMPLE_BRIEF, SAMPLE_LAYOUT, SAMPLE_FACADE, SAMPLE_MEP),
+        brief=SAMPLE_BRIEF,
+        layout=SAMPLE_LAYOUT,
+        facade=SAMPLE_FACADE,
+        mep=SAMPLE_MEP,
+        runs=[
+            AgentRun(agent="brief_agent", duration_s=1.0, input_tokens=100, output_tokens=200),
+            AgentRun(agent="layout_agent", duration_s=2.0, input_tokens=300, output_tokens=400),
+            AgentRun(agent="facade_agent", duration_s=1.5, input_tokens=200, output_tokens=300),
+            AgentRun(agent="mep_agent", duration_s=1.2, input_tokens=150, output_tokens=250),
+        ],
+        total_duration_s=5.7,
+    )
+
+    # Test 1: "change to red brick" → ext_wall becomes brick red, no other keys
+    call_count = {"facade": 0, "mep": 0, "layout": 0, "brief": 0}
+    def fake_any(*a, **k):
+        call_count["any"] = call_count.get("any", 0) + 1
+        return SAMPLE_FACADE, AgentRun(agent="x", duration_s=0, input_tokens=0, output_tokens=0)
+
+    with patch("bim_multi_agent.orchestrator.run_facade_agent", side_effect=fake_any), \
+         patch("bim_multi_agent.orchestrator.run_mep_agent", side_effect=fake_any), \
+         patch("bim_multi_agent.orchestrator.run_layout_agent", side_effect=fake_any), \
+         patch("bim_multi_agent.orchestrator.run_brief_agent", side_effect=fake_any):
+        result = edit_building(base, "Change to red brick", target="palette")
+
+    assert call_count.get("any", 0) == 0, "palette edit should NOT call any LLM agent"
+    new_palette = result.spec.metadata["style_palette"]
+    # "red brick" maps to #8B3A2F on ext_wall
+    assert new_palette["ext_wall"] == "#8B3A2F", f"expected brick red ext_wall, got {new_palette['ext_wall']}"
+    # Other palette keys preserved
+    assert new_palette.get("trim") == SAMPLE_BRIEF.style_palette["trim"], "trim should be unchanged"
+    print("✓ palette edit 'red brick' updates ext_wall only, no LLM call")
+
+    # Test 2: multi-key palette edit
+    with patch("bim_multi_agent.orchestrator.run_facade_agent", side_effect=fake_any), \
+         patch("bim_multi_agent.orchestrator.run_mep_agent", side_effect=fake_any), \
+         patch("bim_multi_agent.orchestrator.run_layout_agent", side_effect=fake_any), \
+         patch("bim_multi_agent.orchestrator.run_brief_agent", side_effect=fake_any):
+        result = edit_building(base, "White trim, dark green walls, charcoal roof", target="palette")
+
+    pal = result.spec.metadata["style_palette"]
+    assert pal["trim"] == "#F5F5F5", f"trim should be white, got {pal['trim']}"
+    assert pal["ext_wall"] == "#1F3529", f"ext_wall should be dark green, got {pal['ext_wall']}"
+    assert pal["roof"] == "#36454F", f"roof should be charcoal, got {pal['roof']}"
+    print("✓ palette edit parses multi-key 'White trim, dark green walls, charcoal roof'")
 
 
 # ── Run all tests ───────────────────────────────────────────────────────────
@@ -269,4 +352,5 @@ if __name__ == "__main__":
     test_merge_to_spec()
     test_facade_overrides_brief_palette()
     test_edit_path_reuses_runs()
+    test_palette_edit()
     print("\nAll stub tests passed ✓")
