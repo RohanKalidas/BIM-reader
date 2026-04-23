@@ -44,6 +44,170 @@ from .schemas import (
 logger = logging.getLogger(__name__)
 
 
+# ── Palette hint parser ────────────────────────────────────────────────────
+# Fast path for "change the color" edits — no LLM needed. Covers the common
+# vocabulary for color names + material keywords. Falls through silently for
+# anything it doesn't recognize (caller should use 'materials' target instead).
+
+_NAMED_COLORS = {
+    # Neutrals
+    "white":        "#F5F5F5",
+    "cream":        "#F0E8D6",
+    "beige":        "#E8DCC4",
+    "tan":          "#D2B48C",
+    "gray":         "#808080",
+    "grey":         "#808080",
+    "dark gray":    "#3A3A3A",
+    "dark grey":    "#3A3A3A",
+    "light gray":   "#C0C0C0",
+    "light grey":   "#C0C0C0",
+    "black":        "#1A1A1A",
+    "charcoal":     "#36454F",
+    # Warms
+    "red":          "#B22222",
+    "brick":        "#8B3A2F",
+    "brick red":    "#8B3A2F",
+    "red brick":    "#8B3A2F",
+    "rust":         "#8B4513",
+    "orange":       "#D35400",
+    "terracotta":   "#A0522D",
+    "brown":        "#5C4033",
+    "dark brown":   "#3D2817",
+    # Cools
+    "blue":         "#2C5282",
+    "navy":         "#1A2E4C",
+    "dark blue":    "#1A2E4C",
+    "light blue":   "#A8C6DF",
+    "teal":         "#2C7A7B",
+    # Greens
+    "green":        "#3A5F3A",
+    "dark green":   "#1F3529",
+    "forest green": "#1F3529",
+    "sage":         "#87A96B",
+    "olive":        "#6B7B3A",
+    # Woods / naturals
+    "wood":         "#8B6F47",
+    "natural wood": "#A78860",
+    "oak":          "#A17C52",
+    "walnut":       "#5C4033",
+    # Materials (maps to ext_wall color conventions)
+    "clapboard":    "#E8DCC4",   # typical cream/beige clapboard
+    "stone":        "#8A8578",
+    "stucco":       "#D8CFBE",
+    "siding":       "#C8BFA3",
+}
+
+# Which palette key each material/color implies. If the user says "red brick"
+# with no qualifier, assume they mean the ext_wall. Trim/accent need explicit
+# mention ("white trim", "black trim").
+_KEY_HINTS = [
+    ("ext_wall", [
+        "wall", "exterior", "ext", "siding", "cladding", "clapboard",
+        "brick", "stone", "stucco", "facade", "face",
+    ]),
+    ("trim", [
+        "trim", "molding", "fascia", "frame",
+    ]),
+    ("roof", [
+        "roof", "shingle", "tile",
+    ]),
+    ("accent", [
+        "accent", "door", "shutter", "feature",
+    ]),
+    ("window_glass", [
+        "window", "glass", "glazing",
+    ]),
+]
+
+
+def _apply_palette_hints(palette: dict, edit_request: str) -> dict:
+    """
+    Parse a natural-language palette edit into a dict update.
+
+    Examples:
+      "Change to red brick" → {"ext_wall": "#8B3A2F"}
+      "White trim, dark green walls" → {"trim": "#F5F5F5", "ext_wall": "#1F3529"}
+      "Make the roof charcoal" → {"roof": "#36454F"}
+
+    Returns the updated palette. Keys not mentioned in the edit are preserved.
+    """
+    import re
+    req = edit_request.lower()
+
+    # Find all (color_name, position) pairs mentioned in the request,
+    # longest-match-first so "dark gray" beats "gray".
+    matches = []
+    for color_name in sorted(_NAMED_COLORS, key=len, reverse=True):
+        for m in re.finditer(r'\b' + re.escape(color_name) + r'\b', req):
+            matches.append((m.start(), color_name, _NAMED_COLORS[color_name]))
+
+    if not matches:
+        logger.warning("palette hint parser: no colors recognized in %r", edit_request)
+        return palette
+
+    # Dedupe overlapping matches — keep the longer ones. "dark green" at pos 12
+    # should suppress "green" at pos 17. Sort by (start, -length) so longest
+    # match at a given position wins, then filter overlaps left-to-right.
+    matches.sort(key=lambda x: (x[0], -len(x[1])))
+    filtered = []
+    claimed_end = -1
+    for pos, color_name, hex_value in matches:
+        if pos < claimed_end:
+            continue  # overlaps a previously-kept longer match
+        filtered.append((pos, color_name, hex_value))
+        claimed_end = pos + len(color_name)
+    matches = filtered
+
+    updated = dict(palette)
+    for pos, color_name, hex_value in matches:
+        color_end = pos + len(color_name)
+        # Look at words AFTER the color (distance 0-25 chars, up to a punctuation
+        # break). "white trim" → look at " trim, dark gr..." → finds "trim".
+        # Fallback: look AT/BEFORE the color for material hints ("red brick",
+        # "oak siding", "stucco walls" where the material names are the hint).
+        after = edit_request[color_end : color_end + 25].lower()
+        # Truncate at the next comma/semicolon/period — those separate clauses.
+        for sep in (",", ";", "."):
+            if sep in after:
+                after = after.split(sep)[0]
+                break
+
+        before = edit_request[max(0, pos - 25): pos].lower()
+        for sep in (",", ";", "."):
+            if sep in before:
+                before = before.rsplit(sep, 1)[-1]
+
+        # Find the closest matching key hint. Score each (key, hint) combo by
+        # how close its hint word is to the color. Prefer words AFTER the
+        # color (primary convention: "white trim" not "trim white").
+        best_key = None
+        best_distance = 9999
+        for key, hints in _KEY_HINTS:
+            for h in hints:
+                # Check after-text first with a low penalty
+                if h in after:
+                    d = after.find(h)
+                    if d < best_distance:
+                        best_distance = d
+                        best_key = key
+                # Then before-text with a higher penalty (distance offset)
+                if h in before:
+                    d = 100 + (len(before) - before.rfind(h))
+                    if d < best_distance:
+                        best_distance = d
+                        best_key = key
+
+        # If no hint found, default to ext_wall (most common target)
+        key_assigned = best_key or "ext_wall"
+        updated[key_assigned] = hex_value
+        logger.info(
+            "palette hint: %r → %s = %s (after=%r, before=%r)",
+            color_name, key_assigned, hex_value, after, before,
+        )
+
+    return updated
+
+
 # ── Merge ──────────────────────────────────────────────────────────────────
 
 def merge_to_spec(
@@ -182,39 +346,75 @@ def generate_building_multi_agent(
 
 
 # ── Edit API ───────────────────────────────────────────────────────────────
-# This is the thing monolithic generation can't do cleanly. Rerun ONE
-# specialist with an edit intent, keep the other three outputs, remerge.
+# Surgical edits — re-run the minimum number of agents required for the
+# user's change, and never cascade unless the caller opts in.
+#
+# Targets (fine-grained, in order of cost from cheapest to most expensive):
+#
+#   palette     - Just rewrite style_palette (no LLM call, instant)
+#                 "Change ext_wall to brick red"
+#                 Updates only: metadata.style_palette
+#
+#   materials   - Palette + material-only facade feature tweaks (1 Haiku call)
+#                 "Swap clapboard for brick"
+#                 Updates: facade.style_palette + facade feature materials
+#                 Keeps: facade feature list unchanged
+#
+#   facade      - Full facade re-design (1 Haiku call, ~5-7s)
+#                 "Add a cupola and change to Italianate style"
+#                 Updates: exterior_features list + palette
+#                 Keeps: layout, MEP, brief
+#
+#   mep         - MEP strategy re-pick (1 Haiku call, ~4-5s)
+#                 "Use gas heating instead"
+#                 Updates: mep_strategy
+#                 Keeps: everything else
+#
+#   layout      - Layout re-plan (1 Haiku call, ~5-6s)
+#                 "Add a 4th bedroom" / "Move kitchen to east side"
+#                 Updates: floors/rooms
+#                 Keeps: brief, facade, MEP — UNLESS cascade=True, then rerun
+#                 facade + MEP against new layout
+#
+#   brief       - Brief update (1 Sonnet call, ~4-5s)
+#                 "Actually make it 1800 sqft" / "Change style to Colonial"
+#                 Updates: brief (style, program, front_elevation, etc.)
+#                 Keeps: layout, facade, MEP — UNLESS cascade=True, then rerun
+#                 all downstream specialists against the new brief
+#
+# cascade parameter:
+#   - False (default): edit ONLY the target. Faster, preserves everything else.
+#   - True: edit target AND all downstream agents whose outputs logically
+#     depend on it. Use when the edit genuinely changes things downstream.
+#
+# Recommended UX: default to cascade=False. If the user isn't satisfied with
+# the result because the untouched parts now look wrong against the edit
+# (e.g. they changed brief to "Colonial" but the facade still has a turret),
+# surface a "Re-run affected areas" button that does cascade=True.
 
 def edit_building(
     previous: PipelineResult,
     edit_request: str,
     *,
     target: str,
+    cascade: bool = False,
 ) -> PipelineResult:
     """
-    Re-run a single specialist based on an edit request.
+    Re-run ONLY the targeted specialist by default. Preserves everything else.
 
     Args:
-        previous: The last PipelineResult (must have .brief, .layout, etc.)
-        edit_request: Plain-text edit. "Change facade to brick." "Redo MEP
-            with a heat pump." "Move the bathroom next to the bedroom."
-        target: Which specialist to re-run. One of 'brief', 'layout',
-            'facade', 'mep'. If 'layout' is chosen, facade and MEP are
-            also re-run (they depend on layout); otherwise only the
-            targeted specialist.
+        previous: The last PipelineResult.
+        edit_request: Plain-text edit. Keep it short and specific.
+        target: One of 'palette', 'materials', 'facade', 'mep', 'layout', 'brief'.
+        cascade: If True, also rerun any downstream specialists that logically
+            depend on the edited layer. Default False — user must opt in.
 
     Returns:
-        A new PipelineResult. The un-re-run agents' outputs are copied
-        verbatim from `previous`. Their AgentRun records are preserved
-        too (so you can see which calls are fresh vs cached).
-
-    Design note: the edit_request is injected into the chosen agent's
-    user message with clear "EDIT REQUEST" framing. The agent sees the
-    previous output and the user's desired change, so it can make a
-    minimal revision rather than a full regeneration.
+        A new PipelineResult. AgentRun records from un-re-run agents are
+        preserved verbatim, so you can see which runs were fresh vs cached.
     """
     start = time.time()
-    runs = list(previous.runs)  # start with cached runs; replace targeted ones
+    runs = list(previous.runs)
 
     brief = previous.brief
     layout = previous.layout
@@ -222,69 +422,122 @@ def edit_building(
     mep = previous.mep
 
     def _replace_run(label: str, new_run):
-        """Replace the matching run record with the fresh one."""
         nonlocal runs
         runs = [r for r in runs if r.agent != label]
         runs.append(new_run)
 
-    if target == "brief":
-        logger.info("Edit: re-running brief agent with request: %r", edit_request)
-        # We pass the previous brief + edit_request so the agent sees its own output.
-        brief_user_prompt = (
-            f"PREVIOUS BUILDING REQUEST:\n(derived brief: {brief.model_dump_json(indent=2)})\n\n"
-            f"EDIT REQUEST FROM USER:\n{edit_request}\n\n"
-            "Produce an updated Brief JSON that incorporates the edit while keeping "
-            "everything else unchanged."
-        )
-        brief, run = run_brief_agent(brief_user_prompt)
-        _replace_run("brief_agent", run)
-        # Brief changed → re-run everything downstream
-        target = "layout"  # fallthrough
+    # ── palette: pure metadata edit, no LLM ───────────────────────────────
+    if target == "palette":
+        logger.info("Edit: palette-only rewrite (no LLM): %r", edit_request)
+        # Parse the edit request for palette hints. Very simple heuristics —
+        # for anything more sophisticated, use 'materials' instead.
+        palette = dict(facade.style_palette or brief.style_palette)
+        palette = _apply_palette_hints(palette, edit_request)
+        facade = facade.model_copy(update={"style_palette": palette})
+        # No run record to update — no agent was called.
+        logger.info("  → palette updated: %s", palette)
 
-    if target == "layout":
-        logger.info("Edit: re-running layout (and downstream specialists) for: %r", edit_request)
-        # Inject the edit into the brief's style_notes so the layout agent sees
-        # the change without us needing a richer API. Restore after the call.
+    # ── materials: palette + feature color tweaks via facade agent ───────
+    elif target == "materials":
+        logger.info("Edit: materials-only facade rewrite: %r", edit_request)
         original_notes = brief.style_notes
-        brief.style_notes = f"{original_notes}\n\nEDIT FROM PREVIOUS VERSION: {edit_request}"
+        brief.style_notes = (
+            f"{original_notes}\n\n"
+            f"MATERIALS EDIT (keep exterior_features list EXACTLY the same, "
+            f"only change style_palette and feature color_key params): {edit_request}"
+        )
+        try:
+            new_facade, run = run_facade_agent(brief, layout)
+        finally:
+            brief.style_notes = original_notes
+        # Sanity check — if the agent returned a different feature COUNT,
+        # warn but accept. It may have tweaked feature params which is fine.
+        if len(new_facade.exterior_features) != len(facade.exterior_features):
+            logger.warning(
+                "Materials edit changed feature count (%d → %d). Expected same count.",
+                len(facade.exterior_features), len(new_facade.exterior_features),
+            )
+        facade = new_facade
+        _replace_run("facade_agent", run)
+
+    # ── facade: re-design exterior features ──────────────────────────────
+    elif target == "facade":
+        logger.info("Edit: re-running facade agent: %r", edit_request)
+        original_notes = brief.style_notes
+        brief.style_notes = f"{original_notes}\n\nFACADE EDIT: {edit_request}"
+        try:
+            facade, run = run_facade_agent(brief, layout)
+        finally:
+            brief.style_notes = original_notes
+        _replace_run("facade_agent", run)
+
+    # ── mep: re-pick HVAC/plumbing/electrical strategy ───────────────────
+    elif target == "mep":
+        logger.info("Edit: re-running MEP agent: %r", edit_request)
+        original_notes = brief.style_notes
+        brief.style_notes = f"{original_notes}\n\nMEP EDIT: {edit_request}"
+        try:
+            mep, run = run_mep_agent(brief, layout)
+        finally:
+            brief.style_notes = original_notes
+        _replace_run("mep_agent", run)
+
+    # ── layout: re-plan rooms ────────────────────────────────────────────
+    elif target == "layout":
+        logger.info("Edit: re-running layout agent (cascade=%s): %r", cascade, edit_request)
+        original_notes = brief.style_notes
+        brief.style_notes = f"{original_notes}\n\nLAYOUT EDIT: {edit_request}"
         try:
             layout, run = run_layout_agent(brief)
         finally:
             brief.style_notes = original_notes
         _replace_run("layout_agent", run)
-        # Layout changed → rerun facade + MEP
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            facade_future = pool.submit(run_facade_agent, brief, layout)
-            mep_future = pool.submit(run_mep_agent, brief, layout)
-            facade, frun = facade_future.result()
-            mep, mrun = mep_future.result()
-        _replace_run("facade_agent", frun)
-        _replace_run("mep_agent", mrun)
 
-    elif target == "facade":
-        logger.info("Edit: re-running facade agent: %r", edit_request)
-        # Inject edit_request into the brief's style_notes so the facade agent
-        # sees the change. Don't touch layout.
-        original_notes = brief.style_notes
-        brief.style_notes = f"{original_notes}\n\nFACADE EDIT: {edit_request}"
-        facade, run = run_facade_agent(brief, layout)
-        brief.style_notes = original_notes
-        _replace_run("facade_agent", run)
+        if cascade:
+            logger.info("  cascade=True: re-running facade + MEP against new layout")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                facade_future = pool.submit(run_facade_agent, brief, layout)
+                mep_future = pool.submit(run_mep_agent, brief, layout)
+                facade, frun = facade_future.result()
+                mep, mrun = mep_future.result()
+            _replace_run("facade_agent", frun)
+            _replace_run("mep_agent", mrun)
 
-    elif target == "mep":
-        logger.info("Edit: re-running MEP agent: %r", edit_request)
-        original_notes = brief.style_notes
-        brief.style_notes = f"{original_notes}\n\nMEP EDIT: {edit_request}"
-        mep, run = run_mep_agent(brief, layout)
-        brief.style_notes = original_notes
-        _replace_run("mep_agent", run)
+    # ── brief: update the design intent ──────────────────────────────────
+    elif target == "brief":
+        logger.info("Edit: re-running brief agent (cascade=%s): %r", cascade, edit_request)
+        brief_user_prompt = (
+            f"PREVIOUS BRIEF:\n{brief.model_dump_json(indent=2)}\n\n"
+            f"EDIT REQUEST:\n{edit_request}\n\n"
+            "Produce an updated Brief JSON. Change ONLY what the edit request "
+            "asks for. Keep everything else (program, palette, floors_count, "
+            "front_elevation, etc.) exactly as it was unless the edit forces a "
+            "change. Be conservative — if unsure, leave it alone."
+        )
+        brief, run = run_brief_agent(brief_user_prompt)
+        _replace_run("brief_agent", run)
+
+        if cascade:
+            logger.info("  cascade=True: re-running layout + facade + MEP against new brief")
+            layout, lrun = run_layout_agent(brief)
+            _replace_run("layout_agent", lrun)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+                facade_future = pool.submit(run_facade_agent, brief, layout)
+                mep_future = pool.submit(run_mep_agent, brief, layout)
+                facade, frun = facade_future.result()
+                mep, mrun = mep_future.result()
+            _replace_run("facade_agent", frun)
+            _replace_run("mep_agent", mrun)
 
     else:
-        raise ValueError(f"Unknown edit target: {target!r}. Use brief, layout, facade, or mep.")
+        raise ValueError(
+            f"Unknown edit target: {target!r}. "
+            "Use palette, materials, facade, mep, layout, or brief."
+        )
 
     spec = merge_to_spec(brief, layout, facade, mep)
     total = time.time() - start
-    logger.info("Edit done in %.2fs (target=%s)", total, target)
+    logger.info("Edit done in %.2fs (target=%s, cascade=%s)", total, target, cascade)
 
     return PipelineResult(
         spec=spec,
