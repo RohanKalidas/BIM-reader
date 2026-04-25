@@ -1352,13 +1352,192 @@ function updatePlanSidebar(spec){
   document.getElementById('view-tab').style.display='flex';
 }
 
+// ── Edit intent detection ──────────────────────────────────────────────
+// When the user has a previous generation (genSpec exists) and types a
+// message that looks like an edit ("make the walls red", "change the
+// roof", etc.), route to /api/generate/multi_agent/edit with the right
+// target instead of running the full pipeline.
+//
+// Returns { kind: 'generate' } for full generations, or
+// { kind: 'edit', target, cascade } for surgical edits.
+//
+// Order of checks matters — earlier patterns win. Most-specific-first.
+function classifyGenIntent(msg){
+  // No previous generation cached? Always full generate.
+  if(!genSpec) return { kind:'generate', reason:'no prior building' };
+  var s=msg.toLowerCase().trim();
+
+  // ── Explicit "new building" intent — start fresh
+  if(/\b(design|build|create|generate|make me|i want|i\u2019d like)\s+(me\s+)?(a |an )/.test(s)
+     || /\bstart over\b/.test(s)
+     || /\bfrom scratch\b/.test(s)
+     || /\bnew building\b/.test(s)){
+    return { kind:'generate', reason:'explicit new-building intent' };
+  }
+
+  // ── MEP edits — system / equipment terms
+  if(/\b(hvac|heating|cooling|heat pump|air ?condition|ac unit|ventilation|water heater|furnace|sprinkler|electric panel|amp(s|erage)?|gas heat|electric heat|hrv|erv)\b/.test(s)){
+    return { kind:'edit', target:'mep', cascade:false, reason:'MEP keyword' };
+  }
+
+  // ── Layout edits — adding/removing/moving rooms or floors
+  if(/\b(add|put in|include|remove|delete|move|relocate|swap)\b.{0,30}\b(bedroom|bathroom|room|kitchen|office|dining|laundry|closet|hallway|pantry|den|study|garage|nursery|mudroom|foyer)\b/.test(s)
+     || /\b(another floor|second story|third floor|basement|attic|loft|upstairs|downstairs)\b/.test(s)
+     || /\b(bigger|smaller|larger|wider|deeper|shrink|expand)\b.{0,20}\b(room|kitchen|space|building|footprint)\b/.test(s)){
+    return { kind:'edit', target:'layout', cascade:false, reason:'layout keyword' };
+  }
+
+  // ── Brief edits — overall size / style / program changes
+  if(/\b(change|switch).{0,20}\bstyle\b/.test(s)
+     || /\bmake it (a |an )?(modern|victorian|colonial|tudor|farmhouse|brutalist|art deco|mediterranean|spanish|craftsman|cape cod|japandi|scandinavian|mid[- ]century)\b/.test(s)
+     || /\b\d{3,5}\s*(sqft|sq ?ft|square feet|sf)\b/.test(s)
+     || /\bmore (bedrooms|bathrooms|rooms)\b/.test(s)){
+    return { kind:'edit', target:'brief', cascade:false, reason:'brief keyword' };
+  }
+
+  // ── Palette edits — color/material changes mentioning a surface
+  // Routes to palette ONLY if a color/material word AND a surface word
+  // are both present — this keeps the parser well-behaved. "Make it red"
+  // alone is too ambiguous; "make the walls red" is clear.
+  // Note: surface words include plurals ("walls", "shingles") and a
+  // generic "siding" so "use brick siding" works.
+  var COLOR_RE=/\b(red|orange|yellow|green|blue|purple|pink|brown|black|white|gr[ae]y|cream|beige|tan|navy|teal|charcoal|forest|olive|sage|brick|rust|terracotta|wood|oak|walnut|stone|stucco|clapboard|siding|shingle)\b/g;
+  var hasSurface=/\b(walls?|trim|roofs?|shingles?|accent|window glass|exterior|paint|color|cladding|fascia)\b/.test(s);
+  var colorMatches=s.match(COLOR_RE)||[];
+  if(colorMatches.length>=1 && hasSurface){
+    return { kind:'edit', target:'palette', cascade:false, reason:'color+surface keyword' };
+  }
+
+  // ── Facade edits — feature additions/changes
+  if(/\b(add|put|include|remove|change|update|redesign)\b.{0,30}\b(turret|porch|gable|dormer|chimney|cupola|bay window|portico|column|shutter|balcony|parapet|canopy|pergola|finial|awning|fin)\b/.test(s)
+     || /\b(redesign|change|update).{0,20}\b(facade|exterior|outside|front)\b/.test(s)){
+    return { kind:'edit', target:'facade', cascade:false, reason:'facade-feature keyword' };
+  }
+
+  // ── Materials — palette + facade material details, when the user
+  // mentions multiple materials/colors but no specific surface.
+  // "Use brick instead of clapboard" → materials.
+  if(colorMatches.length>=2 || /\b(material|finish|texture|cladding)\b/.test(s)){
+    return { kind:'edit', target:'materials', cascade:false, reason:'multi-material or materials keyword' };
+  }
+
+  // Ambiguous and short? Probably an edit, default to facade.
+  if(s.split(/\s+/).length<=6){
+    return { kind:'edit', target:'facade', cascade:false, reason:'short ambiguous (defaulting to facade)' };
+  }
+
+  // Default: when in doubt, full regen. Better to be slow and right than
+  // fast and surprising (an edit that secretly didn't preserve the layout).
+  return { kind:'generate', reason:'fallback (no edit intent recognized)' };
+}
+
+// Friendly badge label for the user. Shows above the AI response so the
+// user sees what the system decided to do. Matches the agent name in the
+// timing breakdown.
+function intentBadgeLabel(intent){
+  if(intent.kind==='generate') return 'New build';
+  var labels={palette:'Palette edit (instant)', materials:'Materials edit',
+              facade:'Facade edit', mep:'MEP edit',
+              layout:'Layout edit', brief:'Brief edit'};
+  return labels[intent.target]||('Edit ('+intent.target+')');
+}
+
+// Run a surgical edit via /api/generate/multi_agent/edit. Non-streaming —
+// the edit endpoint returns the new spec in one shot. After the edit we
+// re-render the IFC and reload xeokit.
+async function runEdit(msg, intent, aiMsg){
+  var bubble=aiMsg.querySelector('.gen-msg-bubble');
+  bubble.innerHTML='<div style="opacity:0.7">Running '+intentBadgeLabel(intent)+'\u2026</div>';
+  try{
+    var res=await fetch('/api/generate/multi_agent/edit',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({edit_request:msg,target:intent.target,cascade:intent.cascade})
+    });
+    var data=await res.json();
+    if(!res.ok||data.error){
+      bubble.innerHTML='<div style="color:#f88">Edit failed: '+(data.error||'HTTP '+res.status)+'</div>';
+      return;
+    }
+
+    // Build the timing breakdown — show which agents ran fresh vs cached.
+    // Cached agents are detected by matching duration against the previous
+    // pipeline result. We approximate: if total_duration_s is small relative
+    // to the per-agent durations, the others were cached.
+    var lines=[];
+    lines.push('<div style="font-family:var(--mono);font-size:11px;opacity:0.85;line-height:1.5">');
+    lines.push('<strong>'+intentBadgeLabel(intent)+'</strong> &middot; '+data.total_duration_s+'s total');
+    lines.push('<br><span style="opacity:0.6">'+intent.reason+'</span>');
+    lines.push('<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.1)">');
+    var freshAgent=data.target==='palette'?null:(
+      data.target==='facade'?'facade_agent':
+      data.target==='mep'?'mep_agent':
+      data.target==='layout'?'layout_agent':
+      data.target==='brief'?'brief_agent':
+      data.target==='materials'?'facade_agent':null);
+    (data.agents||[]).forEach(function(a){
+      var fresh=(a.agent===freshAgent);
+      var marker=fresh?'<span style="color:#0d9">FRESH</span>':'<span style="opacity:0.45">cached</span>';
+      lines.push('&nbsp;'+marker+'&nbsp; '+a.agent+' &middot; '+a.duration_s+'s &middot; '+a.input_tokens+'/'+a.output_tokens+' tok<br>');
+    });
+    lines.push('</div></div>');
+    bubble.innerHTML=lines.join('');
+
+    // Update the cached spec and re-render the IFC + reload xeokit.
+    genSpec=data.spec;
+    updatePlanSidebar(genSpec);
+    var badge=document.createElement('div');
+    badge.className='spec-ready-badge';
+    badge.style.opacity='0.4';
+    badge.style.cursor='default';
+    badge.innerHTML='&#9702; &nbsp;Re-rendering 3D model\u2026';
+    bubble.appendChild(badge);
+
+    var ifcRes=await fetch('/api/generate/ifc',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({spec:genSpec,upload_preview:false})
+    });
+    var ifcData=await ifcRes.json();
+    if(ifcData.status==='done'&&ifcData.output){
+      genIfcFilename=ifcData.output;
+      initGenViewer(ifcData.output);
+      badge.style.opacity='1';
+      badge.style.cursor='pointer';
+      badge.innerHTML='\u2713 &nbsp;Updated 3D model ready \u2014 <strong>click to view</strong>';
+      badge.onclick=function(){switchToView();};
+      toast('Edit applied \u2014 click to view');
+    }else{
+      badge.innerHTML='\u26a0 &nbsp;IFC re-render failed';
+    }
+
+    genHistory.push({role:'user',content:msg});
+    genHistory.push({role:'assistant',content:'[edit: '+intent.target+']'});
+  }catch(err){
+    bubble.innerHTML='<div style="color:#f88">Edit error: '+(err.message||err)+'</div>';
+  }
+}
+
 async function sendGenMessage(){
   var input=document.getElementById('gen-input');
   var msg=input.value.trim();if(!msg||genStreaming)return;
   input.value='';input.style.height='auto';
   genStreaming=true;document.getElementById('gen-send').disabled=true;
   document.getElementById('gen-suggestions').style.display='none';
-  addGenMessage('user',msg,false);genHistory.push({role:'user',content:msg});addGenTyping();
+  addGenMessage('user',msg,false);
+
+  // ── Auto-detect: edit vs full generation ─────────────────────────────
+  var intent=classifyGenIntent(msg);
+  console.log('[gen-intent]',intent);
+
+  // For edits, use the non-streaming edit endpoint.
+  if(intent.kind==='edit'){
+    var aiMsg=addGenMessage('assistant','',true);
+    await runEdit(msg,intent,aiMsg);
+    genStreaming=false;document.getElementById('gen-send').disabled=false;
+    return;
+  }
+
+  // For full generation, fall through to the streaming pipeline.
+  genHistory.push({role:'user',content:msg});addGenTyping();
   var fullText='',aiMsg=null;
   try{
     var res=await fetch('/api/generate/multi_agent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,history:genHistory.slice(-8),session_spec:genSpec})});
