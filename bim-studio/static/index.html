@@ -5,1015 +5,1694 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BIM Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.css">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-
-:root {
-  --bg:       #080810;
-  --surface:  #10101c;
-  --surface2: #181828;
-  --surface3: #202034;
-  --border:   rgba(255,255,255,0.07);
-  --border2:  rgba(255,255,255,0.12);
-  --accent:   #00ff9d;
-  --accent2:  #7c6bff;
-  --accent3:  #ff6b6b;
-  --text:     #e4e4f0;
-  --muted:    #5a5a7a;
-  --mono:     'IBM Plex Mono', monospace;
-  --sans:     'IBM Plex Sans', sans-serif;
+:root{
+  --ink:#0a0a0a;--ink-light:#1a1a1a;--ink-mid:#2a2a2a;
+  --rule:rgba(255,255,255,0.07);--rule2:rgba(255,255,255,0.12);
+  --accent:#c8502a;--gold:#b8953a;--green:#2ab87a;
+  --muted:rgba(255,255,255,0.3);--text:rgba(255,255,255,0.85);
+  --display:'Playfair Display',Georgia,serif;
+  --mono:'DM Mono',monospace;--sans:'DM Sans',sans-serif;
 }
+body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100vh;overflow:hidden;display:flex;flex-direction:column;}
+#nav{display:flex;align-items:stretch;height:52px;background:var(--ink);flex-shrink:0;border-bottom:2px solid var(--accent);}
+.nav-brand{display:flex;align-items:center;padding:0 20px;border-right:1px solid var(--rule2);gap:10px;min-width:180px;}
+.nav-title{font-family:var(--display);font-size:17px;font-weight:700;color:#fff;font-style:italic;}
+.nav-issue{font-family:var(--mono);font-size:8px;color:var(--accent);letter-spacing:0.15em;border:1px solid var(--accent);padding:2px 5px;}
+.nav-tabs{display:flex;align-items:stretch;}
+.nav-tab{display:flex;align-items:center;padding:0 20px;font-family:var(--mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);cursor:pointer;border:none;background:none;border-right:1px solid var(--rule);transition:all 0.15s;position:relative;}
+.nav-tab:hover{color:var(--text);}
+.nav-tab.active{color:#fff;background:rgba(255,255,255,0.04);}
+.nav-tab.active::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--accent);}
+.nav-tab.gen-tab.active::after,.nav-tab.view-tab.active::after{background:var(--green);}
+.nav-right{margin-left:auto;display:flex;align-items:center;padding:0 20px;}
+.nav-stat{font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.06em;}
+.page{display:none;flex:1;overflow:hidden;}
+.page.active{display:flex;}
 
-body { background:var(--bg); color:var(--text); font-family:var(--sans); height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+/* ══ DISASSEMBLE ══ */
+#page-disassemble{flex-direction:row;}
+#lib-sidebar{width:220px;min-width:160px;max-width:480px;background:var(--ink);display:flex;flex-direction:column;flex-shrink:0;border-right:1px solid var(--rule2);position:relative;}
+#lib-resize-handle{position:absolute;top:0;right:-4px;width:8px;height:100%;cursor:col-resize;z-index:10;display:flex;align-items:center;justify-content:center;}
+#lib-resize-handle::after{content:"";width:2px;height:32px;background:var(--rule2);border-radius:1px;transition:background 0.15s;}
+#lib-resize-handle:hover::after{background:var(--accent);}
+#lib-search-wrap{padding:6px 8px;border-bottom:1px solid var(--rule);flex-shrink:0;}
+#lib-search{width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--rule2);border-left:2px solid var(--ink-mid);color:var(--text);font-family:var(--mono);font-size:9px;padding:5px 8px;outline:none;transition:border-color 0.15s;}
+#lib-search:focus{border-left-color:var(--accent);}
+#lib-search::placeholder{color:rgba(255,255,255,0.2);}
+#lib-count{font-family:var(--mono);font-size:7px;color:rgba(255,255,255,0.2);letter-spacing:0.1em;padding:3px 8px 0;}
+.sidebar-head{padding:14px 14px 10px;border-bottom:1px solid var(--rule);}
+.sidebar-label{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.25);letter-spacing:0.2em;text-transform:uppercase;display:block;margin-bottom:3px;}
+.sidebar-title{font-family:var(--display);font-size:15px;color:#fff;font-style:italic;}
+#lib-list{flex:1;overflow-y:auto;padding:6px;}
+#lib-list::-webkit-scrollbar{width:2px;}
+#lib-list::-webkit-scrollbar-thumb{background:var(--rule2);}
+.lib-item{background:rgba(255,255,255,0.03);border:1px solid var(--rule);border-left:2px solid var(--accent);padding:7px 9px;margin-bottom:3px;cursor:pointer;transition:all 0.12s;position:relative;}
+.lib-item:hover{background:rgba(255,255,255,0.06);}
+.lib-cat{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.3);letter-spacing:0.1em;text-transform:uppercase;}
+.lib-name{font-size:11px;margin-top:2px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:300;padding-right:16px;}
+.lib-remove{position:absolute;top:5px;right:6px;background:none;border:none;color:rgba(255,255,255,0.2);cursor:pointer;font-size:9px;transition:color 0.1s;padding:2px 4px;}
+.lib-remove:hover{color:var(--accent);}
+.sidebar-actions{padding:8px;border-top:1px solid var(--rule);display:flex;flex-direction:column;gap:5px;}
+.sidebar-btn{background:none;border:1px solid var(--rule2);color:rgba(255,255,255,0.4);font-family:var(--mono);font-size:8px;padding:7px 8px;cursor:pointer;transition:all 0.12s;letter-spacing:0.1em;text-transform:uppercase;width:100%;text-align:left;}
+.sidebar-btn.reconstruct{border-color:rgba(200,80,42,0.35);color:var(--accent);}
+.sidebar-btn.reconstruct:hover{background:rgba(200,80,42,0.1);}
+.sidebar-btn.clear:hover{color:rgba(255,255,255,0.6);}
 
-/* ── NAV ── */
-#nav {
-  display:flex; align-items:center; gap:0;
-  height:48px; background:var(--surface); border-bottom:1px solid var(--border);
-  flex-shrink:0; padding:0 20px; gap:16px;
-}
-.nav-logo { font-family:var(--mono); font-size:12px; color:var(--accent); letter-spacing:0.12em; margin-right:8px; }
-.nav-sep  { width:1px; height:20px; background:var(--border2); }
-.nav-tab  {
-  font-family:var(--mono); font-size:11px; letter-spacing:0.06em;
-  color:var(--muted); padding:6px 14px; border-radius:4px;
-  cursor:pointer; border:1px solid transparent; transition:all 0.15s;
-}
-.nav-tab:hover  { color:var(--text); }
-.nav-tab.active { color:var(--accent); border-color:rgba(0,255,157,0.25); background:rgba(0,255,157,0.06); }
-.nav-right { margin-left:auto; display:flex; align-items:center; gap:10px; }
-#project-select {
-  background:var(--surface2); border:1px solid var(--border2); color:var(--text);
-  font-family:var(--mono); font-size:11px; padding:5px 10px; border-radius:4px;
-  cursor:pointer; outline:none;
-}
-.nav-stat { font-family:var(--mono); font-size:10px; color:var(--muted); }
+/* Main content area (viewer mode OR bulk browser mode) */
+#disassemble-main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
 
-/* ── PAGES ── */
-.page { display:none; flex:1; overflow:hidden; }
-.page.active { display:flex; }
+/* Upload bar */
+#upload-bar{display:flex;align-items:center;gap:10px;padding:0 14px;height:42px;background:var(--ink-light);border-bottom:1px solid var(--rule2);flex-shrink:0;}
+.upload-eyebrow{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.2);letter-spacing:0.2em;text-transform:uppercase;white-space:nowrap;}
+.upload-divider{width:1px;height:14px;background:var(--rule2);flex-shrink:0;}
+.btn{font-family:var(--mono);font-size:9px;letter-spacing:0.1em;text-transform:uppercase;padding:6px 10px;cursor:pointer;border:none;transition:all 0.15s;white-space:nowrap;}
+.btn-ghost{background:none;border:1px solid var(--rule2);color:rgba(255,255,255,0.5);}
+.btn-ghost:hover{border-color:rgba(255,255,255,0.4);color:#fff;}
+.btn-primary{background:var(--accent);color:#fff;}
+.btn-primary:hover{background:#b84424;}
+.btn-primary:disabled{opacity:0.3;cursor:not-allowed;}
+.btn-green{background:var(--green);color:#fff;}
+.btn-green:hover{background:#22a86d;}
+.btn-green:disabled{opacity:0.3;cursor:not-allowed;}
+#upload-filename{font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+#upload-status{font-family:var(--mono);font-size:9px;color:var(--accent);letter-spacing:0.06em;white-space:nowrap;}
+#btn-pause{border-color:rgba(184,149,58,0.5);color:var(--gold);}
+#btn-pause:hover{background:rgba(184,149,58,0.1);}
+#btn-stop{border-color:rgba(200,80,42,0.5);color:var(--accent);}
+#btn-stop:hover{background:rgba(200,80,42,0.1);}
 
-/* ══════════════════════════════════════════════
-   DISASSEMBLE
-══════════════════════════════════════════════ */
-#page-disassemble { flex-direction:row; }
+/* ══ SINGLE FILE MODE ══ */
+#single-mode{flex:1;display:flex;overflow:hidden;}
 
-#dis-left {
-  width:200px; background:var(--surface); border-right:1px solid var(--border);
-  display:flex; flex-direction:column; flex-shrink:0; overflow:hidden;
-}
 
-.panel-head {
-  padding:10px 12px 8px; border-bottom:1px solid var(--border);
-  font-family:var(--mono); font-size:9px; color:var(--muted); letter-spacing:0.1em;
-}
+#component-panel{flex:1;background:var(--ink);display:flex;flex-direction:column;overflow:hidden;}
+#comp-panel-head{padding:14px 14px 10px;border-bottom:1px solid var(--rule2);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.comp-panel-title{font-family:var(--display);font-size:15px;color:#fff;font-style:italic;}
+#btn-save-all{font-family:var(--mono);font-size:8px;letter-spacing:0.1em;text-transform:uppercase;padding:6px 12px;background:var(--accent);color:#fff;border:none;cursor:pointer;transition:background 0.12s;}
+#btn-save-all:hover{background:#b84424;}
+#comp-filters{display:flex;border-bottom:1px solid var(--rule2);flex-shrink:0;overflow-x:auto;}
+#comp-filters::-webkit-scrollbar{height:2px;}
+.comp-filter{flex-shrink:0;font-family:var(--mono);font-size:8px;letter-spacing:0.08em;text-transform:uppercase;padding:9px 10px;color:rgba(255,255,255,0.25);cursor:pointer;border:none;background:none;border-right:1px solid var(--rule);transition:all 0.12s;position:relative;}
+.comp-filter:last-child{border-right:none;}
+.comp-filter:hover{color:rgba(255,255,255,0.6);background:rgba(255,255,255,0.03);}
+.comp-filter.active{color:#fff;background:rgba(255,255,255,0.05);}
+.comp-filter.active::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--accent);}
+.filter-count{font-size:7px;opacity:0.4;margin-left:3px;}
+#comp-list{flex:1;overflow-y:auto;padding:6px;}
+#comp-list::-webkit-scrollbar{width:2px;}
+#comp-list::-webkit-scrollbar-thumb{background:var(--rule2);}
+.comp-item{border:1px solid var(--rule);margin-bottom:3px;transition:border-color 0.12s;}
+.comp-item.selected{border-color:var(--accent);}
+.comp-item.in-library{border-left:2px solid var(--gold);}
+.comp-item-header{display:flex;align-items:center;padding:7px 9px;cursor:pointer;gap:8px;transition:background 0.1s;}
+.comp-item-header:hover{background:rgba(255,255,255,0.04);}
+.comp-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.comp-item-info{flex:1;min-width:0;}
+.comp-item-cat{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.25);letter-spacing:0.08em;text-transform:uppercase;}
+.comp-item-name{font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:300;}
+.comp-item-save{font-family:var(--mono);font-size:8px;padding:4px 8px;border:1px solid var(--rule2);background:none;color:rgba(255,255,255,0.4);cursor:pointer;transition:all 0.12s;flex-shrink:0;}
+.comp-item-save:hover{border-color:var(--accent);color:var(--accent);}
+.comp-item-save.saved{border-color:var(--gold);color:var(--gold);}
+.comp-chevron{font-size:8px;color:rgba(255,255,255,0.2);transition:transform 0.15s;flex-shrink:0;}
+.comp-item.open .comp-chevron{transform:rotate(90deg);}
+.comp-item-body{display:none;padding:0 9px 10px 23px;border-top:1px solid var(--rule);}
+.comp-item.open .comp-item-body{display:block;}
+.comp-stat-row{display:flex;justify-content:space-between;padding:2px 0;font-size:11px;}
+.comp-stat-k{color:rgba(255,255,255,0.3);font-weight:300;}
+.comp-stat-v{font-family:var(--mono);font-size:10px;color:var(--text);}
+.comp-stat-v.hi{color:var(--accent);}
+.dot-arch{background:#8ecae6;}.dot-struct{background:#80b918;}.dot-mep{background:#ff6b6b;}.dot-other{background:#666;}
 
-.filter-section { border-bottom:1px solid var(--border); padding:8px; }
+/* ══ BULK BROWSER MODE ══ */
+#bulk-mode{flex:1;display:none;flex-direction:column;overflow:hidden;}
+#bulk-mode.active{display:flex;}
 
-.filter-pill {
-  display:flex; align-items:center; gap:6px;
-  width:100%; background:none; border:none; color:var(--muted);
-  font-family:var(--sans); font-size:12px; padding:4px 6px; border-radius:3px;
-  cursor:pointer; text-align:left; transition:all 0.1s;
-}
-.filter-pill:hover { background:var(--surface2); color:var(--text); }
-.filter-pill.active { color:var(--accent); }
-.filter-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
-.filter-ct  { margin-left:auto; font-family:var(--mono); font-size:9px; color:var(--muted); }
+/* Bulk top bar */
+#bulk-topbar{display:flex;align-items:center;gap:10px;padding:0 16px;height:46px;background:var(--ink-light);border-bottom:1px solid var(--rule2);flex-shrink:0;}
+#bulk-file-select{background:var(--ink-mid);border:1px solid var(--rule2);color:var(--text);font-family:var(--mono);font-size:10px;padding:6px 10px;outline:none;flex:1;max-width:340px;cursor:pointer;}
+#bulk-file-select option{background:var(--ink-mid);}
+#bulk-search{background:rgba(255,255,255,0.04);border:1px solid var(--rule2);border-left:2px solid var(--ink-mid);color:var(--text);font-family:var(--mono);font-size:10px;padding:6px 10px;outline:none;flex:1;max-width:260px;transition:border-color 0.15s;}
+#bulk-search:focus{border-left-color:var(--accent);}
+#bulk-search::placeholder{color:rgba(255,255,255,0.2);}
+#bulk-filter-select{background:var(--ink-mid);border:1px solid var(--rule2);color:rgba(255,255,255,0.5);font-family:var(--mono);font-size:9px;padding:6px 8px;outline:none;cursor:pointer;}
+#bulk-filter-select option{background:var(--ink-mid);}
+.bulk-topbar-divider{width:1px;height:18px;background:var(--rule2);flex-shrink:0;}
+#bulk-save-all-btn{background:var(--accent);border:none;color:#fff;font-family:var(--mono);font-size:9px;padding:7px 14px;cursor:pointer;letter-spacing:0.1em;text-transform:uppercase;transition:background 0.12s;white-space:nowrap;}
+#bulk-save-all-btn:hover{background:#b84424;}
+#bulk-save-selected-btn{background:none;border:1px solid rgba(200,80,42,0.4);color:var(--accent);font-family:var(--mono);font-size:9px;padding:7px 14px;cursor:pointer;letter-spacing:0.1em;text-transform:uppercase;transition:all 0.12s;white-space:nowrap;}
+#bulk-save-selected-btn:hover{background:rgba(200,80,42,0.1);}
+#bulk-count{font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.25);white-space:nowrap;margin-left:auto;}
+#bulk-done-btn{background:none;border:1px solid var(--rule2);color:rgba(255,255,255,0.4);font-family:var(--mono);font-size:9px;padding:7px 12px;cursor:pointer;transition:all 0.12s;letter-spacing:0.08em;text-transform:uppercase;}
+#bulk-done-btn:hover{color:rgba(255,255,255,0.7);}
 
-#floor-section { flex:1; overflow-y:auto; padding:8px; }
-.floor-pill {
-  display:block; width:100%; background:none; border:1px solid transparent;
-  color:var(--muted); font-family:var(--mono); font-size:10px;
-  padding:5px 8px; border-radius:3px; cursor:pointer;
-  text-align:left; transition:all 0.12s; margin-bottom:3px;
-}
-.floor-pill:hover { border-color:var(--border2); color:var(--text); }
-.floor-pill.active { border-color:rgba(124,107,255,0.4); color:var(--accent2); background:rgba(124,107,255,0.08); }
+/* Bulk progress strip */
+#bulk-progress-strip{display:none;flex-direction:column;background:var(--ink-light);border-bottom:1px solid var(--rule2);flex-shrink:0;max-height:140px;overflow-y:auto;}
+#bulk-progress-strip.active{display:flex;}
+#bulk-progress-strip::-webkit-scrollbar{width:2px;}
+#bulk-progress-summary{display:flex;align-items:center;gap:12px;padding:6px 16px;border-bottom:1px solid var(--rule);flex-shrink:0;}
+#bulk-progress-text{font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.35);flex:1;}
+#bulk-file-rows{padding:4px 16px;}
+.bulk-file-row{display:flex;align-items:center;gap:10px;padding:3px 0;border-bottom:1px solid var(--rule);}
+.bulk-file-row:last-child{border-bottom:none;}
+.bulk-file-name{font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.4);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.bulk-file-bar{width:60px;height:2px;background:var(--rule2);flex-shrink:0;}
+.bulk-file-bar-fill{height:100%;background:var(--green);transition:width 0.3s;}
+.bulk-file-status{font-family:var(--mono);font-size:8px;white-space:nowrap;}
+.bulk-file-status.pending{color:rgba(255,255,255,0.2);}
+.bulk-file-status.running{color:var(--gold);}
+.bulk-file-status.done{color:var(--green);}
+.bulk-file-status.error{color:var(--accent);}
 
-#dis-canvas-wrap {
-  flex:1; position:relative; overflow:hidden;
-}
-#dis-canvas { display:block; width:100%; height:100%; }
-#dis-canvas-wrap.can-click { cursor:crosshair; }
+/* Bulk component grid */
+#bulk-comp-area{flex:1;overflow-y:auto;padding:12px 16px;}
+#bulk-comp-area::-webkit-scrollbar{width:2px;}
+#bulk-comp-area::-webkit-scrollbar-thumb{background:var(--rule2);}
+#bulk-comp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;}
+.bulk-comp-card{border:1px solid var(--rule);padding:8px 10px;cursor:pointer;transition:all 0.12s;position:relative;}
+.bulk-comp-card:hover{background:rgba(255,255,255,0.04);}
+.bulk-comp-card.selected{border-color:var(--accent);background:rgba(200,80,42,0.06);}
+.bulk-comp-card.in-library{border-left:2px solid var(--gold);}
+.bulk-comp-card-cat{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.25);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:2px;}
+.bulk-comp-card-name{font-size:11px;color:var(--text);font-weight:300;line-height:1.4;margin-bottom:4px;}
+.bulk-comp-card-dims{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.25);}
+.bulk-comp-card-dot{position:absolute;top:8px;right:8px;width:6px;height:6px;border-radius:50%;}
+.bulk-comp-card .bulk-comp-save{position:absolute;bottom:6px;right:6px;background:none;border:1px solid var(--rule2);color:rgba(255,255,255,0.3);font-family:var(--mono);font-size:7px;padding:3px 6px;cursor:pointer;transition:all 0.12s;}
+.bulk-comp-card .bulk-comp-save:hover{border-color:var(--accent);color:var(--accent);}
+.bulk-comp-card .bulk-comp-save.saved{border-color:var(--gold);color:var(--gold);}
+#bulk-empty{padding:40px;text-align:center;font-family:var(--display);font-size:14px;font-style:italic;color:rgba(255,255,255,0.12);line-height:1.8;display:none;}
+#bulk-empty.active{display:block;}
 
-/* Explode HUD */
-#explode-hud {
-  position:absolute; bottom:20px; left:50%; transform:translateX(-50%);
-  background:var(--surface); border:1px solid var(--border2); border-radius:8px;
-  padding:10px 20px; display:flex; align-items:center; gap:14px;
-}
-.hud-label { font-family:var(--mono); font-size:10px; color:var(--muted); letter-spacing:0.08em; }
-#explode-range {
-  -webkit-appearance:none; appearance:none;
-  width:140px; height:3px; background:var(--surface3); border-radius:2px; outline:none; cursor:pointer;
-}
-#explode-range::-webkit-slider-thumb {
-  -webkit-appearance:none; width:12px; height:12px;
-  border-radius:50%; background:var(--accent); cursor:pointer;
-}
-.hud-sep { width:1px; height:16px; background:var(--border2); }
-.hud-btn {
-  background:none; border:1px solid var(--border2); color:var(--muted);
-  font-family:var(--mono); font-size:10px; padding:4px 10px; border-radius:4px;
-  cursor:pointer; transition:all 0.12s; letter-spacing:0.05em;
-}
-.hud-btn:hover { border-color:var(--accent); color:var(--accent); }
-.hud-btn.save-all { border-color:rgba(0,255,157,0.3); color:var(--accent); }
-.hud-btn.save-all:hover { background:rgba(0,255,157,0.1); }
+/* ══ GENERATE ══ */
+#page-generate{flex-direction:row;}
+#gen-main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--ink-light);}
+#gen-chat-area{flex:1;overflow-y:auto;padding:28px;display:flex;flex-direction:column;gap:20px;}
+#gen-chat-area::-webkit-scrollbar{width:2px;}
+#gen-chat-area::-webkit-scrollbar-thumb{background:var(--rule2);}
+.gen-msg{display:flex;flex-direction:column;gap:5px;max-width:780px;}
+.gen-msg.user{align-self:flex-end;align-items:flex-end;}
+.gen-msg.assistant{align-self:flex-start;}
+.gen-msg-role{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.2);letter-spacing:0.15em;text-transform:uppercase;}
+.gen-msg-bubble{padding:14px 18px;font-size:13px;line-height:1.75;max-width:680px;font-weight:300;}
+.gen-msg.user .gen-msg-bubble{background:var(--ink-mid);border-left:2px solid var(--accent);color:var(--text);}
+.gen-msg.assistant .gen-msg-bubble{background:rgba(255,255,255,0.04);border-left:2px solid var(--green);color:var(--text);}
+.spec-ready-badge{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:9px;letter-spacing:0.1em;color:var(--green);border:1px solid rgba(42,184,122,0.3);padding:4px 10px;margin-top:8px;cursor:pointer;}
+.spec-ready-badge:hover{background:rgba(42,184,122,0.08);}
+.typing-dot{display:inline-block;width:4px;height:4px;background:var(--muted);margin:0 2px;animation:blink 1.2s ease-in-out infinite;}
+.typing-dot:nth-child(2){animation-delay:0.2s;}.typing-dot:nth-child(3){animation-delay:0.4s;}
+#gen-steps-card{background:rgba(10,10,10,0.96);border:1px solid var(--rule2);border-left:2px solid var(--green);padding:12px 16px;display:none;flex-direction:column;gap:6px;position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);}
+#gen-steps-card.active{display:flex;}
+.gen-step{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:9px;letter-spacing:0.06em;}
+.gen-step-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;background:var(--rule2);}
+.gen-step.done .gen-step-dot{background:var(--green);}
+.gen-step.active .gen-step-dot{background:var(--gold);animation:pulse 1s ease-in-out infinite;}
+.gen-step.error .gen-step-dot{background:var(--accent);}
+.gen-step-label{color:rgba(255,255,255,0.4);}
+.gen-step.done .gen-step-label{color:rgba(255,255,255,0.6);}
+.gen-step.active .gen-step-label{color:rgba(255,255,255,0.9);}
+.gen-step-detail{font-size:8px;color:rgba(255,255,255,0.2);margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px;}
+.gen-step.active .gen-step-detail{color:var(--gold);}
+.gen-step.done .gen-step-detail{color:rgba(42,184,122,0.6);}
+@keyframes pulse{0%,100%{opacity:0.4}50%{opacity:1}}
+@keyframes blink{0%,80%,100%{opacity:0.2}40%{opacity:1}}
+#gen-suggestions{padding:0 28px 12px;display:flex;gap:8px;flex-wrap:wrap;}
+.gen-suggestion{background:none;border:1px solid var(--rule2);color:rgba(255,255,255,0.3);font-family:var(--mono);font-size:9px;padding:6px 12px;cursor:pointer;transition:all 0.12s;}
+.gen-suggestion:hover{color:var(--text);border-color:var(--green);background:rgba(42,184,122,0.05);}
+#gen-input-bar{padding:12px 20px 16px;border-top:1px solid var(--rule2);display:flex;gap:10px;align-items:flex-end;}
+#gen-input{flex:1;background:rgba(255,255,255,0.04);border:1px solid var(--rule2);border-left:2px solid var(--ink-mid);color:var(--text);font-family:var(--sans);font-size:13px;padding:10px 14px;outline:none;resize:none;line-height:1.5;min-height:42px;max-height:160px;transition:border-color 0.15s;font-weight:300;}
+#gen-input:focus{border-left-color:var(--green);}
+#gen-input::placeholder{color:rgba(255,255,255,0.2);}
+#gen-send{background:var(--green);border:none;color:#fff;font-family:var(--mono);font-size:9px;padding:11px 18px;cursor:pointer;letter-spacing:0.1em;text-transform:uppercase;transition:background 0.12s;white-space:nowrap;}
+#gen-send:hover{background:#22a86d;}
+#gen-send:disabled{opacity:0.35;cursor:not-allowed;}
 
-/* Tooltip */
-#dis-tooltip {
-  position:absolute; background:var(--surface); border:1px solid var(--border2);
-  border-radius:6px; padding:8px 12px; pointer-events:none; opacity:0;
-  transition:opacity 0.1s; z-index:10; max-width:200px;
-  font-family:var(--mono); font-size:11px; line-height:1.6;
-}
-#dis-tooltip.show { opacity:1; }
-.tt-cat  { font-size:9px; color:var(--muted); letter-spacing:0.08em; }
-.tt-name { color:var(--accent); margin-top:2px; }
-.tt-hint { font-size:9px; color:var(--muted); margin-top:4px; }
+/* ══ 3D VIEW ══ */
+#page-view{flex-direction:row;}
+#view-sidebar{width:260px;background:var(--ink);border-right:1px solid var(--rule2);display:flex;flex-direction:column;flex-shrink:0;}
+#view-sidebar-head{padding:14px 14px 10px;border-bottom:1px solid var(--rule2);}
+.view-sidebar-title{font-family:var(--display);font-size:15px;color:#fff;font-style:italic;}
+#view-plan-summary{flex:1;overflow-y:auto;padding:10px 12px;}
+#view-plan-summary::-webkit-scrollbar{width:2px;}
+.plan-section{margin-bottom:16px;}
+.plan-section-label{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.25);letter-spacing:0.18em;text-transform:uppercase;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid var(--rule);}
+.plan-val{color:var(--text);font-family:var(--mono);font-size:10px;line-height:1.6;}
+.plan-val.big{font-family:var(--display);font-size:16px;font-style:italic;color:#fff;}
+.plan-row{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--rule);font-size:11px;}
+.plan-row-k{color:rgba(255,255,255,0.35);font-weight:300;}
+.plan-row-v{font-family:var(--mono);font-size:10px;color:var(--text);}
+.plan-row-v.green{color:var(--green);}
+#view-actions{padding:10px;border-top:1px solid var(--rule);display:flex;flex-direction:column;gap:6px;}
+.view-btn{background:none;border:1px solid var(--rule2);color:rgba(255,255,255,0.4);font-family:var(--mono);font-size:8px;padding:8px 10px;cursor:pointer;transition:all 0.12s;letter-spacing:0.1em;text-transform:uppercase;width:100%;text-align:left;}
+.view-btn.export{border-color:rgba(42,184,122,0.4);color:var(--green);}
+.view-btn.export:hover{background:rgba(42,184,122,0.1);}
+.view-btn.back:hover{color:rgba(255,255,255,0.7);}
+.view-btn:disabled{opacity:0.3;cursor:not-allowed;}
+#view-viewer-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+#view-bar{display:flex;align-items:center;gap:12px;padding:0 18px;height:42px;background:var(--ink-light);border-bottom:1px solid var(--rule2);flex-shrink:0;}
+.view-bar-title{font-family:var(--display);font-size:14px;font-style:italic;color:#fff;flex:1;min-width:0;}
+#view-status{font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.3);}
+#view-viewer-tools{display:flex;gap:8px;align-items:center;flex-shrink:0;margin-left:auto;}
+.view-tool-btn{font-family:var(--mono);font-size:8px;letter-spacing:0.08em;text-transform:uppercase;padding:7px 10px;border:1px solid var(--rule2);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.55);cursor:pointer;transition:all 0.12s;white-space:nowrap;}
+.view-tool-btn:hover{color:#fff;border-color:rgba(255,255,255,0.25);}
+.view-tool-btn.active{border-color:rgba(42,184,122,0.55);color:var(--green);background:rgba(42,184,122,0.1);}
+#gen-aps-viewer{flex:1;position:relative;background:#0d0d0d;}
+#xeokit-wrap{flex:1;position:relative;background:#0d0d0d;display:none;}
+#xeokit-canvas{width:100%;height:100%;display:block;outline:none;}
+#xeokit-loading{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(13,13,13,0.85);}
+#xeokit-loading-bar{width:80px;height:1px;background:rgba(255,255,255,0.08);position:relative;overflow:hidden;}
+#xeokit-loading-bar-fill{position:absolute;top:0;left:-100%;width:100%;height:100%;background:var(--green);animation:load 1.2s ease-in-out infinite;}
+#xeokit-loading-text{font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.3);letter-spacing:0.1em;}
 
-/* Inspector */
-#dis-inspector {
-  width:260px; background:var(--surface); border-left:1px solid var(--border);
-  display:flex; flex-direction:column; flex-shrink:0;
-  transform:translateX(100%); transition:transform 0.2s;
-}
-#dis-inspector.open { transform:translateX(0); }
-#insp-head {
-  padding:12px 14px; border-bottom:1px solid var(--border);
-  display:flex; align-items:center; justify-content:space-between;
-}
-#insp-label { font-family:var(--mono); font-size:10px; color:var(--accent); letter-spacing:0.08em; }
-#insp-close { background:none; border:none; color:var(--muted); cursor:pointer; font-size:14px; }
-#insp-close:hover { color:var(--text); }
-#insp-save {
-  background:rgba(0,255,157,0.1); border:1px solid rgba(0,255,157,0.3);
-  color:var(--accent); font-family:var(--mono); font-size:10px;
-  padding:4px 10px; border-radius:4px; cursor:pointer; letter-spacing:0.05em;
-  transition:all 0.12s;
-}
-#insp-save:hover { background:rgba(0,255,157,0.2); }
-#insp-body { flex:1; overflow-y:auto; padding:12px 14px; }
-#insp-body::-webkit-scrollbar { width:3px; }
-#insp-body::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
+#gen-viewer-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:none;}
+.gen-empty-headline{font-family:var(--display);font-size:22px;font-style:italic;color:rgba(255,255,255,0.08);}
+.gen-empty-sub{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.1);letter-spacing:0.15em;text-transform:uppercase;}
 
-.insp-cat  { display:inline-block; background:rgba(124,107,255,0.15); color:var(--accent2); font-family:var(--mono); font-size:9px; padding:2px 7px; border-radius:2px; margin-bottom:8px; }
-.insp-name { font-size:14px; font-weight:500; margin-bottom:12px; line-height:1.3; }
-.insp-sec  { margin-bottom:14px; }
-.insp-sec-head { font-family:var(--mono); font-size:9px; color:var(--muted); letter-spacing:0.1em; margin-bottom:5px; padding-bottom:3px; border-bottom:1px solid var(--border); }
-.insp-row  { display:flex; justify-content:space-between; padding:2px 0; font-size:11px; }
-.insp-k    { color:var(--muted); }
-.insp-v    { font-family:var(--mono); font-size:10px; color:var(--text); }
-.insp-v.hi { color:var(--accent); }
-.q-bar     { width:100%; height:3px; background:var(--surface3); border-radius:2px; margin-top:5px; }
-.q-fill    { height:100%; border-radius:2px; background:var(--accent); }
-
-/* ══════════════════════════════════════════════
-   COMPOSE (AI)
-══════════════════════════════════════════════ */
-#page-compose { flex-direction:row; }
-
-#compose-left {
-  width:200px; background:var(--surface); border-right:1px solid var(--border);
-  display:flex; flex-direction:column; flex-shrink:0;
-}
-
-.lib-head { padding:10px 12px 8px; border-bottom:1px solid var(--border); font-family:var(--mono); font-size:9px; color:var(--muted); letter-spacing:0.1em; }
-#lib-list  { flex:1; overflow-y:auto; padding:6px; }
-#lib-list::-webkit-scrollbar { width:3px; }
-#lib-list::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
-#lib-empty { padding:20px 12px; font-size:12px; color:var(--muted); text-align:center; line-height:1.6; }
-
-.lib-item {
-  background:var(--surface2); border:1px solid var(--border); border-radius:4px;
-  padding:7px 9px; margin-bottom:4px; cursor:pointer; transition:all 0.12s;
-}
-.lib-item:hover { border-color:var(--border2); }
-.lib-item.highlighted { border-color:var(--accent); background:rgba(0,255,157,0.06); }
-.lib-cat  { font-family:var(--mono); font-size:9px; color:var(--muted); }
-.lib-name { font-size:11px; margin-top:2px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.lib-proj { font-size:10px; color:var(--muted); margin-top:2px; }
-
-#compose-main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
-
-#chat-area { flex:1; overflow-y:auto; padding:24px; display:flex; flex-direction:column; gap:16px; }
-#chat-area::-webkit-scrollbar { width:4px; }
-#chat-area::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
-
-.chat-msg { display:flex; flex-direction:column; gap:4px; max-width:720px; }
-.chat-msg.user { align-self:flex-end; align-items:flex-end; }
-.chat-msg.assistant { align-self:flex-start; }
-
-.msg-role { font-family:var(--mono); font-size:9px; color:var(--muted); letter-spacing:0.08em; }
-.msg-bubble {
-  padding:10px 14px; border-radius:8px; font-size:13px; line-height:1.65;
-  max-width:600px;
-}
-.chat-msg.user .msg-bubble { background:var(--surface2); border:1px solid var(--border2); }
-.chat-msg.assistant .msg-bubble { background:var(--surface); border:1px solid var(--border); }
-
-/* Component reference pills inside chat */
-.comp-ref {
-  display:inline-flex; align-items:center; gap:5px;
-  background:rgba(0,255,157,0.1); border:1px solid rgba(0,255,157,0.25);
-  color:var(--accent); font-family:var(--mono); font-size:10px;
-  padding:1px 7px; border-radius:3px; cursor:pointer; transition:all 0.1s;
-  vertical-align:middle; margin:0 2px;
-}
-.comp-ref:hover { background:rgba(0,255,157,0.2); }
-
-.typing-dot {
-  display:inline-block; width:5px; height:5px; border-radius:50%;
-  background:var(--accent); margin:0 2px;
-  animation:blink 1.2s ease-in-out infinite;
-}
-.typing-dot:nth-child(2) { animation-delay:0.2s; }
-.typing-dot:nth-child(3) { animation-delay:0.4s; }
-@keyframes blink { 0%,80%,100%{opacity:0.2} 40%{opacity:1} }
-
-/* Suggestions */
-#suggestions { padding:0 24px 12px; display:flex; gap:8px; flex-wrap:wrap; }
-.suggestion {
-  background:var(--surface2); border:1px solid var(--border2); color:var(--muted);
-  font-size:12px; padding:5px 12px; border-radius:20px; cursor:pointer;
-  transition:all 0.12s;
-}
-.suggestion:hover { border-color:var(--accent2); color:var(--accent2); background:rgba(124,107,255,0.08); }
-
-/* Input bar */
-#chat-input-bar {
-  padding:12px 20px 16px; border-top:1px solid var(--border);
-  display:flex; gap:10px; align-items:flex-end;
-}
-#chat-input {
-  flex:1; background:var(--surface2); border:1px solid var(--border2); color:var(--text);
-  font-family:var(--sans); font-size:13px; padding:10px 14px; border-radius:6px;
-  outline:none; resize:none; line-height:1.5; min-height:40px; max-height:120px;
-  transition:border-color 0.15s;
-}
-#chat-input:focus { border-color:rgba(0,255,157,0.35); }
-#chat-input::placeholder { color:var(--muted); }
-#chat-send {
-  background:rgba(0,255,157,0.12); border:1px solid rgba(0,255,157,0.3);
-  color:var(--accent); font-family:var(--mono); font-size:11px;
-  padding:9px 16px; border-radius:6px; cursor:pointer;
-  letter-spacing:0.05em; transition:all 0.12s; white-space:nowrap;
-}
-#chat-send:hover  { background:rgba(0,255,157,0.2); }
-#chat-send:disabled { opacity:0.4; cursor:not-allowed; }
-
-/* ── LOADING ── */
-#loading {
-  position:fixed; inset:0; background:var(--bg);
-  display:flex; flex-direction:column; align-items:center; justify-content:center;
-  gap:14px; z-index:999;
-}
-.spin { width:28px; height:28px; border:2px solid var(--border2); border-top-color:var(--accent); border-radius:50%; animation:spin 0.7s linear infinite; }
-@keyframes spin { to{transform:rotate(360deg)} }
-.load-text { font-family:var(--mono); font-size:11px; color:var(--muted); letter-spacing:0.1em; }
-
-/* ── TOAST ── */
-#toast {
-  position:fixed; bottom:24px; right:24px;
-  background:var(--surface); border:1px solid var(--accent); border-radius:6px;
-  padding:8px 16px; font-family:var(--mono); font-size:11px; color:var(--accent);
-  opacity:0; transition:opacity 0.2s; pointer-events:none; z-index:999;
-}
-#toast.show { opacity:1; }
+/* LOADING / TOAST */
+#loading{position:fixed;inset:0;background:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;z-index:999;}
+.loading-title{font-family:var(--display);font-size:28px;font-style:italic;color:rgba(255,255,255,0.85);}
+.loading-bar{width:100px;height:1px;background:rgba(255,255,255,0.08);position:relative;overflow:hidden;}
+.loading-progress{position:absolute;top:0;left:-100%;width:100%;height:100%;background:var(--accent);animation:load 1.2s ease-in-out infinite;}
+@keyframes load{to{left:100%;}}
+.loading-sub{font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.2);letter-spacing:0.2em;text-transform:uppercase;}
+#toast{position:fixed;bottom:20px;right:20px;background:var(--ink-light);border-left:2px solid var(--accent);padding:8px 16px;font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.8);opacity:0;transition:opacity 0.2s;pointer-events:none;z-index:999;}
+#toast.show{opacity:1;}
+.adsk-viewing-viewer{background:#111 !important;}
 </style>
 </head>
 <body>
+<div id="loading"><div class="loading-title">BIM Studio</div><div class="loading-bar"><div class="loading-progress"></div></div><div class="loading-sub">Initialising</div></div>
 
-<!-- LOADING -->
-<div id="loading"><div class="spin"></div><span class="load-text">CONNECTING...</span></div>
-
-<!-- NAV -->
 <div id="nav">
-  <span class="nav-logo">▣ BIM STUDIO</span>
-  <div class="nav-sep"></div>
-  <button class="nav-tab active" data-page="disassemble">DISASSEMBLE</button>
-  <button class="nav-tab" data-page="compose">AI COMPOSE</button>
-  <div class="nav-right">
-    <select id="project-select"><option value="">— project —</option></select>
-    <span class="nav-stat" id="nav-stat">—</span>
+  <div class="nav-brand"><span class="nav-title">BIM Studio</span><span class="nav-issue">AEC</span></div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" data-page="disassemble">Disassemble</button>
+    <button class="nav-tab gen-tab" data-page="generate">Generate</button>
+    <button class="nav-tab view-tab" id="view-tab" data-page="view" style="display:none">&#9711; &nbsp;3D Model</button>
   </div>
+  <div class="nav-right"><span class="nav-stat" id="nav-stat">&#8212;</span></div>
 </div>
 
 <!-- ══ DISASSEMBLE ══ -->
 <div class="page active" id="page-disassemble">
-
-  <!-- Left filters -->
-  <div id="dis-left">
-    <div class="panel-head">FILTERS</div>
-    <div class="filter-section" id="group-filters">
-      <button class="filter-pill active" data-group="all"><span class="filter-dot" style="background:#555"></span>All<span class="filter-ct" id="ct-all">0</span></button>
-      <button class="filter-pill" data-group="arch"><span class="filter-dot" style="background:#8ecae6"></span>Architectural<span class="filter-ct" id="ct-arch">0</span></button>
-      <button class="filter-pill" data-group="struct"><span class="filter-dot" style="background:#80b918"></span>Structural<span class="filter-ct" id="ct-struct">0</span></button>
-      <button class="filter-pill" data-group="mep"><span class="filter-dot" style="background:#ff6b6b"></span>MEP<span class="filter-ct" id="ct-mep">0</span></button>
-    </div>
-    <div id="floor-section">
-      <div class="panel-head" style="padding:8px 0 6px">FLOORS</div>
+  <div id="lib-sidebar">
+    <div id="lib-resize-handle"></div>
+    <div class="sidebar-head"><span class="sidebar-label">Saved</span><span class="sidebar-title">Library</span></div>
+    <div id="lib-search-wrap"><input id="lib-search" type="text" placeholder="Search library…"></div>
+    <div id="lib-count"></div>
+    <div id="lib-list"><div id="lib-empty-msg" style="padding:20px 10px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.18);text-align:center;line-height:1.7;">Save components to build your library</div></div>
+    <div class="sidebar-actions">
+      <button class="sidebar-btn reconstruct" id="btn-reconstruct">&#8635; &nbsp;Reconstruct</button>
+      <button class="sidebar-btn clear" id="btn-clear-lib">&#10005; &nbsp;Clear Library</button>
     </div>
   </div>
 
-  <!-- Canvas -->
-  <div id="dis-canvas-wrap">
-    <canvas id="dis-canvas"></canvas>
-
-    <!-- Explode HUD -->
-    <div id="explode-hud">
-      <span class="hud-label">EXPLODE</span>
-      <input type="range" id="explode-range" min="0" max="100" value="0">
-      <div class="hud-sep"></div>
-      <button class="hud-btn" id="btn-reset-cam">RESET</button>
-      <div class="hud-sep"></div>
-      <button class="hud-btn save-all" id="btn-save-all">SAVE ALL →</button>
+  <div id="disassemble-main">
+    <!-- Upload bar (always visible) -->
+    <div id="upload-bar">
+      <span class="upload-eyebrow">IFC Files</span>
+      <div class="upload-divider"></div>
+      <input type="file" id="ifc-file-input" accept=".ifc" style="display:none">
+      <input type="file" id="ifc-bulk-input" accept=".ifc" multiple style="display:none">
+      <button class="btn btn-ghost" onclick="document.getElementById('ifc-file-input').click()">Choose File</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('ifc-bulk-input').click()">Choose Multiple</button>
+      <span id="upload-filename">No file selected</span>
+      <button class="btn btn-primary" id="btn-upload" disabled>Process &amp; Upload</button>
+      <button class="btn btn-ghost" id="btn-browse-uploads" style="display:none">&#9783; Browse Uploads</button>
+      <button class="btn btn-ghost" id="btn-pause" style="display:none">&#9208; Pause</button>
+      <button class="btn btn-ghost" id="btn-stop" style="display:none">&#9209; Stop</button>
+      <span id="upload-status"></span>
     </div>
 
-    <div id="dis-tooltip">
-      <div class="tt-cat" id="tt-cat"></div>
-      <div class="tt-name" id="tt-name"></div>
-      <div class="tt-hint">click to inspect · shift+click to save</div>
-    </div>
-  </div>
-
-  <!-- Inspector -->
-  <div id="dis-inspector">
-    <div id="insp-head">
-      <span id="insp-label">COMPONENT</span>
-      <div style="display:flex;gap:8px;align-items:center">
-        <button id="insp-save">SAVE TO LIBRARY</button>
-        <button id="insp-close">✕</button>
-      </div>
-    </div>
-    <div id="insp-body"></div>
-  </div>
-</div>
-
-<!-- ══ COMPOSE ══ -->
-<div class="page" id="page-compose">
-
-  <!-- Library sidebar -->
-  <div id="compose-left">
-    <div class="lib-head">COMPONENT LIBRARY</div>
-    <div id="lib-list">
-      <div id="lib-empty">Components saved from<br>Disassemble view<br>appear here</div>
-    </div>
-  </div>
-
-  <!-- Chat -->
-  <div id="compose-main">
-    <div id="chat-area">
-      <div class="chat-msg assistant">
-        <span class="msg-role">AI ARCHITECT</span>
-        <div class="msg-bubble">
-          I have access to your full component library extracted from IFC files. Ask me to find components, explain the building data, or compose something new.<br><br>
-          Try: <em>"What walls do we have in project 1?"</em> or <em>"Find all MEP components and explain the HVAC system."</em>
+    <!-- SINGLE FILE MODE — component panel only, no viewer -->
+    <div id="single-mode">
+      <div id="component-panel">
+        <div id="comp-panel-head">
+          <div><span class="sidebar-label">All</span><span class="comp-panel-title">Components</span></div>
+          <button id="btn-save-all">Save All</button>
         </div>
+        <div id="comp-filters"><button class="comp-filter active" data-filter="all">All</button></div>
+        <div id="comp-list"><div style="padding:24px 12px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.15);text-align:center;line-height:1.7;">Upload an IFC file to see components</div></div>
       </div>
     </div>
 
-    <div id="suggestions">
-      <button class="suggestion">What components are in the library?</button>
-      <button class="suggestion">Show me all walls and their dimensions</button>
-      <button class="suggestion">Explain the MEP systems extracted</button>
-      <button class="suggestion">What would a minimal house need from this library?</button>
-    </div>
-
-    <div id="chat-input-bar">
-      <textarea id="chat-input" placeholder="Ask about the building components or request a composition..." rows="1"></textarea>
-      <button id="chat-send">SEND</button>
+    <!-- BULK BROWSER MODE -->
+    <div id="bulk-mode">
+      <!-- Progress strip (shown while uploading) -->
+      <div id="bulk-progress-strip">
+        <div id="bulk-progress-summary">
+          <span id="bulk-progress-text">Processing files&#8230;</span>
+        </div>
+        <div id="bulk-file-rows"></div>
+      </div>
+      <!-- Bulk top bar -->
+      <div id="bulk-topbar">
+        <select id="bulk-file-select"><option value="">&#8212; Select file &#8212;</option></select>
+        <div class="bulk-topbar-divider"></div>
+        <input id="bulk-search" type="text" placeholder="Search components&#8230;">
+        <select id="bulk-filter-select">
+          <option value="all">All categories</option>
+          <option value="arch">Architecture</option>
+          <option value="struct">Structure</option>
+          <option value="mep">MEP</option>
+          <option value="other">Other</option>
+        </select>
+        <div class="bulk-topbar-divider"></div>
+        <button id="bulk-save-all-btn">Save All</button>
+        <button id="bulk-save-selected-btn">Save Selected</button>
+        <span id="bulk-count"></span>
+        <button id="bulk-done-btn">&#8592; Back to Components</button>
+      </div>
+      <!-- Component grid -->
+      <div id="bulk-comp-area">
+        <div id="bulk-comp-grid"></div>
+        <div id="bulk-empty">Upload multiple IFC files to browse their components here.</div>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- TOAST -->
+<!-- ══ GENERATE ══ -->
+<div class="page" id="page-generate">
+  <div id="gen-main">
+    <div id="gen-chat-area">
+      <div class="gen-msg assistant">
+        <span class="gen-msg-role">AI Architect</span>
+        <div class="gen-msg-bubble">I&#8217;m your AI building designer. Tell me what you want to build and I&#8217;ll create a complete plan &#8212; structure, MEP, electrical, finishes, cost estimates, and a downloadable IFC file.<br><br>Describe your building: <em>type, location, size, budget, timeline, any special requirements.</em></div>
+      </div>
+    </div>
+    <div id="gen-suggestions">
+      <button class="gen-suggestion">3-bedroom house in Austin TX, budget $400k</button>
+      <button class="gen-suggestion">Small commercial office, 2 floors, London UK</button>
+      <button class="gen-suggestion">Basketball court and gym facility, Chicago IL</button>
+      <button class="gen-suggestion">Apartment building, 5 floors, steel frame, Miami FL</button>
+    </div>
+    <div id="gen-input-bar">
+      <textarea id="gen-input" placeholder="Describe your building&#8230;" rows="1"></textarea>
+      <button id="gen-send">Design</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 3D VIEW ══ -->
+<div class="page" id="page-view">
+  <div id="view-sidebar">
+    <div id="view-sidebar-head"><span class="sidebar-label">Generated</span><span class="view-sidebar-title">Building Plan</span></div>
+    <div id="view-plan-summary"><div style="padding:24px 12px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.15);text-align:center;line-height:1.7;">Generate a building to see the plan</div></div>
+    <div id="view-actions">
+      <button class="view-btn export" id="btn-export-ifc" disabled>&#8595; &nbsp;Export IFC</button>
+      <button class="view-btn back" id="btn-back-to-chat">&#8592; &nbsp;Back to Chat</button>
+    </div>
+  </div>
+  <div id="view-viewer-wrap">
+    <div id="view-bar">
+      <span class="view-bar-title" id="view-building-name">No model loaded</span>
+      <span id="view-status">&#8212;</span>
+      <div id="view-viewer-tools">
+        <button type="button" class="view-tool-btn" id="btn-ghost-shell" title="Walls &amp; roof semi-transparent (this view only, not saved to IFC)">Ghost shell</button>
+        <button type="button" class="view-tool-btn" id="btn-reset-camera" title="Frame the whole model">Reset view</button>
+      </div>
+    </div>
+    <div id="gen-aps-viewer"><div id="gen-viewer-empty"><div class="gen-empty-headline">Awaiting generation</div><div class="gen-empty-sub">Describe a building in the Generate tab</div></div></div>
+    <div id="xeokit-wrap">
+      <canvas id="xeokit-canvas"></canvas>
+      <div id="xeokit-loading">
+        <div id="xeokit-loading-bar"><div id="xeokit-loading-bar-fill"></div></div>
+        <div id="xeokit-loading-text">Loading model…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script>
-// ─────────────────────────────────────────────────────────────────
-// CATEGORY CONFIG
-// ─────────────────────────────────────────────────────────────────
-const CAT_COLOR = {
-  IfcWall:0x8ecae6,IfcWallStandardCase:0x8ecae6,IfcWallElementedCase:0x8ecae6,
-  IfcSlab:0x457b9d,IfcRoof:0x1d3557,IfcDoor:0xf4a261,IfcWindow:0xa8dadc,
-  IfcStair:0xe9c46a,IfcStairFlight:0xe9c46a,IfcRailing:0xffd166,
-  IfcCurtainWall:0x90e0ef,IfcCovering:0xb5ead7,
-  IfcFurnishingElement:0xffc8dd,IfcFurniture:0xffb3c6,
-  IfcColumn:0x80b918,IfcColumnStandardCase:0x80b918,
-  IfcBeam:0x55a630,IfcBeamStandardCase:0x55a630,
-  IfcPlate:0x2dc653,IfcMember:0x38b000,
-  IfcDuctSegment:0xff6b6b,IfcDuctFitting:0xff6b6b,
-  IfcPipeSegment:0xffa500,IfcPipeFitting:0xffa500,
-  IfcAirTerminal:0xff4d6d,IfcValve:0xc9184a,IfcPump:0xe63946,IfcFan:0xff758c,
-  IfcFlowSegment:0xff9500,IfcFlowFitting:0xff9500,IfcFlowTerminal:0xffb347,
-  IfcElectricAppliance:0xc77dff,IfcLightFixture:0xe0aaff,IfcOutlet:0x9d4edd,
-};
-const DEFAULT_COLOR = 0x446688;
-
-const ARCH = new Set(['IfcWall','IfcWallStandardCase','IfcWallElementedCase','IfcSlab','IfcRoof','IfcDoor','IfcWindow','IfcStair','IfcStairFlight','IfcRailing','IfcCurtainWall','IfcCovering','IfcFurnishingElement','IfcFurniture','IfcOpeningElement']);
-const STRUCT = new Set(['IfcColumn','IfcColumnStandardCase','IfcBeam','IfcBeamStandardCase','IfcPlate','IfcMember']);
-const MEP = new Set(['IfcDuctSegment','IfcDuctFitting','IfcPipeSegment','IfcPipeFitting','IfcAirTerminal','IfcValve','IfcPump','IfcFan','IfcFlowSegment','IfcFlowFitting','IfcFlowTerminal','IfcFlowController','IfcFlowMovingDevice','IfcFlowStorageDevice','IfcElectricAppliance','IfcLightFixture','IfcOutlet','IfcElectricDistributionBoard','IfcDistributionFlowElement']);
-
-function groupOf(cat) {
-  if(ARCH.has(cat)) return 'arch';
-  if(STRUCT.has(cat)) return 'struct';
-  if(MEP.has(cat)) return 'mep';
-  return 'other';
-}
-
-function getDims(c) {
-  const S = 0.001;
-  const cap = v => (v && v > 0 && v < 50000) ? v : null;
-  const w = cap(c.width_mm)  || 200;
-  const h = cap(c.height_mm) || 300;
-  const l = cap(c.length_mm) || 500;
-  const cat = c.category;
-
-  if(cat.includes('Wall'))   return [Math.max(l*S,0.1), Math.max(h*S,0.1), Math.max(w*S,0.05)];
-  if(cat.includes('Slab'))   return [Math.max(l*S||4,0.5), Math.max(w*S||0.3,0.05), Math.max(h*S||4,0.5)];
-  if(cat.includes('Roof'))   return [Math.max(l*S||5,0.5), 0.3, Math.max(h*S||5,0.5)];
-  if(cat.includes('Column')) return [Math.max(w*S||0.3,0.1), Math.max(h*S||3,0.5), Math.max(w*S||0.3,0.1)];
-  if(cat.includes('Beam'))   return [Math.max(l*S||2,0.5), Math.max(h*S||0.3,0.1), Math.max(w*S||0.3,0.1)];
-  if(cat==='IfcDoor')        return [Math.max(w*S,0.5), Math.max(h*S,1.0), 0.1];
-  if(cat==='IfcWindow')      return [Math.max(w*S,0.5), Math.max(h*S,0.5), 0.08];
-  if(cat.includes('Curtain'))return [Math.max(l*S||5,1.0), Math.max(h*S||3,1.0), 0.05];
-  if(cat.includes('Member')) return [Math.max(l*S||0.3,0.1), 0.03, 0.03];
-  if(cat.includes('Plate'))  return [Math.max(l*S||1,0.2), Math.max(h*S||1,0.2), Math.max(w*S||0.03,0.01)];
-  if(cat.includes('Duct')||cat.includes('Pipe')||cat.includes('Flow')) return [Math.max(l*S||1,0.2),0.12,0.12];
-  return [Math.max(w*S||0.4,0.1), Math.max(h*S||0.4,0.1), Math.max(l*S||0.4,0.1)];
-}
-
-// ─────────────────────────────────────────────────────────────────
-// THREE.JS
-// ─────────────────────────────────────────────────────────────────
-const canvas3d = document.getElementById('dis-canvas');
-const wrap3d   = document.getElementById('dis-canvas-wrap');
-
-const renderer = new THREE.WebGLRenderer({canvas:canvas3d, antialias:true});
-renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
-renderer.shadowMap.enabled = true;
-
-const scene  = new THREE.Scene();
-scene.background = new THREE.Color(0x080810);
-scene.fog = new THREE.Fog(0x080810, 60, 180);
-
-const camera = new THREE.PerspectiveCamera(45,1,0.01,500);
-camera.position.set(20,15,20);
-
-// Lights
-scene.add(new THREE.AmbientLight(0xffffff,0.5));
-const dir = new THREE.DirectionalLight(0xffffff,0.8);
-dir.position.set(15,25,15); dir.castShadow=true; scene.add(dir);
-const fill = new THREE.DirectionalLight(0x4fffb0,0.12);
-fill.position.set(-10,5,-10); scene.add(fill);
-
-// Grid
-scene.add(new THREE.GridHelper(80,40,0x151525,0x151525));
-
-// Orbit
-let drag=false,rightDrag=false,prevM={x:0,y:0};
-let sph={theta:Math.PI/4,phi:Math.PI/3.5,r:30};
-let tgt=new THREE.Vector3();
-
-function updateCam(){
-  const x=tgt.x+sph.r*Math.sin(sph.phi)*Math.sin(sph.theta);
-  const y=tgt.y+sph.r*Math.cos(sph.phi);
-  const z=tgt.z+sph.r*Math.sin(sph.phi)*Math.cos(sph.theta);
-  camera.position.set(x,y,z); camera.lookAt(tgt);
-}
-updateCam();
-
-canvas3d.addEventListener('mousedown',e=>{drag=true;rightDrag=e.button===2;prevM={x:e.clientX,y:e.clientY};});
-canvas3d.addEventListener('contextmenu',e=>e.preventDefault());
-window.addEventListener('mouseup',()=>drag=false);
-window.addEventListener('mousemove',e=>{
-  if(!drag) return;
-  const dx=e.clientX-prevM.x, dy=e.clientY-prevM.y;
-  prevM={x:e.clientX,y:e.clientY};
-  if(rightDrag){
-    const r=new THREE.Vector3(),up=new THREE.Vector3();
-    camera.getWorldDirection(r); r.cross(camera.up).normalize();
-    tgt.addScaledVector(r,-dx*0.02); tgt.addScaledVector(camera.up,dy*0.02);
-  } else {
-    sph.theta-=dx*0.005;
-    sph.phi=Math.max(0.08,Math.min(Math.PI-0.08,sph.phi-dy*0.005));
+<script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "@xeokit/xeokit-sdk": "https://cdn.jsdelivr.net/npm/@xeokit/xeokit-sdk@2.6.0/dist/xeokit-sdk.min.es.js"
   }
-  updateCam();
-});
-canvas3d.addEventListener('wheel',e=>{
-  sph.r=Math.max(1,Math.min(120,sph.r+e.deltaY*0.05)); updateCam();
-},{passive:true});
-
-// Materials
-const hlMat  = new THREE.MeshLambertMaterial({color:0x00ff9d,emissive:0x003322});
-const hovMat = new THREE.MeshLambertMaterial({color:0xffffff,transparent:true,opacity:0.85});
-const savedMat = new THREE.MeshLambertMaterial({color:0x00ff9d,emissive:0x002211,transparent:true,opacity:0.7});
-const matCache={};
-function getMat(hex){
-  if(!matCache[hex]) matCache[hex]=new THREE.MeshLambertMaterial({color:hex,transparent:true,opacity:0.88});
-  return matCache[hex];
 }
+</script>
+<script>
+const ARCH=new Set(['IfcWall','IfcWallStandardCase','IfcWallElementedCase','IfcSlab','IfcRoof','IfcDoor','IfcWindow','IfcStair','IfcStairFlight','IfcRailing','IfcCurtainWall','IfcCovering','IfcFurnishingElement','IfcFurniture','IfcOpeningElement','IfcPlate','IfcMember']);
+const STRUCT=new Set(['IfcColumn','IfcColumnStandardCase','IfcBeam','IfcBeamStandardCase']);
+const MEP=new Set(['IfcDuctSegment','IfcDuctFitting','IfcPipeSegment','IfcPipeFitting','IfcAirTerminal','IfcValve','IfcPump','IfcFan','IfcFlowSegment','IfcFlowFitting','IfcFlowTerminal','IfcFlowController','IfcFlowMovingDevice','IfcFlowStorageDevice','IfcElectricAppliance','IfcLightFixture','IfcOutlet']);
+const GROUP_LABELS={all:'All',arch:'Architecture',struct:'Structure',mep:'MEP',other:'Other'};
+function groupOf(c){if(ARCH.has(c))return'arch';if(STRUCT.has(c))return'struct';if(MEP.has(c))return'mep';return'other';}
+function dotClass(c){return'dot-'+groupOf(c);}
 
-// Raycaster
-const ray=new THREE.Raycaster();
-const mouse=new THREE.Vector2();
+// ── State ────────────────────────────────────────────────────────────────────
+var currentProjectId=null,allComponents=[],library=[],activeFilter='all';
+var viewer=null,genViewer=null,apsInitialized=false;
+var globalIdToDbId={},groupDbIds={};
+var genHistory=[],genSpec=null,genStreaming=false;
 
-// ─────────────────────────────────────────────────────────────────
-// STATE
-// ─────────────────────────────────────────────────────────────────
-let meshes=[];       // [{mesh,comp,origPos}]
-let selectedMesh=null, hoveredMesh=null;
-let activeGroup='all', activeFloor=null;
-let centroid=new THREE.Vector3();
-let savedIds=new Set();    // IDs saved to library
-let library=[];            // [{comp, savedAt}]
-let chatHistory=[];
-let isStreaming=false;
-let highlightedCompIds=new Set(); // from AI compose
+// bulk browser state
+var bulkProjects={}; // {projectId: {name, filename, components:[]}}
+var bulkSelectedIds=new Set();
+var bulkCurrentProjectId=null;
+var bulkSearchTimer=null;
 
-// ─────────────────────────────────────────────────────────────────
-// BUILD 3D SCENE
-// ─────────────────────────────────────────────────────────────────
-function clearScene(){
-  meshes.forEach(({mesh})=>scene.remove(mesh));
-  meshes=[]; selectedMesh=null; hoveredMesh=null;
-}
-
-function buildScene(components){
-  clearScene();
-  const S=0.001;
-  let cx=0,cy=0,cz=0,n=0;
-  components.forEach(c=>{
-    if(c.pos_x!=null){cx+=c.pos_x;cy+=c.pos_y;cz+=c.pos_z;n++;}
+// ── APS ──────────────────────────────────────────────────────────────────────
+async function ensureApsInit(){
+  if(apsInitialized)return;
+  var td=await fetch('/api/aps/token').then(r=>r.json());
+  return new Promise(function(resolve){
+    Autodesk.Viewing.Initializer({env:'AutodeskProduction2',api:'streamingV2',
+      getAccessToken:function(cb){cb(td.access_token,td.expires_in);}},
+      function(){apsInitialized=true;resolve();});
   });
-  if(n>0){cx/=n;cy/=n;cz/=n;}
-  centroid.set(cx*S,cy*S,cz*S);
-  tgt.copy(centroid);
+}
 
-  components.forEach(comp=>{
-    const [sw,sh,sd]=getDims(comp);
-    const geo=new THREE.BoxGeometry(sw,sh,sd);
-    const color=CAT_COLOR[comp.category]||DEFAULT_COLOR;
-    const mat=savedIds.has(comp.id)?savedMat.clone():getMat(color).clone();
-    const mesh=new THREE.Mesh(geo,mat);
-    mesh.castShadow=true; mesh.receiveShadow=true;
-    const x=comp.pos_x!=null?comp.pos_x*S:centroid.x;
-    const y=comp.pos_y!=null?comp.pos_y*S:centroid.y;
-    const z=comp.pos_z!=null?comp.pos_z*S:centroid.z;
-    mesh.rotation.y=THREE.MathUtils.degToRad(comp.rot_z||0);
-    mesh.position.set(x,y,z);
-    // Curtain walls at origin need to be estimated from their dimensions
-    if(comp.category.includes('Curtain') && comp.pos_x === 0 && comp.pos_y === 0) {
-      mesh.visible = false; // hide until we have better placement data
+async function initViewer(urn){
+  // No viewer in disassemble tab
+}
+
+var xeokitViewer=null;
+var genXeokitModel=null;
+var genGhostMode=false;
+
+/** Walls + roof (and IFC ceilings) semi-transparent — viewer-only, does not change the IFC file. */
+function applyGenGhostMode(){
+  if(!xeokitViewer||!xeokitViewer.scene)return;
+  var scene=xeokitViewer.scene;
+  var metaScene=xeokitViewer.metaScene;
+  var shellTypes=new Set([
+    'IfcWall','IfcWallStandardCase','IfcWallElementedCase','IfcCurtainWall',
+    'IfcRoof','IfcCovering'
+  ]);
+  Object.values(scene.objects).forEach(function(obj){
+    if(!obj||obj.destroyed)return;
+    var meta=metaScene&&metaScene.metaObjects[obj.id];
+    var t=meta&&meta.type;
+    if(genGhostMode&&t&&shellTypes.has(t)){
+      obj.opacity=0.14;
+    }else if(obj.opacity!==undefined){
+      obj.opacity=1.0;
     }
-    const orig=new THREE.Vector3(x,y,z);
-    mesh.userData={comp,origPos:orig,color,baseMat:mat};
-    scene.add(mesh);
-    meshes.push({mesh,comp,origPos:orig});
-  });
-
-  sph={theta:Math.PI/4,phi:Math.PI/3.5,r:28};
-  updateCam();
-  updateGroupCounts();
-  applyFilters();
-}
-
-// ─────────────────────────────────────────────────────────────────
-// FILTERS
-// ─────────────────────────────────────────────────────────────────
-function applyFilters(){
-  meshes.forEach(({mesh,comp})=>{
-    const g=groupOf(comp.category);
-    const inG=activeGroup==='all'||activeGroup===g;
-    const inF=!activeFloor||comp.level===activeFloor;
-    mesh.visible=inG&&inF;
-  });
-  updateGroupCounts();
-}
-
-function updateGroupCounts(){
-  const counts={all:0,arch:0,struct:0,mep:0};
-  meshes.forEach(({comp,mesh})=>{
-    if(!mesh.visible&&activeGroup!=='all') return;
-    counts.all++;
-    const g=groupOf(comp.category);
-    if(counts[g]!==undefined) counts[g]++;
-  });
-  const total=meshes.length;
-  document.getElementById('ct-all').textContent=total;
-  document.getElementById('ct-arch').textContent=meshes.filter(m=>groupOf(m.comp.category)==='arch').length;
-  document.getElementById('ct-struct').textContent=meshes.filter(m=>groupOf(m.comp.category)==='struct').length;
-  document.getElementById('ct-mep').textContent=meshes.filter(m=>groupOf(m.comp.category)==='mep').length;
-}
-
-// ─────────────────────────────────────────────────────────────────
-// EXPLODE
-// ─────────────────────────────────────────────────────────────────
-function applyExplode(f){
-  meshes.forEach(({mesh,origPos})=>{
-    if(!mesh.visible) return;
-    const dir=origPos.clone().sub(centroid);
-    mesh.position.copy(origPos).addScaledVector(dir,f*0.6);
   });
 }
 
-// ─────────────────────────────────────────────────────────────────
-// SAVE TO LIBRARY
-// ─────────────────────────────────────────────────────────────────
-function saveComponent(comp){
-  if(savedIds.has(comp.id)) return;
-  savedIds.add(comp.id);
-  library.push({comp, savedAt: Date.now()});
-  // Update mesh material
-  const m=meshes.find(m=>m.comp.id===comp.id);
-  if(m){ m.mesh.userData.baseMat=savedMat.clone(); m.mesh.material=m.mesh.userData.baseMat; }
-  renderLibrary();
-  toast(`Saved: ${comp.family_name||comp.category}`);
+async function initGenViewer(filename){
+  // filename = the generated IFC filename, served from /api/generate/download
+  document.getElementById('gen-viewer-empty').style.display='none';
+  document.getElementById('gen-aps-viewer').style.display='none';
+  var wrap=document.getElementById('xeokit-wrap');
+  wrap.style.display='block';
+  document.getElementById('xeokit-loading').style.display='flex';
+  document.getElementById('xeokit-loading-text').textContent='Loading model…';
+  document.getElementById('view-status').textContent='Loading…';
+
+  try{
+    // Dynamically import xeokit
+    var xk=await import('https://cdn.jsdelivr.net/npm/@xeokit/xeokit-sdk@2.6.0/dist/xeokit-sdk.min.es.js');
+    var {Viewer,WebIFCLoaderPlugin}=xk;
+
+    if(xeokitViewer){xeokitViewer.destroy();xeokitViewer=null;}
+
+    xeokitViewer=new Viewer({
+      canvasId:'xeokit-canvas',
+      transparent:true,
+      backgroundColor:[0.18,0.19,0.22],
+    });
+
+    xeokitViewer.camera.eye=[10,10,10];
+    xeokitViewer.camera.look=[0,0,0];
+    xeokitViewer.camera.up=[0,1,0];
+
+    // Read metadata.style_palette stashed on the IfcBuilding property set.
+    // generate.py writes these as "style_palette_ext_wall", "_floor", etc.
+    // (strings of the form "#RRGGBB"). The helper returns an object keyed
+    // by semantic name -> [r,g,b] floats, or null if no palette was set.
+    function readStylePaletteFromModel(viewer){
+      if(!viewer || !viewer.metaScene) return null;
+      var keys = ['ext_wall','int_wall','floor','roof','ceiling','trim','accent','window_glass'];
+      var out = {};
+      var found = false;
+      var meta = viewer.metaScene.metaObjects;
+      Object.keys(meta || {}).forEach(function(id){
+        var m = meta[id];
+        if(!m || m.type !== 'IfcBuilding') return;
+        var props = (m.propertySets || []).concat(m.properties || []);
+        // xeokit flattens some psets into m.attributes
+        var source = m.attributes || {};
+        keys.forEach(function(k){
+          var attr = 'style_palette_' + k;
+          var v = source[attr];
+          if(typeof v === 'string' && v.charAt(0) === '#' && v.length === 7){
+            var r = parseInt(v.substr(1,2),16)/255;
+            var g = parseInt(v.substr(3,2),16)/255;
+            var b = parseInt(v.substr(5,2),16)/255;
+            if(!isNaN(r)&&!isNaN(g)&&!isNaN(b)){ out[k] = [r,g,b]; found = true; }
+          }
+        });
+      });
+      return found ? out : null;
+    }
+
+    // Load web-ifc WASM and pass the IfcAPI instance explicitly
+    var WebIFC=await import('https://cdn.jsdelivr.net/npm/web-ifc@0.0.51/web-ifc-api.js');
+    var ifcAPI=new WebIFC.IfcAPI();
+    ifcAPI.SetWasmPath('https://cdn.jsdelivr.net/npm/web-ifc@0.0.51/');
+    await ifcAPI.Init();
+
+    var ifcLoader=new WebIFCLoaderPlugin(xeokitViewer,{
+      WebIFC: WebIFC,
+      IfcAPI: ifcAPI
+    });
+
+    var url='/api/generate/download?file='+encodeURIComponent(filename);
+    var model=ifcLoader.load({
+      id:'generated',
+      src:url,
+      loadMetadata:true,
+      edges:true
+    });
+
+    model.on('loaded',function(){
+      document.getElementById('xeokit-loading').style.display='none';
+      document.getElementById('view-status').textContent='Ready';
+
+      // Color by IFC type using xeokit metaobjects
+      // Base color map — expanded with every MEP class generate.py can emit.
+      // The palette below can be overridden by a `style_palette` stored on the
+      // IfcBuilding property set (read below).
+      var basePalette={
+        // Architecture — warm neutrals
+        'IfcWall':              [0.90,0.86,0.76],
+        'IfcWallStandardCase':  [0.90,0.86,0.76],
+        'IfcWallElementedCase': [0.90,0.86,0.76],
+        'IfcSlab':              [0.72,0.64,0.50],  // warm oak default floor
+        'IfcRoof':              [0.45,0.40,0.36],
+        'IfcCovering':          [0.96,0.96,0.95],  // ceilings
+        'IfcColumn':            [0.88,0.84,0.74],
+        'IfcColumnStandardCase':[0.88,0.84,0.74],
+        'IfcBeam':              [0.72,0.62,0.45],
+        'IfcBeamStandardCase':  [0.72,0.62,0.45],
+        'IfcDoor':              [0.55,0.35,0.18],
+        'IfcWindow':            [0.55,0.78,0.92],
+        'IfcStair':             [0.78,0.72,0.58],
+        'IfcRailing':           [0.38,0.38,0.40],
+        // Furniture
+        'IfcFurniture':         [0.78,0.60,0.38],
+        'IfcFurnishingElement': [0.78,0.60,0.38],
+        'IfcSanitaryTerminal':  [0.96,0.96,0.96],
+        'IfcElectricAppliance': [0.78,0.80,0.85],
+        // HVAC — blues (supply) / warm (equipment)
+        'IfcDuctSegment':       [0.30,0.62,0.88],
+        'IfcDuctFitting':       [0.30,0.62,0.88],
+        'IfcAirTerminal':       [0.70,0.86,0.98],
+        'IfcUnitaryEquipment':  [0.55,0.62,0.72],  // AHU / condenser
+        'IfcFan':               [0.55,0.62,0.72],
+        'IfcBoiler':            [0.85,0.55,0.30],
+        'IfcChiller':           [0.55,0.62,0.72],
+        // Plumbing — distinctive per stream
+        'IfcPipeSegment':       [0.30,0.55,0.88],  // default = cold supply blue
+        'IfcPipeFitting':       [0.30,0.55,0.88],
+        'IfcValve':             [0.60,0.35,0.22],
+        'IfcTank':              [0.72,0.72,0.72],  // water heater body
+        'IfcFlowMeter':         [0.85,0.55,0.30],
+        // Electrical — yellows
+        'IfcLightFixture':      [1.00,0.95,0.70],
+        'IfcOutlet':            [0.95,0.88,0.50],
+        'IfcSwitchingDevice':   [0.90,0.84,0.45],
+        'IfcElectricDistributionBoard': [0.35,0.30,0.28],
+        'IfcCableCarrierSegment':       [0.30,0.30,0.32],
+        'IfcCableSegment':              [0.30,0.30,0.32],
+        // Fire — reds
+        'IfcFireSuppressionTerminal':   [0.90,0.25,0.22],
+        'IfcAlarm':                     [0.90,0.25,0.22],
+        // Generic catch-all
+        'IfcBuildingElementProxy':      [0.70,0.70,0.70],
+      };
+
+      // Start from the base palette, then overlay style_palette from the IFC
+      // property set if the AI included one (see server.py system prompt).
+      var colorMap = Object.assign({}, basePalette);
+      var stylePaletteOverride = readStylePaletteFromModel(xeokitViewer);
+      if(stylePaletteOverride){
+        // style_palette keys use semantic names (ext_wall, floor, roof,
+        // window_glass, accent, trim). Map them to IFC classes.
+        var map = {
+          ext_wall:     ['IfcWall','IfcWallStandardCase','IfcWallElementedCase','IfcColumn','IfcColumnStandardCase'],
+          floor:        ['IfcSlab'],
+          roof:         ['IfcRoof'],
+          ceiling:      ['IfcCovering'],
+          accent:       ['IfcDoor'],
+          window_glass: ['IfcWindow'],
+        };
+        Object.keys(map).forEach(function(k){
+          if(stylePaletteOverride[k]){
+            map[k].forEach(function(cls){ colorMap[cls] = stylePaletteOverride[k]; });
+          }
+        });
+      }
+
+      var defaultColor=[0.78,0.74,0.66];  // warm beige, not invisible against dark bg
+      var scene=xeokitViewer.scene;
+      var metaScene=xeokitViewer.metaScene;
+      function tintRgb(rgb, seed){
+        var x=Math.abs(Math.sin(seed*12.9898)*43758.5453)%1;
+        var s=0.88+x*0.14;
+        return [Math.min(1,rgb[0]*s),Math.min(1,rgb[1]*s),Math.min(1,rgb[2]*s)];
+      }
+      // Apply colors. Walks metaScene.metaObjects (the authoritative IFC
+      // type source) and finds matching scene entities — this catches
+      // objects materialized by xeokit's batching layer *after* initial load,
+      // which scene.objects doesn't always surface on the first pass.
+      function applyColors(){
+        var applied = 0;
+        var missed = 0;
+        var metaObjs = (metaScene && metaScene.metaObjects) || {};
+        Object.keys(metaObjs).forEach(function(id){
+          var meta = metaObjs[id];
+          if(!meta || !meta.type) return;
+          var obj = scene.objects[id];
+          if(!obj || obj.destroyed){ missed++; return; }
+          var col = defaultColor;
+          if(colorMap[meta.type]) col = colorMap[meta.type];
+          // Pipes / returns disambiguate by name
+          if(meta.type === 'IfcPipeSegment'){
+            var n = (meta.name || '').toLowerCase();
+            if(n.indexOf('hot') >= 0)        col = [0.90,0.30,0.30];
+            else if(n.indexOf('dwv') >= 0 || n.indexOf('waste') >= 0 || n.indexOf('vent') >= 0) col = [0.40,0.35,0.30];
+            else if(n.indexOf('refrig') >= 0) col = [0.40,0.35,0.55];
+          }
+          if(meta.type === 'IfcAirTerminal'){
+            var an = (meta.name || '').toLowerCase();
+            if(an.indexOf('return') >= 0) col = [0.98,0.82,0.60];
+          }
+          // Per-object tint on large shell elements
+          var mt = meta.type;
+          if(mt.indexOf('Wall') >= 0 || mt === 'IfcSlab' || mt === 'IfcRoof' || mt === 'IfcCovering'){
+            // use the entity ID's char codes as a seed (string id)
+            var seed = 0;
+            var sid = String(id);
+            for(var i=0;i<sid.length;i++){ seed += sid.charCodeAt(i); }
+            col = tintRgb(col, seed * 0.017);
+          }
+          obj.colorize = col;
+          obj.opacity = 1.0;
+          applied++;
+        });
+        return {applied: applied, missed: missed};
+      }
+
+      // Run once immediately, then every 200ms for up to 5 seconds, then
+      // one final pass. This catches batched geometry that xeokit
+      // materializes over multiple animation frames.
+      applyColors();
+      var retries = 0;
+      var retryTimer = setInterval(function(){
+        var r = applyColors();
+        retries++;
+        if(retries >= 25){ clearInterval(retryTimer); applyColors(); }
+      }, 200);
+
+      // Also hook scene.on('tick') for one second — any entities created
+      // by VBOBatchingTrianglesLayer mid-render get coloured as soon as
+      // they appear, instead of waiting for the next 200ms poll.
+      var tickCount = 0;
+      var tickSub = scene.on('tick', function(){
+        applyColors();
+        tickCount++;
+        if(tickCount > 60 && tickSub){ scene.off(tickSub); tickSub = null; }
+      });
+
+      genXeokitModel=model;
+      applyGenGhostMode();
+
+      // Fit camera with good isometric angle
+      var aabb=model.aabb;
+      var cx=(aabb[0]+aabb[3])/2;
+      var cy=(aabb[1]+aabb[4])/2;
+      var cz=(aabb[2]+aabb[5])/2;
+      var dx=aabb[3]-aabb[0];
+      var dy=aabb[4]-aabb[1];
+      var dz=aabb[5]-aabb[2];
+      var size=Math.max(dx,dy,dz);
+      scene.camera.perspective.far=size*200;
+      scene.camera.perspective.near=size*0.001;
+      xeokitViewer.cameraFlight.flyTo({
+        eye:[cx+size*1.5, cy+size*1.2, cz+size*1.5],
+        look:[cx, cy*0.3, cz],
+        up:[0,1,0],
+        duration:0.8
+      });
+      setStep('ifc','done','Ready');
+      setTimeout(function(){var card=document.getElementById('gen-steps-card');if(card)card.style.display='none';},2000);
+    });
+
+    model.on('error',function(e){
+      console.error('xeokit load error:',e);
+      document.getElementById('xeokit-loading-text').textContent='Failed to load model';
+      document.getElementById('view-status').textContent='Load failed';
+    });
+
+  }catch(e){
+    console.error('xeokit init error:',e);
+    document.getElementById('xeokit-loading-text').textContent='Viewer error: '+e.message;
+    document.getElementById('view-status').textContent='Error';
+  }
 }
 
-function saveAll(){
-  const visible=meshes.filter(m=>m.mesh.visible&&!savedIds.has(m.comp.id));
-  visible.forEach(({comp})=>saveComponent(comp));
-  toast(`Saved ${visible.length} components to library`);
+(function(){
+  var bg=document.getElementById('btn-ghost-shell');
+  var br=document.getElementById('btn-reset-camera');
+  if(bg)bg.onclick=function(){
+    genGhostMode=!genGhostMode;
+    this.classList.toggle('active',genGhostMode);
+    applyGenGhostMode();
+  };
+  if(br)br.onclick=function(){
+    if(!xeokitViewer||!genXeokitModel||!genXeokitModel.aabb)return;
+    var aabb=genXeokitModel.aabb;
+    var cx=(aabb[0]+aabb[3])/2;
+    var cy=(aabb[1]+aabb[4])/2;
+    var cz=(aabb[2]+aabb[5])/2;
+    var dx=aabb[3]-aabb[0];
+    var dy=aabb[4]-aabb[1];
+    var dz=aabb[5]-aabb[2];
+    var size=Math.max(dx,dy,dz);
+    xeokitViewer.cameraFlight.flyTo({
+      eye:[cx+size*1.5, cy+size*1.2, cz+size*1.5],
+      look:[cx, cy*0.3, cz],
+      up:[0,1,0],
+      duration:0.65
+    });
+  };
+})();
+
+function buildGlobalIdMap(){
+  viewer.getObjectTree(function(tree){
+    var dbIds=[];
+    tree.enumNodeChildren(tree.getRootId(),function(id){if(tree.getChildCount(id)===0)dbIds.push(id);},true);
+    globalIdToDbId={};groupDbIds={all:dbIds};
+    dbIds.forEach(function(dbId){
+      viewer.getProperties(dbId,function(props){
+        var gid=null;
+        if(props.properties){for(var i=0;i<props.properties.length;i++){var p=props.properties[i];if(p.attributeName==='GLOBALID'&&p.displayCategory==='IFC'){gid=p.displayValue;break;}}}
+        if(gid){var comp=allComponents.find(function(c){return c.revit_id===gid;});if(comp){globalIdToDbId[gid]={dbId:dbId,compId:comp.id};var g=groupOf(comp.category);if(!groupDbIds[g])groupDbIds[g]=[];groupDbIds[g].push(dbId);}}
+      });
+    });
+  });
 }
 
-function renderLibrary(){
-  const list=document.getElementById('lib-list');
-  const empty=document.getElementById('lib-empty');
-  if(library.length===0){ empty.style.display='block'; return; }
-  empty.style.display='none';
+function isolateGroup(g){
+  if(!viewer)return;
+  if(g==='all'){viewer.showAll();viewer.clearSelection();return;}
+  var ids=groupDbIds[g];
+  if(!ids||ids.length===0){viewer.showAll();return;}
+  viewer.isolate(ids);viewer.fitToView(ids);
+}
+
+async function onSelectionChanged(event){
+  var ids=event.dbIdArray;if(!ids||ids.length===0)return;
+  viewer.getProperties(ids[0],async function(props){
+    var gid=null;
+    if(props.properties){for(var i=0;i<props.properties.length;i++){var p=props.properties[i];if(p.attributeName==='GLOBALID'&&p.displayCategory==='IFC'){gid=p.displayValue;break;}}}
+    if(!gid)return;
+    var m=allComponents.find(function(c){return c.revit_id===gid;});if(m)highlightCompItem(m.id);
+  });
+}
+
+function highlightCompItem(id){
+  document.querySelectorAll('.comp-item').forEach(function(el){el.classList.remove('selected');});
+  var el=document.querySelector('.comp-item[data-id="'+id+'"]');
+  if(el){el.classList.add('selected');el.scrollIntoView({behavior:'smooth',block:'nearest'});}
+}
+
+// ── Single file upload ────────────────────────────────────────────────────────
+document.getElementById('ifc-file-input').onchange=function(){
+  if(!this.files[0])return;
+  document.getElementById('upload-filename').textContent=this.files[0].name;
+  document.getElementById('btn-upload').disabled=false;
+  document.getElementById('btn-upload').textContent='Process & Upload';
+  document.getElementById('btn-upload').onclick=doSingleUpload;
+};
+
+var singleAbortCtrl=null;
+
+function showUploadControls(mode){
+  // mode: 'none' | 'single' | 'bulk'
+  var pause=document.getElementById('btn-pause');
+  var stop=document.getElementById('btn-stop');
+  if(mode==='none'){pause.style.display='none';stop.style.display='none';}
+  else if(mode==='single'){pause.style.display='none';stop.style.display='inline-flex';}
+  else if(mode==='bulk'){pause.style.display='inline-flex';stop.style.display='inline-flex';}
+}
+
+document.getElementById('btn-stop').onclick=function(){
+  if(singleAbortCtrl){singleAbortCtrl.abort();singleAbortCtrl=null;}
+  bulkStopped=true;bulkPaused=false;
+  document.getElementById('upload-status').textContent='\u2715 Stopped';
+  showUploadControls('none');
+  document.getElementById('btn-upload').disabled=false;
+};
+
+document.getElementById('btn-pause').onclick=function(){
+  bulkPaused=!bulkPaused;
+  this.textContent=bulkPaused?'\u25b6 Resume':'\u23f8 Pause';
+  if(bulkPaused)document.getElementById('upload-status').textContent='Paused';
+  else document.getElementById('upload-status').textContent='';
+};
+
+async function doSingleUpload(){
+  var file=document.getElementById('ifc-file-input').files[0];if(!file)return;
+  var status=document.getElementById('upload-status'),btn=document.getElementById('btn-upload');
+  btn.disabled=true;status.textContent='\u29d7 Processing\u2026';
+  showSingleMode();
+  showUploadControls('single');
+  singleAbortCtrl=new AbortController();
+  var fd=new FormData();fd.append('file',file);
+  try{
+    var res=await fetch('/api/upload',{method:'POST',body:fd,signal:singleAbortCtrl.signal});
+    var data=await res.json();
+    if(data.status==='done'){
+      currentProjectId=data.project_id;
+      status.textContent='\u2713 '+data.stats.components+' components';
+      document.getElementById('nav-stat').textContent=data.stats.components+' components';
+      var comps=await fetch('/api/projects/'+data.project_id+'/components').then(function(r){return r.json();});
+      allComponents=comps;activeFilter='all';buildDynamicFilters();renderCompPanel();
+      await refreshLibrary();
+      toast('Loaded: '+file.name+' \u2014 '+data.stats.components+' components');
+    }else{status.textContent='\u2715 '+(data.error||'Error');}
+  }catch(e){
+    if(e.name==='AbortError'){status.textContent='\u2715 Cancelled';}
+    else{status.textContent='\u2715 Failed';console.error(e);}
+  }
+  singleAbortCtrl=null;
+  btn.disabled=false;
+  showUploadControls('none');
+}
+document.getElementById('btn-upload').onclick=doSingleUpload;
+
+// ── Bulk upload → browser mode ────────────────────────────────────────────────
+document.getElementById('ifc-bulk-input').onchange=function(){
+  var files=Array.from(this.files).filter(function(f){return f.name.endsWith('.ifc');});
+  if(!files.length)return;
+  document.getElementById('upload-filename').textContent=files.length+' files selected';
+  document.getElementById('btn-upload').disabled=false;
+  document.getElementById('btn-upload').textContent='Upload '+files.length+' Files';
+  document.getElementById('btn-upload').onclick=function(){doBulkUpload(files);};
+};
+
+var bulkStopped=false,bulkPaused=false;
+
+async function doBulkUpload(files){
+  var btn=document.getElementById('btn-upload');
+  btn.disabled=true;bulkStopped=false;bulkPaused=false;
+  document.getElementById('upload-status').textContent='';
+  showUploadControls('bulk');
+
+  // Switch to bulk mode immediately
+  showBulkMode();
+  bulkProjects={};bulkSelectedIds=new Set();
+
+  // Show progress strip
+  var strip=document.getElementById('bulk-progress-strip');
+  var fileRows=document.getElementById('bulk-file-rows');
+  var progressText=document.getElementById('bulk-progress-text');
+  strip.classList.add('active');
+  fileRows.innerHTML='';
+
+  var rowEls={};
+  files.forEach(function(f){
+    var row=document.createElement('div');row.className='bulk-file-row';
+    row.innerHTML='<div class="bulk-file-name">'+f.name+'</div>'+
+      '<div class="bulk-file-bar"><div class="bulk-file-bar-fill" style="width:0%"></div></div>'+
+      '<div class="bulk-file-status pending">Queued</div>';
+    fileRows.appendChild(row);
+    rowEls[f.name]={bar:row.querySelector('.bulk-file-bar-fill'),status:row.querySelector('.bulk-file-status')};
+  });
+
+  // Update file dropdown
+  var sel=document.getElementById('bulk-file-select');
+  sel.innerHTML='<option value="">&#8212; Select file &#8212;</option>';
+  renderBulkGrid();
+
+  var fd=new FormData();
+  files.forEach(function(f){fd.append('files',f);});
+
+  var processed=0,failed=0,totalComps=0;
+  progressText.textContent='Starting\u2026';
+
+  try{
+    var res=await fetch('/api/upload/bulk',{method:'POST',body:fd});
+    var reader=res.body.getReader();var decoder=new TextDecoder();var buffer='';
+    while(true){
+      // Pause: wait until unpaused
+      while(bulkPaused&&!bulkStopped){await new Promise(function(r){setTimeout(r,300);});}
+      if(bulkStopped){reader.cancel();break;}
+      var chunk=await reader.read();if(chunk.done)break;
+      buffer+=decoder.decode(chunk.value,{stream:true});
+      var lines=buffer.split('\n');buffer=lines.pop();
+      for(var i=0;i<lines.length;i++){
+        var line=lines[i];if(!line.startsWith('data:'))continue;
+        try{
+          var ev=JSON.parse(line.slice(5));
+          if(ev.type==='start'){
+            progressText.textContent='Processing '+(ev.index+1)+' of '+ev.total+': '+ev.file;
+            if(rowEls[ev.file]){rowEls[ev.file].status.textContent='Running\u2026';rowEls[ev.file].status.className='bulk-file-status running';rowEls[ev.file].bar.style.width='20%';}
+          }else if(ev.type==='step'){
+            if(rowEls[ev.file]){rowEls[ev.file].bar.style.width=ev.step==='aps'?'70%':'40%';rowEls[ev.file].status.textContent=ev.step==='aps'?'Uploading\u2026':'Pipeline\u2026';}
+          }else if(ev.type==='done'){
+            processed++;totalComps+=ev.stats.components;
+            var statusText=ev.cached?'\u21ba Already processed ('+ev.stats.components+')':'\u2713 '+ev.stats.components;
+            if(rowEls[ev.file]){rowEls[ev.file].status.textContent=statusText;rowEls[ev.file].status.className='bulk-file-status done';rowEls[ev.file].bar.style.width='100%';}
+            // Fetch components for this project and store in bulkProjects
+            var comps=await fetch('/api/projects/'+ev.project_id+'/components').then(function(r){return r.json();});
+            bulkProjects[ev.project_id]={name:ev.file.replace('.ifc',''),filename:ev.file,components:comps};
+            // Add to dropdown (skip if already there)
+            if(!document.querySelector('#bulk-file-select option[value="'+ev.project_id+'"]')){
+              var opt=document.createElement('option');opt.value=ev.project_id;opt.textContent=ev.file.replace('.ifc','')+' ('+ev.stats.components+')';
+              sel.appendChild(opt);
+            }
+            // Auto-select first
+            if(Object.keys(bulkProjects).length===1){sel.value=ev.project_id;bulkCurrentProjectId=ev.project_id;renderBulkGrid();}
+            await refreshLibrary();
+          }else if(ev.type==='error'){
+            failed++;
+            if(rowEls[ev.file]){rowEls[ev.file].status.textContent='\u2715 Error';rowEls[ev.file].status.className='bulk-file-status error';rowEls[ev.file].bar.style.width='100%';rowEls[ev.file].bar.style.background='var(--accent)';}
+          }else if(ev.type==='complete'){
+            progressText.textContent='\u2713 Done: '+processed+' uploaded, '+failed+' failed \u2014 '+totalComps+' components total';
+            document.getElementById('nav-stat').textContent=totalComps+' components in library';
+            toast('Bulk upload complete: '+processed+' files');
+          }
+        }catch(e){}
+      }
+    }
+  }catch(e){if(!bulkStopped){progressText.textContent='Upload error: '+e.message;console.error(e);}}
+  btn.disabled=false;
+  btn.textContent='Process & Upload';
+  showUploadControls('none');
+  if(bulkStopped)document.getElementById('upload-status').textContent='\u2715 Stopped';
+  bulkStopped=false;bulkPaused=false;
+  document.getElementById('btn-pause').textContent='\u23f8 Pause';
+}
+
+// ── Mode switching ────────────────────────────────────────────────────────────
+function showSingleMode(){
+  document.getElementById('single-mode').style.display='flex';
+  document.getElementById('bulk-mode').classList.remove('active');
+  var hasBulk=Object.keys(bulkProjects).length>0;
+  document.getElementById('btn-browse-uploads').style.display=hasBulk?'inline-flex':'none';
+}
+function showBulkMode(){
+  document.getElementById('single-mode').style.display='none';
+  document.getElementById('bulk-mode').classList.add('active');
+  document.getElementById('btn-browse-uploads').style.display='none';
+  var empty=document.getElementById('bulk-empty');
+  empty.classList.toggle('active',Object.keys(bulkProjects).length===0);
+}
+
+document.getElementById('btn-browse-uploads').onclick=function(){showBulkMode();};
+
+document.getElementById('bulk-done-btn').onclick=function(){
+  showSingleMode();
+  document.getElementById('bulk-progress-strip').classList.remove('active');
+};
+
+// ── Bulk browser ──────────────────────────────────────────────────────────────
+document.getElementById('bulk-file-select').onchange=function(){
+  var pid=parseInt(this.value);
+  if(!pid){bulkCurrentProjectId=null;renderBulkGrid();return;}
+  bulkCurrentProjectId=pid;
+  bulkSelectedIds=new Set();
+  renderBulkGrid();
+};
+
+document.getElementById('bulk-search').oninput=function(){
+  clearTimeout(bulkSearchTimer);
+  bulkSearchTimer=setTimeout(renderBulkGrid,150);
+};
+
+document.getElementById('bulk-filter-select').onchange=renderBulkGrid;
+
+function getBulkComponents(){
+  if(!bulkCurrentProjectId||!bulkProjects[bulkCurrentProjectId])return[];
+  var comps=bulkProjects[bulkCurrentProjectId].components;
+  var q=document.getElementById('bulk-search').value.trim().toLowerCase();
+  var gf=document.getElementById('bulk-filter-select').value;
+  return comps.filter(function(c){
+    if(gf!=='all'&&groupOf(c.category)!==gf)return false;
+    if(q){var name=(c.family_name||c.type_name||c.category||'').toLowerCase();var cat=c.category.toLowerCase();return name.includes(q)||cat.includes(q);}
+    return true;
+  });
+}
+
+function renderBulkGrid(){
+  var grid=document.getElementById('bulk-comp-grid');
+  var empty=document.getElementById('bulk-empty');
+  var countEl=document.getElementById('bulk-count');
+  grid.innerHTML='';
+  var comps=getBulkComponents();
+  countEl.textContent=comps.length+' components';
+  if(!comps.length){empty.classList.add('active');return;}
+  empty.classList.remove('active');
+  comps.forEach(function(comp){
+    var inLib=library.some(function(l){return l.id===comp.id;});
+    var selected=bulkSelectedIds.has(comp.id);
+    var card=document.createElement('div');
+    card.className='bulk-comp-card'+(selected?' selected':'')+(inLib?' in-library':'');
+    card.dataset.id=comp.id;
+    var dims='';
+    if(comp.width_mm||comp.height_mm||comp.length_mm){
+      var parts=[];
+      if(comp.length_mm)parts.push(Math.round(comp.length_mm)+'L');
+      if(comp.width_mm)parts.push(Math.round(comp.width_mm)+'W');
+      if(comp.height_mm)parts.push(Math.round(comp.height_mm)+'H');
+      dims=parts.join(' \u00d7 ')+' mm';
+    }
+    var dotCol=groupOf(comp.category)==='arch'?'#8ecae6':groupOf(comp.category)==='struct'?'#80b918':groupOf(comp.category)==='mep'?'#ff6b6b':'#666';
+    card.innerHTML=
+      '<div class="bulk-comp-card-dot" style="background:'+dotCol+'"></div>'+
+      '<div class="bulk-comp-card-cat">'+comp.category.replace('Ifc','')+'</div>'+
+      '<div class="bulk-comp-card-name">'+(comp.family_name||comp.type_name||comp.category)+'</div>'+
+      (dims?'<div class="bulk-comp-card-dims">'+dims+'</div>':'')+
+      '<button class="bulk-comp-save'+(inLib?' saved':'')+'" data-id="'+comp.id+'">'+(inLib?'\u2713 Saved':'Save')+'</button>';
+    // Toggle selection on card click
+    (function(cid){
+      card.onclick=function(e){
+        if(e.target.classList.contains('bulk-comp-save'))return;
+        if(bulkSelectedIds.has(cid))bulkSelectedIds.delete(cid);
+        else bulkSelectedIds.add(cid);
+        card.classList.toggle('selected',bulkSelectedIds.has(cid));
+      };
+    })(comp.id);
+    grid.appendChild(card);
+  });
+  // Attach save button events via delegation
+}
+
+document.getElementById('bulk-comp-area').addEventListener('click',function(e){
+  var btn=e.target.closest('.bulk-comp-save');
+  if(!btn)return;
+  e.stopPropagation();
+  var cid=parseInt(btn.dataset.id);
+  saveBulkComponent(cid);
+});
+
+async function saveBulkComponent(cid){
+  var res=await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:cid})});
+  var data=await res.json();
+  if(data.status==='saved'){
+    await refreshLibrary();
+    renderBulkGrid();
+    toast('Saved to library');
+    return true;
+  }else if(data.status==='already_saved'){
+    await refreshLibrary();
+    renderBulkGrid();
+    return true;
+  }else if(data.status==='duplicate'){
+    // Silently skip duplicates — just mark the card visually as a duplicate
+    document.querySelectorAll('.bulk-comp-save[data-id="'+cid+'"]').forEach(function(b){
+      b.textContent='Duplicate';b.style.opacity='0.35';b.disabled=true;
+    });
+    return false;
+  }
+  return false;
+}
+
+document.getElementById('bulk-save-all-btn').onclick=async function(){
+  var comps=getBulkComponents();
+  var unsaved=comps.filter(function(c){return !library.some(function(l){return l.id===c.id;});});
+  if(!unsaved.length){toast('All components already saved');return;}
+  this.textContent='Saving\u2026';this.disabled=true;
+  var saved=0,dupes=0;
+  for(var i=0;i<unsaved.length;i++){
+    var res=await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:unsaved[i].id})});
+    var data=await res.json();
+    if(data.status==='saved')saved++;
+    else if(data.status==='duplicate')dupes++;
+  }
+  await refreshLibrary();
+  renderBulkGrid();
+  this.textContent='Save All';this.disabled=false;
+  var msg='Saved '+saved+' components';
+  if(dupes>0)msg+=' ('+dupes+' duplicates skipped)';
+  toast(msg);
+};
+
+document.getElementById('bulk-save-selected-btn').onclick=async function(){
+  if(!bulkSelectedIds.size){toast('Select components first');return;}
+  this.textContent='Saving\u2026';this.disabled=true;
+  var toSave=Array.from(bulkSelectedIds).filter(function(id){return !library.some(function(l){return l.id===id;});});
+  var saved=0,dupes=0;
+  for(var i=0;i<toSave.length;i++){
+    var res=await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:toSave[i]})});
+    var data=await res.json();
+    if(data.status==='saved')saved++;
+    else if(data.status==='duplicate')dupes++;
+  }
+  await refreshLibrary();
+  bulkSelectedIds=new Set();
+  renderBulkGrid();
+  this.textContent='Save Selected';this.disabled=false;
+  var msg='Saved '+saved+' components';
+  if(dupes>0)msg+=' ('+dupes+' duplicates skipped)';
+  toast(msg);
+};
+
+// ── Dynamic filters (single mode) ─────────────────────────────────────────────
+function buildDynamicFilters(){
+  var gc={all:allComponents.length};
+  allComponents.forEach(function(c){var g=groupOf(c.category);gc[g]=(gc[g]||0)+1;});
+  var fb=document.getElementById('comp-filters');fb.innerHTML='';
+  ['all','arch','struct','mep','other'].forEach(function(g){
+    if(g!=='all'&&!gc[g])return;
+    var btn=document.createElement('button');
+    btn.className='comp-filter'+(g===activeFilter?' active':'');btn.dataset.filter=g;
+    btn.innerHTML=GROUP_LABELS[g]+'<span class="filter-count">'+(gc[g]||0)+'</span>';
+    btn.onclick=function(){document.querySelectorAll('.comp-filter').forEach(function(b){b.classList.remove('active');});btn.classList.add('active');activeFilter=g;renderCompPanel();isolateGroup(g);};
+    fb.appendChild(btn);
+  });
+}
+
+// ── Component panel (single mode) ─────────────────────────────────────────────
+function renderCompPanel(){
+  var list=document.getElementById('comp-list');if(!list)return;
+  var filtered=activeFilter==='all'?allComponents:allComponents.filter(function(c){return groupOf(c.category)===activeFilter;});
   list.innerHTML='';
-  library.forEach(({comp})=>{
-    const item=document.createElement('div');
-    item.className='lib-item'+(highlightedCompIds.has(comp.id)?' highlighted':'');
-    item.dataset.id=comp.id;
-    item.innerHTML=`<div class="lib-cat">${comp.category.replace('Ifc','')}</div><div class="lib-name">${comp.family_name||comp.type_name||'—'}</div><div class="lib-proj">id:${comp.id}</div>`;
+  if(!filtered.length){list.innerHTML='<div style="padding:24px 12px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.15);text-align:center;line-height:1.7;">'+(allComponents.length===0?'Upload an IFC file':'No components in this category')+'</div>';return;}
+  filtered.forEach(function(comp){
+    var inLib=library.some(function(l){return l.id===comp.id;});
+    var f=function(v){return v!=null?Number(v).toFixed(1):'&#8212;';};
+    var item=document.createElement('div');item.className='comp-item'+(inLib?' in-library':'');item.dataset.id=comp.id;
+    var header=document.createElement('div');header.className='comp-item-header';
+    var dot=document.createElement('div');dot.className='comp-dot '+dotClass(comp.category);
+    var info=document.createElement('div');info.className='comp-item-info';
+    info.innerHTML='<div class="comp-item-cat">'+comp.category.replace('Ifc','')+'</div><div class="comp-item-name">'+(comp.family_name||comp.type_name||'&#8212;')+'</div>';
+    var saveBtn=document.createElement('button');saveBtn.className='comp-item-save'+(inLib?' saved':'');saveBtn.textContent=inLib?'\u2713':'Save';
+    (function(cid){saveBtn.onclick=function(e){e.stopPropagation();saveComponentById(cid);};})(comp.id);
+    var chevron=document.createElement('span');chevron.className='comp-chevron';chevron.textContent='\u203a';
+    header.appendChild(dot);header.appendChild(info);header.appendChild(saveBtn);header.appendChild(chevron);
+    (function(it){header.onclick=function(){it.classList.toggle('open');};})(item);
+    var body=document.createElement('div');body.className='comp-item-body';
+    body.innerHTML='<div class="comp-stat-row"><span class="comp-stat-k">ID</span><span class="comp-stat-v hi">'+comp.id+'</span></div>'+
+      '<div class="comp-stat-row"><span class="comp-stat-k">Level</span><span class="comp-stat-v">'+(comp.level||'&#8212;')+'</span></div>'+
+      '<div class="comp-stat-row"><span class="comp-stat-k">W</span><span class="comp-stat-v">'+f(comp.width_mm)+' mm</span></div>'+
+      '<div class="comp-stat-row"><span class="comp-stat-k">H</span><span class="comp-stat-v">'+f(comp.height_mm)+' mm</span></div>'+
+      '<div class="comp-stat-row"><span class="comp-stat-k">L</span><span class="comp-stat-v">'+f(comp.length_mm)+' mm</span></div>';
+    item.appendChild(header);item.appendChild(body);list.appendChild(item);
+  });
+}
+
+// ── Library ───────────────────────────────────────────────────────────────────
+async function refreshLibrary(){
+  var res=await fetch('/api/library');library=await res.json();
+  renderLibrary();if(allComponents.length>0)renderCompPanel();
+}
+async function saveComponentById(id){
+  var res=await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:id})});
+  var data=await res.json();
+  if(data.status==='saved'||data.status==='already_saved'){await refreshLibrary();toast('Saved to library');}
+}
+async function saveAll(){
+  var visible=activeFilter==='all'?allComponents:allComponents.filter(function(c){return groupOf(c.category)===activeFilter;});
+  var unsaved=visible.filter(function(c){return !library.some(function(l){return l.id===c.id;});});
+  for(var i=0;i<unsaved.length;i++){await fetch('/api/library/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:unsaved[i].id})});}
+  await refreshLibrary();toast('Saved '+unsaved.length+' components');
+}
+async function removeFromLibrary(id){await fetch('/api/library/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component_id:id})});await refreshLibrary();}
+async function clearLibrary(){if(!confirm('Clear the entire library?'))return;await fetch('/api/library/clear',{method:'POST'});await refreshLibrary();toast('Library cleared');}
+var libSearchTimer=null;
+function renderLibrary(){
+  var list=document.getElementById('lib-list');if(!list)return;
+  var searchEl=document.getElementById('lib-search');
+  var q=searchEl?searchEl.value.trim().toLowerCase():'';
+  var countEl=document.getElementById('lib-count');
+  if(!library.length){
+    list.innerHTML='<div id="lib-empty-msg" style="padding:20px 10px;font-family:var(--display);font-size:12px;font-style:italic;color:rgba(255,255,255,0.18);text-align:center;line-height:1.7;">Save components to build your library</div>';
+    if(countEl)countEl.textContent='';
+    return;
+  }
+  var filtered=q?library.filter(function(c){
+    var name=(c.family_name||c.type_name||c.category||'').toLowerCase();
+    return name.includes(q)||c.category.toLowerCase().includes(q);
+  }):library;
+  if(countEl)countEl.textContent=filtered.length+(q?' of '+library.length:'')+' components';
+  list.innerHTML='';
+  if(!filtered.length){
+    list.innerHTML='<div style="padding:16px 10px;font-family:var(--mono);font-size:9px;color:rgba(255,255,255,0.2);text-align:center;letter-spacing:0.06em;">No matches</div>';
+    return;
+  }
+  filtered.forEach(function(comp){
+    var item=document.createElement('div');item.className='lib-item';
+    item.innerHTML='<div class="lib-cat">'+comp.category.replace('Ifc','')+'</div><div class="lib-name">'+(comp.family_name||comp.type_name||'&#8212;')+'</div><button class="lib-remove" data-comp-id="'+comp.id+'">\u2715</button>';
     list.appendChild(item);
   });
 }
-
-// ─────────────────────────────────────────────────────────────────
-// INSPECTOR
-// ─────────────────────────────────────────────────────────────────
-function showInspector(comp){
-  const body=document.getElementById('insp-body');
-  const q=comp.quality_score;
-  const f=v=>v!=null?Number(v).toFixed(1):'—';
-  const fp=v=>v!=null?Number(v).toFixed(2):'—';
-  body.innerHTML=`
-    <div class="insp-cat">${comp.category}</div>
-    <div class="insp-name">${comp.family_name||comp.type_name||'—'}</div>
-    <div class="insp-sec">
-      <div class="insp-sec-head">IDENTITY</div>
-      <div class="insp-row"><span class="insp-k">DB id</span><span class="insp-v hi">${comp.id}</span></div>
-      <div class="insp-row"><span class="insp-k">Level</span><span class="insp-v">${comp.level||'—'}</span></div>
-      <div class="insp-row"><span class="insp-k">Elevation</span><span class="insp-v">${comp.elevation!=null?Number(comp.elevation).toFixed(2)+'m':'—'}</span></div>
-    </div>
-    <div class="insp-sec">
-      <div class="insp-sec-head">DIMENSIONS</div>
-      <div class="insp-row"><span class="insp-k">Width</span><span class="insp-v">${f(comp.width_mm)} mm</span></div>
-      <div class="insp-row"><span class="insp-k">Height</span><span class="insp-v">${f(comp.height_mm)} mm</span></div>
-      <div class="insp-row"><span class="insp-k">Length</span><span class="insp-v">${f(comp.length_mm)} mm</span></div>
-      <div class="insp-row"><span class="insp-k">Area</span><span class="insp-v">${comp.area_m2!=null?Number(comp.area_m2).toFixed(2)+' m²':'—'}</span></div>
-      <div class="insp-row"><span class="insp-k">Volume</span><span class="insp-v">${comp.volume_m3!=null?Number(comp.volume_m3).toFixed(3)+' m³':'—'}</span></div>
-    </div>
-    <div class="insp-sec">
-      <div class="insp-sec-head">POSITION</div>
-      <div class="insp-row"><span class="insp-k">X</span><span class="insp-v">${fp(comp.pos_x)}</span></div>
-      <div class="insp-row"><span class="insp-k">Y</span><span class="insp-v">${fp(comp.pos_y)}</span></div>
-      <div class="insp-row"><span class="insp-k">Z</span><span class="insp-v">${fp(comp.pos_z)}</span></div>
-      <div class="insp-row"><span class="insp-k">Rot Z</span><span class="insp-v">${comp.rot_z!=null?Number(comp.rot_z).toFixed(1)+'°':'—'}</span></div>
-    </div>
-    <div class="insp-sec">
-      <div class="insp-sec-head">QUALITY</div>
-      <div class="insp-row"><span class="insp-k">Score</span><span class="insp-v hi">${q!=null?Number(q).toFixed(2):'—'}</span></div>
-      ${q!=null?`<div class="q-bar"><div class="q-fill" style="width:${Math.round(q*100)}%"></div></div>`:''}
-    </div>
-  `;
-  document.getElementById('dis-inspector').classList.add('open');
-  document.getElementById('insp-save').onclick=()=>saveComponent(comp);
-}
-
-function closeInspector(){
-  document.getElementById('dis-inspector').classList.remove('open');
-  if(selectedMesh){ selectedMesh.material=selectedMesh.userData.baseMat; selectedMesh=null; }
-}
-
-// ─────────────────────────────────────────────────────────────────
-// MOUSE — DISASSEMBLE
-// ─────────────────────────────────────────────────────────────────
-const tooltip=document.getElementById('dis-tooltip');
-
-canvas3d.addEventListener('mousemove',e=>{
-  const rect=canvas3d.getBoundingClientRect();
-  mouse.x=((e.clientX-rect.left)/rect.width)*2-1;
-  mouse.y=-((e.clientY-rect.top)/rect.height)*2+1;
-  ray.setFromCamera(mouse,camera);
-  const hits=ray.intersectObjects(meshes.filter(m=>m.mesh.visible).map(m=>m.mesh));
-
-  if(hits.length>0){
-    const hit=hits[0].object;
-    wrap3d.classList.add('can-click');
-    if(hoveredMesh&&hoveredMesh!==selectedMesh&&hoveredMesh!==hit) hoveredMesh.material=hoveredMesh.userData.baseMat;
-    if(hit!==selectedMesh) hit.material=hovMat;
-    hoveredMesh=hit;
-    const c=hit.userData.comp;
-    document.getElementById('tt-cat').textContent=c.category;
-    document.getElementById('tt-name').textContent=c.family_name||c.type_name||'—';
-    tooltip.classList.add('show');
-    const tx=Math.min(e.clientX-rect.left+14,rect.width-210);
-    const ty=Math.min(e.clientY-rect.top-10,rect.height-80);
-    tooltip.style.left=tx+'px'; tooltip.style.top=ty+'px';
-  } else {
-    wrap3d.classList.remove('can-click');
-    if(hoveredMesh&&hoveredMesh!==selectedMesh){ hoveredMesh.material=hoveredMesh.userData.baseMat; hoveredMesh=null; }
-    tooltip.classList.remove('show');
-  }
-});
-
-canvas3d.addEventListener('click',e=>{
-  ray.setFromCamera(mouse,camera);
-  const hits=ray.intersectObjects(meshes.filter(m=>m.mesh.visible).map(m=>m.mesh));
-  if(hits.length>0){
-    const hit=hits[0].object;
-    if(e.shiftKey){
-      // Shift+click = save directly
-      saveComponent(hit.userData.comp);
-    } else {
-      if(selectedMesh&&selectedMesh!==hit) selectedMesh.material=selectedMesh.userData.baseMat;
-      selectedMesh=hit; hit.material=hlMat;
-      showInspector(hit.userData.comp);
-    }
-  } else {
-    closeInspector();
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────
-// RESIZE
-// ─────────────────────────────────────────────────────────────────
-function resize(){
-  const w=wrap3d.clientWidth, h=wrap3d.clientHeight;
-  renderer.setSize(w,h);
-  camera.aspect=w/h; camera.updateProjectionMatrix();
-}
-window.addEventListener('resize',resize); resize();
-
-// ─────────────────────────────────────────────────────────────────
-// RENDER LOOP
-// ─────────────────────────────────────────────────────────────────
-(function animate(){ requestAnimationFrame(animate); renderer.render(scene,camera); })();
-
-// ─────────────────────────────────────────────────────────────────
-// DATA LOADING
-// ─────────────────────────────────────────────────────────────────
-let currentProjectId=null;
-
-async function loadProject(pid){
-  currentProjectId=pid;
-  const [comps,floors,stats]=await Promise.all([
-    fetch(`/api/projects/${pid}/components`).then(r=>r.json()),
-    fetch(`/api/projects/${pid}/floors`).then(r=>r.json()),
-    fetch(`/api/projects/${pid}/stats`).then(r=>r.json()),
-  ]);
-  buildScene(comps);
-  buildFloorList(floors);
-  document.getElementById('nav-stat').textContent=`${stats.total} components · ${stats.relationships} relationships`;
-}
-
-function buildFloorList(floors){
-  const sec=document.getElementById('floor-section');
-  sec.querySelectorAll('.floor-pill').forEach(b=>b.remove());
-  const all=document.createElement('button');
-  all.className='floor-pill active'; all.textContent='All floors';
-  all.onclick=()=>{ activeFloor=null; sec.querySelectorAll('.floor-pill').forEach(b=>b.classList.remove('active')); all.classList.add('active'); applyFilters(); };
-  sec.appendChild(all);
-  floors.forEach(f=>{
-    const b=document.createElement('button');
-    b.className='floor-pill';
-    b.textContent=f.level+(f.elevation!=null?`  ${parseFloat(f.elevation).toFixed(1)}m`:'');
-    b.onclick=()=>{ activeFloor=f.level; sec.querySelectorAll('.floor-pill').forEach(x=>x.classList.remove('active')); b.classList.add('active'); applyFilters(); };
-    sec.appendChild(b);
+// Wire search input
+(function(){
+  var el=document.getElementById('lib-search');
+  if(el)el.addEventListener('input',function(){
+    clearTimeout(libSearchTimer);
+    libSearchTimer=setTimeout(renderLibrary,120);
   });
+})();
+document.getElementById('lib-list').addEventListener('click',function(e){
+  var btn=e.target.closest('.lib-remove');if(!btn)return;
+  e.stopPropagation();removeFromLibrary(parseInt(btn.dataset.compId));
+});
+async function reconstruct(){
+  if(!currentProjectId){toast('Upload a file first');return;}
+  var btn=document.getElementById('btn-reconstruct');btn.textContent='\u29d7 Working\u2026';btn.disabled=true;
+  try{var res=await fetch('/api/reconstruct',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({project_id:currentProjectId})});var data=await res.json();toast(data.status==='done'?'Reconstructed: '+(data.output||'done'):'Failed');}catch(e){toast('Error');}
+  btn.textContent='\u29d7 Reconstruct';btn.disabled=false;
 }
 
-async function init(){
-  const projects=await fetch('/api/projects').then(r=>r.json());
-  const sel=document.getElementById('project-select');
-  projects.forEach(p=>{
-    const o=document.createElement('option');
-    o.value=p.id; o.textContent=`${p.name} (${p.id})`;
-    sel.appendChild(o);
+// ── Generate chat ─────────────────────────────────────────────────────────────
+function addGenMessage(role,content,isHtml){
+  var area=document.getElementById('gen-chat-area');
+  var msg=document.createElement('div');msg.className='gen-msg '+role;
+  var label=role==='user'?'You':'AI Architect';
+  if(isHtml){msg.innerHTML='<span class="gen-msg-role">'+label+'</span><div class="gen-msg-bubble">'+content+'</div>';}
+  else{msg.innerHTML='<span class="gen-msg-role">'+label+'</span><div class="gen-msg-bubble"></div>';msg.querySelector('.gen-msg-bubble').textContent=content;}
+  area.appendChild(msg);area.scrollTop=area.scrollHeight;return msg;
+}
+// Steps tracked during generation
+var genSteps=[];
+var genStepsEl=null;
+
+var FIXED_STEPS=[
+  {id:'think',    label:'Understanding your brief'},
+  {id:'library',  label:'Searching component library'},
+  {id:'brief',    label:'Writing consultation'},
+  {id:'spec',     label:'Generating building spec'},
+  {id:'ifc',      label:'Creating IFC file'},
+];
+
+function createStepsCard(){
+  var area=document.getElementById('gen-chat-area');
+  // Remove old one if exists
+  var old=document.getElementById('gen-steps-card');if(old)old.remove();
+  var card=document.createElement('div');card.id='gen-steps-card';card.className='active';
+  FIXED_STEPS.forEach(function(s){
+    var row=document.createElement('div');row.className='gen-step';row.id='gen-step-'+s.id;
+    row.innerHTML='<div class="gen-step-dot"></div><div class="gen-step-label">'+s.label+'</div><div class="gen-step-detail"></div>';
+    card.appendChild(row);
   });
-  document.getElementById('loading').style.display='none';
-  if(projects.length===1){ sel.value=projects[0].id; loadProject(projects[0].id); }
+  area.appendChild(card);
+  area.scrollTop=area.scrollHeight;
+  genStepsEl=card;
+  setStep('think','active');
+  return card;
 }
 
-// ─────────────────────────────────────────────────────────────────
-// UI WIRING
-// ─────────────────────────────────────────────────────────────────
-
-// Nav tabs
-document.querySelectorAll('.nav-tab').forEach(tab=>{
-  tab.onclick=()=>{
-    document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
-    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById('page-'+tab.dataset.page).classList.add('active');
-    if(tab.dataset.page==='disassemble') setTimeout(resize,50);
-  };
-});
-
-// Project select
-document.getElementById('project-select').onchange=e=>{ if(e.target.value) loadProject(e.target.value); };
-
-// Group filters
-document.querySelectorAll('[data-group]').forEach(btn=>{
-  btn.onclick=()=>{
-    document.querySelectorAll('[data-group]').forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active');
-    activeGroup=btn.dataset.group;
-    applyFilters();
-  };
-});
-
-// Explode
-document.getElementById('explode-range').oninput=e=>applyExplode(e.target.value/100);
-
-// Reset cam
-document.getElementById('btn-reset-cam').onclick=()=>{
-  sph={theta:Math.PI/4,phi:Math.PI/3.5,r:28};
-  tgt.copy(centroid); updateCam();
-};
-
-// Save all
-document.getElementById('btn-save-all').onclick=saveAll;
-
-// Inspector close
-document.getElementById('insp-close').onclick=closeInspector;
-
-// ─────────────────────────────────────────────────────────────────
-// AI COMPOSE
-// ─────────────────────────────────────────────────────────────────
-
-function parseMessage(text){
-  // Replace [COMPONENT:id:category:name] with clickable pills
-  return text.replace(/\[COMPONENT:(\d+):([^:]+):([^\]]+)\]/g,(match,id,cat,name)=>{
-    return `<span class="comp-ref" data-id="${id}" onclick="highlightComponent(${id})">${name}</span>`;
-  })
-  // Remove the selected_components block from display
-  .replace(/<selected_components>[\s\S]*?<\/selected_components>/g,'')
-  .replace(/\n/g,'<br>');
-}
-
-function highlightComponent(id){
-  // Switch to disassemble and highlight
-  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  document.querySelector('[data-page="disassemble"]').classList.add('active');
-  document.getElementById('page-disassemble').classList.add('active');
-  setTimeout(()=>{
-    resize();
-    const m=meshes.find(m=>m.comp.id===id);
-    if(m){ m.mesh.material=hlMat; selectedMesh=m.mesh; showInspector(m.comp); }
-  },100);
-}
-
-function addMessage(role,content,isHtml=false){
-  const area=document.getElementById('chat-area');
-  const msg=document.createElement('div');
-  msg.className=`chat-msg ${role}`;
-  const roleLabel=role==='user'?'YOU':'AI ARCHITECT';
-  if(isHtml){
-    msg.innerHTML=`<span class="msg-role">${roleLabel}</span><div class="msg-bubble">${content}</div>`;
-  } else {
-    msg.innerHTML=`<span class="msg-role">${roleLabel}</span><div class="msg-bubble"></div>`;
-    msg.querySelector('.msg-bubble').textContent=content;
+function setStep(id, state, detail){
+  if(!genStepsEl)return;
+  var row=genStepsEl.querySelector('#gen-step-'+id);
+  if(!row)return;
+  row.className='gen-step '+state;
+  if(detail!==undefined){
+    var d=row.querySelector('.gen-step-detail');
+    if(d)d.textContent=detail||'';
   }
-  area.appendChild(msg);
-  area.scrollTop=area.scrollHeight;
-  return msg;
+  var area=document.getElementById('gen-chat-area');
+  if(area)area.scrollTop=area.scrollHeight;
 }
 
-function addTypingIndicator(){
-  const area=document.getElementById('chat-area');
-  const msg=document.createElement('div');
-  msg.className='chat-msg assistant';
-  msg.id='typing-indicator';
-  msg.innerHTML=`<span class="msg-role">AI ARCHITECT</span><div class="msg-bubble"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>`;
-  area.appendChild(msg);
-  area.scrollTop=area.scrollHeight;
+function addGenTyping(){
+  // Steps card replaces the typing indicator
+  createStepsCard();
+}
+function formatSpecText(t){return t.replace(/<building_spec>[\s\S]*?<\/building_spec>/g,'').replace(/\n/g,'<br>').trim();}
+
+function updatePlanSidebar(spec){
+  if(!spec)return;
+  var s=document.getElementById('view-plan-summary');
+  var m=spec.metadata||{};var fl=spec.floors||[];
+  var tc=fl.reduce(function(a,f){return a+(f.components||[]).length;},0);
+  var html='<div class="plan-section"><div class="plan-section-label">Building</div><div class="plan-val big">'+(spec.name||'&#8212;')+'</div>'+(m.building_type?'<div class="plan-val" style="margin-top:4px;color:rgba(255,255,255,0.4);">'+m.building_type+'</div>':'')+'</div>';
+  if(m.location)html+='<div class="plan-section"><div class="plan-section-label">Location</div><div class="plan-val">'+m.location+'</div></div>';
+  html+='<div class="plan-section"><div class="plan-section-label">Scale</div>';
+  html+='<div class="plan-row"><span class="plan-row-k">Floors</span><span class="plan-row-v">'+fl.length+'</span></div>';
+  html+='<div class="plan-row"><span class="plan-row-k">Components</span><span class="plan-row-v">'+tc+'</span></div>';
+  if(m.gross_floor_area_m2)html+='<div class="plan-row"><span class="plan-row-k">GFA</span><span class="plan-row-v">'+m.gross_floor_area_m2+' m\u00b2</span></div>';
+  html+='</div>';
+  if(m.estimated_cost_usd){
+    html+='<div class="plan-section"><div class="plan-section-label">Cost Estimate</div><div class="plan-val big" style="color:var(--green)">$'+Number(m.estimated_cost_usd).toLocaleString()+'</div>';
+    var cb=m.cost_breakdown;
+    if(cb){['structure_usd','envelope_usd','fitout_usd','hvac_usd','plumbing_usd','electrical_usd','fire_usd','site_prelim_usd'].forEach(function(k){if(cb[k])html+='<div class="plan-row"><span class="plan-row-k">'+k.replace('_usd','').replace(/_/g,' ')+'</span><span class="plan-row-v">$'+Number(cb[k]).toLocaleString()+'</span></div>';});}
+    html+='</div>';
+  }
+  if(m.estimated_duration_months)html+='<div class="plan-section"><div class="plan-section-label">Timeline</div><div class="plan-val">'+m.estimated_duration_months+' months</div></div>';
+  if(m.structural_system)html+='<div class="plan-section"><div class="plan-section-label">Structure</div><div class="plan-val">'+m.structural_system+'</div></div>';
+  if(m.primary_material)html+='<div class="plan-section"><div class="plan-section-label">Materials</div><div class="plan-val">'+m.primary_material+'</div></div>';
+  if(m.site_concerns)html+='<div class="plan-section"><div class="plan-section-label">Site Notes</div><div class="plan-val" style="font-size:11px;color:rgba(255,255,255,0.5);">'+m.site_concerns+'</div></div>';
+  if(m.building_code)html+='<div class="plan-section"><div class="plan-section-label">Code</div><div class="plan-val">'+m.building_code+'</div></div>';
+  html+='<div class="plan-section"><div class="plan-section-label">Floors</div>'+fl.map(function(f){return'<div class="plan-row"><span class="plan-row-k">'+f.name+'</span><span class="plan-row-v">'+(f.components||[]).length+' components</span></div>';}).join('')+'</div>';
+  s.innerHTML=html;
+  document.getElementById('btn-export-ifc').disabled=false;
+  document.getElementById('view-building-name').textContent=spec.name||'Generated Building';
+  document.getElementById('view-tab').style.display='flex';
 }
 
-async function sendMessage(){
-  const input=document.getElementById('chat-input');
-  const msg=input.value.trim();
-  if(!msg||isStreaming) return;
-  input.value='';
-  input.style.height='auto';
-  isStreaming=true;
-  document.getElementById('chat-send').disabled=true;
-  document.getElementById('suggestions').style.display='none';
+// ── Edit intent detection ──────────────────────────────────────────────
+// When the user has a previous generation (genSpec exists) and types a
+// message that looks like an edit ("make the walls red", "change the
+// roof", etc.), route to /api/generate/multi_agent/edit with the right
+// target instead of running the full pipeline.
+//
+// Returns { kind: 'generate' } for full generations, or
+// { kind: 'edit', target, cascade } for surgical edits.
+//
+// Order of checks matters — earlier patterns win. Most-specific-first.
+function classifyGenIntent(msg){
+  // No previous generation cached? Always full generate.
+  if(!genSpec) return { kind:'generate', reason:'no prior building' };
+  var s=msg.toLowerCase().trim();
 
-  addMessage('user',msg);
-  chatHistory.push({role:'user',content:msg});
-  addTypingIndicator();
+  // ── Explicit "new building" intent — start fresh
+  if(/\b(design|build|create|generate|make me|i want|i\u2019d like)\s+(me\s+)?(a |an )/.test(s)
+     || /\bstart over\b/.test(s)
+     || /\bfrom scratch\b/.test(s)
+     || /\bnew building\b/.test(s)){
+    return { kind:'generate', reason:'explicit new-building intent' };
+  }
 
-  let fullText='';
-  let aiMsg=null;
+  // ── MEP edits — system / equipment terms
+  if(/\b(hvac|heating|cooling|heat pump|air ?condition|ac unit|ventilation|water heater|furnace|sprinkler|electric panel|amp(s|erage)?|gas heat|electric heat|hrv|erv)\b/.test(s)){
+    return { kind:'edit', target:'mep', cascade:false, reason:'MEP keyword' };
+  }
 
-  try {
-    const res=await fetch('/api/compose',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({message:msg,history:chatHistory.slice(-6)})
+  // ── Layout edits — adding/removing/moving rooms or floors
+  if(/\b(add|put in|include|remove|delete|move|relocate|swap)\b.{0,30}\b(bedroom|bathroom|room|kitchen|office|dining|laundry|closet|hallway|pantry|den|study|garage|nursery|mudroom|foyer)\b/.test(s)
+     || /\b(another floor|second story|third floor|basement|attic|loft|upstairs|downstairs)\b/.test(s)
+     || /\b(bigger|smaller|larger|wider|deeper|shrink|expand)\b.{0,20}\b(room|kitchen|space|building|footprint)\b/.test(s)){
+    return { kind:'edit', target:'layout', cascade:false, reason:'layout keyword' };
+  }
+
+  // ── Brief edits — overall size / style / program changes
+  if(/\b(change|switch).{0,20}\bstyle\b/.test(s)
+     || /\bmake it (a |an )?(modern|victorian|colonial|tudor|farmhouse|brutalist|art deco|mediterranean|spanish|craftsman|cape cod|japandi|scandinavian|mid[- ]century)\b/.test(s)
+     || /\b\d{3,5}\s*(sqft|sq ?ft|square feet|sf)\b/.test(s)
+     || /\bmore (bedrooms|bathrooms|rooms)\b/.test(s)){
+    return { kind:'edit', target:'brief', cascade:false, reason:'brief keyword' };
+  }
+
+  // ── Palette edits — color/material changes mentioning a surface
+  // Routes to palette ONLY if a color/material word AND a surface word
+  // are both present — this keeps the parser well-behaved. "Make it red"
+  // alone is too ambiguous; "make the walls red" is clear.
+  // Note: surface words include plurals ("walls", "shingles") and a
+  // generic "siding" so "use brick siding" works.
+  var COLOR_RE=/\b(red|orange|yellow|green|blue|purple|pink|brown|black|white|gr[ae]y|cream|beige|tan|navy|teal|charcoal|forest|olive|sage|brick|rust|terracotta|wood|oak|walnut|stone|stucco|clapboard|siding|shingle)\b/g;
+  var hasSurface=/\b(walls?|trim|roofs?|shingles?|accent|window glass|exterior|paint|color|cladding|fascia)\b/.test(s);
+  var colorMatches=s.match(COLOR_RE)||[];
+  if(colorMatches.length>=1 && hasSurface){
+    return { kind:'edit', target:'palette', cascade:false, reason:'color+surface keyword' };
+  }
+
+  // ── Facade edits — feature additions/changes
+  if(/\b(add|put|include|remove|change|update|redesign)\b.{0,30}\b(turret|porch|gable|dormer|chimney|cupola|bay window|portico|column|shutter|balcony|parapet|canopy|pergola|finial|awning|fin)\b/.test(s)
+     || /\b(redesign|change|update).{0,20}\b(facade|exterior|outside|front)\b/.test(s)){
+    return { kind:'edit', target:'facade', cascade:false, reason:'facade-feature keyword' };
+  }
+
+  // ── Materials — palette + facade material details, when the user
+  // mentions multiple materials/colors but no specific surface.
+  // "Use brick instead of clapboard" → materials.
+  if(colorMatches.length>=2 || /\b(material|finish|texture|cladding)\b/.test(s)){
+    return { kind:'edit', target:'materials', cascade:false, reason:'multi-material or materials keyword' };
+  }
+
+  // Ambiguous and short? Probably an edit, default to facade.
+  if(s.split(/\s+/).length<=6){
+    return { kind:'edit', target:'facade', cascade:false, reason:'short ambiguous (defaulting to facade)' };
+  }
+
+  // Default: when in doubt, full regen. Better to be slow and right than
+  // fast and surprising (an edit that secretly didn't preserve the layout).
+  return { kind:'generate', reason:'fallback (no edit intent recognized)' };
+}
+
+// Friendly badge label for the user. Shows above the AI response so the
+// user sees what the system decided to do. Matches the agent name in the
+// timing breakdown.
+function intentBadgeLabel(intent){
+  if(intent.kind==='generate') return 'New build';
+  var labels={palette:'Palette edit (instant)', materials:'Materials edit',
+              facade:'Facade edit', mep:'MEP edit',
+              layout:'Layout edit', brief:'Brief edit'};
+  return labels[intent.target]||('Edit ('+intent.target+')');
+}
+
+// Run a surgical edit via /api/generate/multi_agent/edit. Non-streaming —
+// the edit endpoint returns the new spec in one shot. After the edit we
+// re-render the IFC and reload xeokit.
+async function runEdit(msg, intent, aiMsg){
+  var bubble=aiMsg.querySelector('.gen-msg-bubble');
+  bubble.innerHTML='<div style="opacity:0.7">Running '+intentBadgeLabel(intent)+'\u2026</div>';
+  try{
+    var res=await fetch('/api/generate/multi_agent/edit',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({edit_request:msg,target:intent.target,cascade:intent.cascade})
     });
+    var data=await res.json();
+    if(!res.ok||data.error){
+      bubble.innerHTML='<div style="color:#f88">Edit failed: '+(data.error||'HTTP '+res.status)+'</div>';
+      return;
+    }
 
-    const reader=res.body.getReader();
-    const decoder=new TextDecoder();
-    let buffer='';
+    // Build the timing breakdown — show which agents ran fresh vs cached.
+    // Cached agents are detected by matching duration against the previous
+    // pipeline result. We approximate: if total_duration_s is small relative
+    // to the per-agent durations, the others were cached.
+    var lines=[];
+    lines.push('<div style="font-family:var(--mono);font-size:11px;opacity:0.85;line-height:1.5">');
+    lines.push('<strong>'+intentBadgeLabel(intent)+'</strong> &middot; '+data.total_duration_s+'s total');
+    lines.push('<br><span style="opacity:0.6">'+intent.reason+'</span>');
+    lines.push('<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.1)">');
+    var freshAgent=data.target==='palette'?null:(
+      data.target==='facade'?'facade_agent':
+      data.target==='mep'?'mep_agent':
+      data.target==='layout'?'layout_agent':
+      data.target==='brief'?'brief_agent':
+      data.target==='materials'?'facade_agent':null);
+    (data.agents||[]).forEach(function(a){
+      var fresh=(a.agent===freshAgent);
+      var marker=fresh?'<span style="color:#0d9">FRESH</span>':'<span style="opacity:0.45">cached</span>';
+      lines.push('&nbsp;'+marker+'&nbsp; '+a.agent+' &middot; '+a.duration_s+'s &middot; '+a.input_tokens+'/'+a.output_tokens+' tok<br>');
+    });
+    lines.push('</div></div>');
+    bubble.innerHTML=lines.join('');
 
+    // Update the cached spec and re-render the IFC + reload xeokit.
+    genSpec=data.spec;
+    updatePlanSidebar(genSpec);
+    var badge=document.createElement('div');
+    badge.className='spec-ready-badge';
+    badge.style.opacity='0.4';
+    badge.style.cursor='default';
+    badge.innerHTML='&#9702; &nbsp;Re-rendering 3D model\u2026';
+    bubble.appendChild(badge);
+
+    var ifcRes=await fetch('/api/generate/ifc',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({spec:genSpec,upload_preview:false})
+    });
+    var ifcData=await ifcRes.json();
+    if(ifcData.status==='done'&&ifcData.output){
+      genIfcFilename=ifcData.output;
+      initGenViewer(ifcData.output);
+      badge.style.opacity='1';
+      badge.style.cursor='pointer';
+      badge.innerHTML='\u2713 &nbsp;Updated 3D model ready \u2014 <strong>click to view</strong>';
+      badge.onclick=function(){switchToView();};
+      toast('Edit applied \u2014 click to view');
+    }else{
+      badge.innerHTML='\u26a0 &nbsp;IFC re-render failed';
+    }
+
+    genHistory.push({role:'user',content:msg});
+    genHistory.push({role:'assistant',content:'[edit: '+intent.target+']'});
+  }catch(err){
+    bubble.innerHTML='<div style="color:#f88">Edit error: '+(err.message||err)+'</div>';
+  }
+}
+
+async function sendGenMessage(){
+  var input=document.getElementById('gen-input');
+  var msg=input.value.trim();if(!msg||genStreaming)return;
+  input.value='';input.style.height='auto';
+  genStreaming=true;document.getElementById('gen-send').disabled=true;
+  document.getElementById('gen-suggestions').style.display='none';
+  addGenMessage('user',msg,false);
+
+  // ── Auto-detect: edit vs full generation ─────────────────────────────
+  var intent=classifyGenIntent(msg);
+  console.log('[gen-intent]',intent);
+
+  // For edits, use the non-streaming edit endpoint.
+  if(intent.kind==='edit'){
+    var aiMsg=addGenMessage('assistant','',true);
+    await runEdit(msg,intent,aiMsg);
+    genStreaming=false;document.getElementById('gen-send').disabled=false;
+    return;
+  }
+
+  // For full generation, fall through to the streaming pipeline.
+  genHistory.push({role:'user',content:msg});addGenTyping();
+  var fullText='',aiMsg=null;
+  try{
+    var res=await fetch('/api/generate/multi_agent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,history:genHistory.slice(-8),session_spec:genSpec})});
+    var reader=res.body.getReader(),decoder=new TextDecoder();var buffer='';
     while(true){
-      const {done,value}=await reader.read();
-      if(done) break;
-      buffer+=decoder.decode(value,{stream:true});
-      const lines=buffer.split('\n');
-      buffer=lines.pop();
-
-      for(const line of lines){
-        if(!line.startsWith('data:')) continue;
+      // Pause: wait until unpaused
+      while(bulkPaused&&!bulkStopped){await new Promise(function(r){setTimeout(r,300);});}
+      if(bulkStopped){reader.cancel();break;}
+      var chunk=await reader.read();if(chunk.done)break;
+      buffer+=decoder.decode(chunk.value,{stream:true});
+      var lines=buffer.split('\n');buffer=lines.pop();
+      for(var i=0;i<lines.length;i++){
+        var line=lines[i];if(!line.startsWith('data:'))continue;
         try{
-          const data=JSON.parse(line.slice(5));
+          var data=JSON.parse(line.slice(5));
           if(data.type==='text'){
-            fullText+=data.text;
-            // Remove typing indicator, show real message
-            const ti=document.getElementById('typing-indicator');
-            if(ti){ ti.remove(); }
+            // First text means AI is writing the consultation
             if(!aiMsg){
-              aiMsg=addMessage('assistant','',true);
+              setStep('think','done');
+              setStep('library','done','Done');
+              setStep('brief','active','Writing...');
+              aiMsg=addGenMessage('assistant','',true);
             }
-            aiMsg.querySelector('.msg-bubble').innerHTML=parseMessage(fullText);
-            document.getElementById('chat-area').scrollTop=document.getElementById('chat-area').scrollHeight;
-          } else if(data.type==='components'){
-            // Highlight in library
-            highlightedCompIds=new Set(data.components.map(c=>c.id));
-            renderLibrary();
-            // Auto-add to library if not already there
-            data.components.forEach(c=>{
-              if(!savedIds.has(c.id)){
-                savedIds.add(c.id);
-                library.push({comp:c,savedAt:Date.now()});
-              }
-            });
-            renderLibrary();
-          } else if(data.type==='done'){
-            chatHistory.push({role:'assistant',content:fullText});
-          }
-        } catch(e){}
+            fullText+=data.text;
+            // Always append text — remove tool indicator if present so text flows cleanly
+            var bubble=aiMsg.querySelector('.gen-msg-bubble');
+            var ind=bubble.querySelector('.gen-tool-indicator');
+            if(ind)ind.remove();
+            bubble.innerHTML=formatSpecText(fullText);
+            // Re-append tool indicator at bottom if still searching
+            document.getElementById('gen-chat-area').scrollTop=9999;
+          }else if(data.type==='tool'){
+            // AI is searching the library — show indicator but keep text visible
+            setStep('think','done');
+            setStep('library','active');
+            var detail=data.tool==='get_library_categories'?'Browsing categories':(data.input&&data.input.query?data.input.query:(data.input&&data.input.category?data.input.category:'searching'));
+            setStep('library','active',detail);
+            // Add/update subtle inline indicator at bottom of current bubble
+            if(aiMsg){
+              var bubble2=aiMsg.querySelector('.gen-msg-bubble');
+              var ind2=bubble2.querySelector('.gen-tool-indicator');
+              if(!ind2){ind2=document.createElement('div');ind2.className='gen-tool-indicator';ind2.style.cssText='font-family:var(--mono);font-size:8px;color:rgba(255,255,255,0.25);letter-spacing:0.08em;padding:6px 0 2px;margin-top:6px;border-top:1px solid var(--rule);';bubble2.appendChild(ind2);}
+              ind2.textContent='\u26ef Searching library for \u201c'+detail+'\u201d\u2026';
+            }
+          }else if(data.type==='spec'&&data.spec){
+            setStep('brief','done');
+            setStep('spec','active','Generating...');
+            genSpec=data.spec;updatePlanSidebar(genSpec);
+            setStep('spec','done',(genSpec.floors||[]).length+" floors");
+            setStep('ifc','active','Building...');
+            if(aiMsg){var badge=document.createElement('div');badge.id='gen-ready-badge';badge.className='spec-ready-badge';badge.style.opacity='0.4';badge.style.cursor='default';badge.innerHTML='&#9702; &nbsp;Generating 3D model\u2026';aiMsg.querySelector('.gen-msg-bubble').appendChild(badge);}
+            autoGenerateAndView();
+          }else if(data.type==='done'){genHistory.push({role:'assistant',content:fullText});}
+        }catch(e){}
       }
     }
-  } catch(err){
-    document.getElementById('typing-indicator')?.remove();
-    addMessage('assistant','Connection error. Make sure the server is running.');
-  }
-
-  isStreaming=false;
-  document.getElementById('chat-send').disabled=false;
+  }catch(err){var card=document.getElementById('gen-steps-card');if(card)card.remove();addGenMessage('assistant','Connection error.',false);}
+  genStreaming=false;document.getElementById('gen-send').disabled=false;
 }
 
-document.getElementById('chat-send').onclick=sendMessage;
-document.getElementById('chat-input').addEventListener('keydown',e=>{
-  if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); }
-});
+var genIfcFilename=null;
 
-// Auto-resize textarea
-document.getElementById('chat-input').addEventListener('input',function(){
-  this.style.height='auto';
-  this.style.height=Math.min(this.scrollHeight,120)+'px';
-});
-
-// Suggestions
-document.querySelectorAll('.suggestion').forEach(s=>{
-  s.onclick=()=>{ document.getElementById('chat-input').value=s.textContent; sendMessage(); };
-});
-
-// ─────────────────────────────────────────────────────────────────
-// TOAST
-// ─────────────────────────────────────────────────────────────────
-function toast(msg){
-  const t=document.getElementById('toast');
-  t.textContent=msg; t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'),2200);
+async function autoGenerateAndView(){
+  if(!genSpec)return;
+  document.getElementById('view-status').textContent='Generating IFC\u2026';
+  try{
+    var res=await fetch('/api/generate/ifc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec:genSpec,upload_preview:false})});
+    var data=await res.json();
+    if(data.status!=='done'||!data.output){
+      setStep('ifc','error','Failed');
+      document.getElementById('view-status').textContent='Generation failed';
+      return;
+    }
+    genIfcFilename=data.output;
+    // Load directly into xeokit — no APS
+    initGenViewer(data.output);
+    setStep('ifc','active','Loading viewer\u2026');
+    var badge=document.getElementById('gen-ready-badge');
+    if(badge){badge.style.opacity='1';badge.style.cursor='pointer';badge.innerHTML='\u2713 &nbsp;3D model ready \u2014 <strong>click to view</strong>';badge.onclick=function(){switchToView();};}
+    document.getElementById('view-tab').style.display='flex';
+    toast('3D model ready \u2014 click to view');
+  }catch(e){console.error(e);setStep('ifc','error','Error');}
 }
 
-// ─────────────────────────────────────────────────────────────────
-// START
-// ─────────────────────────────────────────────────────────────────
+function switchToView(){
+  document.querySelectorAll('.nav-tab').forEach(function(t){t.classList.remove('active');});
+  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
+  document.getElementById('view-tab').classList.add('active');
+  document.getElementById('page-view').classList.add('active');
+  if(genViewer)setTimeout(function(){genViewer.resize();},50);
+  if(xeokitViewer)setTimeout(function(){xeokitViewer.scene.canvas.resolutionScale=1;},60);
+}
+
+async function exportIfc(){
+  if(!genSpec){toast('No building plan yet');return;}
+  var btn=document.getElementById('btn-export-ifc');btn.textContent='\u2193 Generating\u2026';btn.disabled=true;
+  try{
+    var res=await fetch('/api/generate/ifc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({spec:genSpec,upload_preview:false})});
+    var data=await res.json();
+    if(data.status==='done'){window.location.href='/api/generate/download?file='+encodeURIComponent(data.output);toast('IFC downloaded');}else if(genIfcFilename){window.location.href='/api/generate/download?file='+encodeURIComponent(genIfcFilename);toast('IFC downloaded');}
+    else{toast('Export failed: '+(data.error||'Unknown'));}
+  }catch(e){toast('Export error');}
+  btn.textContent='\u2193 Export IFC';btn.disabled=false;
+}
+
+// ── Nav ───────────────────────────────────────────────────────────────────────
+document.querySelectorAll('.nav-tab').forEach(function(tab){
+  tab.onclick=function(){
+    document.querySelectorAll('.nav-tab').forEach(function(t){t.classList.remove('active');});
+    document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
+    tab.classList.add('active');document.getElementById('page-'+tab.dataset.page).classList.add('active');
+    if(tab.dataset.page==='disassemble'&&viewer)setTimeout(function(){viewer.resize();},50);
+    if(tab.dataset.page==='view'&&genViewer)setTimeout(function(){genViewer.resize();},50);
+  };
+});
+document.getElementById('btn-save-all').onclick=saveAll;
+document.getElementById('btn-reconstruct').onclick=reconstruct;
+document.getElementById('btn-clear-lib').onclick=clearLibrary;
+document.getElementById('btn-export-ifc').onclick=exportIfc;
+document.getElementById('btn-back-to-chat').onclick=function(){
+  document.querySelectorAll('.nav-tab').forEach(function(t){t.classList.remove('active');});
+  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
+  document.querySelector('[data-page="generate"]').classList.add('active');
+  document.getElementById('page-generate').classList.add('active');
+};
+document.getElementById('gen-send').onclick=sendGenMessage;
+document.getElementById('gen-input').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendGenMessage();}});
+document.getElementById('gen-input').addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,160)+'px';});
+document.querySelectorAll('.gen-suggestion').forEach(function(s){s.onclick=function(){document.getElementById('gen-input').value=s.textContent;sendGenMessage();};});
+
+// ── Library resize ──────────────────────────────────────────────────────────
+(function(){
+  var handle=document.getElementById('lib-resize-handle');
+  var sidebar=document.getElementById('lib-sidebar');
+  if(!handle||!sidebar)return;
+  var dragging=false,startX=0,startW=0;
+  handle.addEventListener('mousedown',function(e){
+    dragging=true;startX=e.clientX;startW=sidebar.offsetWidth;
+    document.body.style.cursor='col-resize';document.body.style.userSelect='none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove',function(e){
+    if(!dragging)return;
+    var w=Math.min(480,Math.max(160,startW+(e.clientX-startX)));
+    sidebar.style.width=w+'px';
+    if(viewer)viewer.resize();
+  });
+  document.addEventListener('mouseup',function(){
+    if(!dragging)return;
+    dragging=false;document.body.style.cursor='';document.body.style.userSelect='';
+  });
+})();
+
+function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2800);}
+async function init(){await refreshLibrary();document.getElementById('loading').style.display='none';}
 init();
 </script>
 </body>
