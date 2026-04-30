@@ -397,6 +397,38 @@ body{background:var(--ink);color:var(--text);font-family:var(--sans);height:100v
   </div>
 </div>
 
+<!-- ══ FROM LAYOUT ══ -->
+<div class="page" id="page-from-layout">
+  <div id="gen-main">
+    <div id="gen-chat-area" id="layout-chat-area">
+      <div class="gen-msg assistant">
+        <span class="gen-msg-role">AI Architect</span>
+        <div class="gen-msg-bubble">Upload a Layout JSON file (matching the <code>Layout</code> schema with floors and rooms). I'll classify the typology, pick a style and palette, generate facade and MEP, then render the IFC.<br><br>Useful when you have a floor plan from another tool (architectural sketch, AI-generated plan, CAD export) and want the rest of the building generated around it.</div>
+      </div>
+    </div>
+    <div id="layout-upload-bar" style="padding:16px 20px;border-top:1px solid var(--rule2);display:flex;flex-direction:column;gap:10px;background:var(--ink);">
+      <div style="display:flex;gap:10px;align-items:center;">
+        <span class="upload-eyebrow">Layout JSON</span>
+        <input type="file" id="layout-file-input" accept=".json,application/json" style="display:none">
+        <button class="btn btn-ghost" onclick="document.getElementById('layout-file-input').click()">Choose JSON file</button>
+        <span id="layout-filename" style="font-family:var(--mono);font-size:10px;color:rgba(255,255,255,0.3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">No file selected</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input type="text" id="layout-style-hint" placeholder="Style hint (e.g. 'victorian cottage', 'modern office')" style="flex:1;min-width:240px;background:rgba(255,255,255,0.04);border:1px solid var(--rule2);border-left:2px solid var(--ink-mid);color:var(--text);font-family:var(--sans);font-size:12px;padding:8px 12px;outline:none;">
+        <input type="text" id="layout-name" placeholder="Building name" style="width:180px;background:rgba(255,255,255,0.04);border:1px solid var(--rule2);border-left:2px solid var(--ink-mid);color:var(--text);font-family:var(--sans);font-size:12px;padding:8px 12px;outline:none;">
+        <input type="text" id="layout-location" placeholder="Location (optional)" style="width:200px;background:rgba(255,255,255,0.04);border:1px solid var(--rule2);border-left:2px solid var(--ink-mid);color:var(--text);font-family:var(--sans);font-size:12px;padding:8px 12px;outline:none;">
+        <select id="layout-front" style="background:rgba(255,255,255,0.04);border:1px solid var(--rule2);color:var(--text);font-family:var(--mono);font-size:11px;padding:8px 10px;outline:none;">
+          <option value="south">Front: South</option>
+          <option value="north">Front: North</option>
+          <option value="east">Front: East</option>
+          <option value="west">Front: West</option>
+        </select>
+        <button id="layout-generate-btn" class="btn btn-green" disabled>Generate Building</button>
+      </div>
+    </div>
+  </div>
+</div>
+  
 <!-- ══ 3D VIEW ══ -->
 <div class="page" id="page-view">
   <div id="view-sidebar">
