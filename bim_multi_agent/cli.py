@@ -3,8 +3,11 @@ cli.py — Command-line entry point for the multi-agent pipeline.
 
 Usage:
 
-    # Generate a building (requires ANTHROPIC_API_KEY + generate.py in the path)
+    # Generate a building from a prompt (full pipeline, agents lay out rooms)
     python cli.py generate "Victorian cottage in New England, deep green siding, turret"
+
+    # Generate from a pre-built layout JSON (skips the Layout Agent)
+    python cli.py from-layout layout.json --style "modern" --render out.ifc
 
     # Generate + render to IFC (requires ifcopenshell)
     python cli.py generate "..." --render out.ifc
@@ -92,6 +95,13 @@ def _load_result(path: str):
     )
 
 
+def _load_layout(path: str):
+    """Load and validate a Layout JSON file from disk."""
+    from .schemas import Layout
+    payload = json.loads(Path(path).read_text())
+    return Layout(**payload)
+
+
 def _print_summary(result) -> None:
     print("\n── Pipeline summary ──")
     print(f"  Total time: {result.total_duration_s}s")
@@ -120,6 +130,31 @@ def cmd_generate(args: argparse.Namespace) -> int:
     t0 = time.time()
     result = generate_building_multi_agent(
         args.prompt,
+        parallel_specialists=not args.sequential,
+    )
+    _print_summary(result)
+    if args.dump:
+        _dump_result(result, args.dump)
+    if args.render:
+        _render_to_ifc(result.spec.model_dump(), args.render)
+    return 0
+
+
+def cmd_from_layout(args: argparse.Namespace) -> int:
+    """Run the MAS pipeline starting from a user-supplied Layout JSON file."""
+    from .orchestrator import generate_building_from_layout
+
+    layout = _load_layout(args.layout_path)
+    print(f"Loaded layout: {len(layout.floors)} floor(s), "
+          f"{sum(len(f.rooms) for f in layout.floors)} room(s), "
+          f"{layout.footprint_width:.1f}m × {layout.footprint_depth:.1f}m")
+
+    result = generate_building_from_layout(
+        layout,
+        style_hint=args.style or "",
+        name=args.name,
+        front_elevation=args.front_elevation,
+        location=args.location,
         parallel_specialists=not args.sequential,
     )
     _print_summary(result)
@@ -167,6 +202,22 @@ def main(argv=None) -> int:
     g.add_argument("--sequential", action="store_true",
                    help="Run facade+MEP sequentially instead of in parallel")
     g.set_defaults(func=cmd_generate)
+
+    fl = sub.add_parser("from-layout",
+                        help="Generate a building from a pre-supplied Layout JSON")
+    fl.add_argument("layout_path", help="Path to a Layout JSON file")
+    fl.add_argument("--style", default="",
+                    help="Style hint (e.g. 'modern', 'victorian'). Empty = let agent guess.")
+    fl.add_argument("--name", default="Building", help="Building name")
+    fl.add_argument("--front-elevation", default="south",
+                    choices=["north", "south", "east", "west"],
+                    help="Which side has the main entry (default: south)")
+    fl.add_argument("--location", default=None, help="City/region (helps MEP via climate)")
+    fl.add_argument("--render", metavar="IFC_PATH", help="Render to IFC at this path")
+    fl.add_argument("--dump",   metavar="JSON_PATH", help="Save full result to JSON")
+    fl.add_argument("--sequential", action="store_true",
+                    help="Run facade+MEP sequentially instead of in parallel")
+    fl.set_defaults(func=cmd_from_layout)
 
     e = sub.add_parser("edit", help="Edit a prior generation")
     e.add_argument("--load",   required=True, metavar="JSON_PATH", help="Prior result JSON")
