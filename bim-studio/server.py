@@ -1134,6 +1134,111 @@ def generate_multi_agent_stream():
     return Response(stream_with_context(generate()), mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
+# ── Layout-first generation ─────────────────────────────────────────────
+@app.route("/api/generate/from_layout", methods=["POST"])
+def generate_from_layout_stream():
+    """
+    Layout-first generation endpoint. Same SSE contract as
+    /api/generate/multi_agent so the frontend's streaming + autoview flow
+    works unchanged. Difference: skips the Layout Agent because the user
+    supplies a Layout JSON directly.
+ 
+    Body: { layout: <Layout dict>, style_hint: str, name: str,
+            front_elevation: str, location: str | null }
+ 
+    Flow: Brief (style/palette only, layout fixed) → Facade + MEP in
+    parallel → merge_to_spec → ground_spec_with_library → stream.
+    """
+    if not _MULTI_AGENT_AVAILABLE:
+        return jsonify({"error": "Multi-agent pipeline not available"}), 500
+ 
+    data = request.json or {}
+    layout_dict = data.get("layout") or {}
+    style_hint = (data.get("style_hint") or "").strip()
+    name = (data.get("name") or "Building").strip()
+    front_elevation = (data.get("front_elevation") or "south").strip()
+    location = data.get("location")
+ 
+    # Validate the layout up-front so we can fail fast with a useful message.
+    try:
+        layout = _MA_Layout(**layout_dict)
+    except Exception as e:
+        return jsonify({"error": f"Invalid layout JSON: {e}"}), 400
+ 
+    if not layout.floors or not any(f.rooms for f in layout.floors):
+        return jsonify({"error": "Layout has no rooms"}), 400
+ 
+    def _sse(obj):
+        return f"data: {json.dumps(obj)}\n\n"
+ 
+    def generate():
+        import time as _time
+        try:
+            n_rooms = sum(len(f.rooms) for f in layout.floors)
+            yield _sse({"type": "text", "text":
+                f"**Layout-first pipeline** — {len(layout.floors)} floor(s), "
+                f"{n_rooms} room(s), "
+                f"{layout.footprint_width:.1f}m × {layout.footprint_depth:.1f}m\n\n"})
+            yield _sse({"type": "text", "text":
+                "**Step 1/3: Brief agent** classifying typology + picking palette...\n"})
+ 
+            t0 = _time.time()
+ 
+            # Run the layout-first pipeline (Brief → Facade ‖ MEP).
+            result = generate_building_from_layout(
+                layout,
+                style_hint=style_hint,
+                name=name,
+                front_elevation=front_elevation,
+                location=location,
+                parallel_specialists=True,
+            )
+            brief = result.brief
+            facade = result.facade
+            mep = result.mep
+ 
+            yield _sse({"type": "text", "text":
+                f"✓ Style: **{brief.architectural_style}**, "
+                f"palette: {', '.join(brief.style_palette.keys())}  \n"
+                f"Notes: {brief.style_notes}\n\n"})
+            yield _sse({"type": "text", "text":
+                "**Step 2+3/3: Facade + MEP** ran in parallel against your layout.\n"})
+ 
+            feature_summary = ", ".join(f.type for f in facade.exterior_features)
+            yield _sse({"type": "text", "text":
+                f"✓ Facade: {len(facade.exterior_features)} features ({feature_summary})  \n"
+                f"✓ MEP: {mep.hvac_type}, {mep.hvac_zones} zone(s), "
+                f"equipment in {mep.equipment_location}\n\n"})
+ 
+            # Spec for the renderer
+            spec_dict = result.spec.model_dump()
+            spec_dict = ground_spec_with_library(spec_dict)
+ 
+            total = _time.time() - t0
+            run_summary = ", ".join(
+                f"{r.agent}={r.duration_s}s" for r in result.runs
+            )
+            yield _sse({"type": "text", "text":
+                f"**Done in {total:.1f}s** — {run_summary}.  \n"
+                f"Generating 3D model...\n"})
+ 
+            # Cache for the edit endpoint
+            cache_key = spec_dict.get("name", "building")
+            _LAST_RESULTS[cache_key] = result
+ 
+            # Spec event triggers the frontend's autoGenerateAndView()
+            yield _sse({"type": "spec", "spec": spec_dict})
+            yield _sse({"type": "done"})
+ 
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            print(f"[from_layout] error: {e}\n{tb}")
+            yield _sse({"type": "text", "text": f"\n\n**Pipeline error:** {e}\n"})
+            yield _sse({"type": "done"})
+ 
+    return Response(stream_with_context(generate()), mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 @app.route("/api/generate/multi_agent/edit", methods=["POST"])
 def generate_multi_agent_edit():
