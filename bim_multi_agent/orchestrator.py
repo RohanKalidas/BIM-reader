@@ -548,3 +548,112 @@ def edit_building(
         runs=runs,
         total_duration_s=round(total, 2),
     )
+    # ── Layout-first entry point ────────────────────────────────────────────
+# For the use case where the user (or an upstream tool) provides the floor
+# plan layout already, and we just need to add style + facade + MEP on top.
+#
+# The Brief Agent runs in a stripped-down mode: it doesn't lay out rooms
+# (we already have those) — it just classifies typology, picks a style,
+# generates a palette, and fills in metadata. Layout Agent is skipped.
+
+def generate_building_from_layout(
+    layout: Layout,
+    style_hint: str = "",
+    *,
+    name: str = "Building",
+    front_elevation: str = "south",
+    location: str | None = None,
+    parallel_specialists: bool = True,
+) -> PipelineResult:
+    """
+    Generate a building when the floor plan is already known.
+
+    Skips the Layout Agent entirely. Runs Brief in "describe this layout" mode
+    to get style + palette, then runs Facade and MEP against the user-provided
+    layout, then merges into a BuildingSpec ready for generate.py.
+
+    Args:
+        layout: An already-validated Layout object (floors + rooms).
+        style_hint: Short style hint, e.g. "modern", "victorian", "class A office".
+                    The Brief Agent uses this to fill in architectural_style and
+                    style_palette. Empty string = let the agent guess.
+        name: Building display name.
+        front_elevation: Which side has the main entry. Affects Facade placement.
+        location: Optional location string. Affects MEP via climate inference.
+        parallel_specialists: Run Facade + MEP concurrently (default True).
+
+    Returns:
+        PipelineResult — same shape as generate_building_multi_agent(), so all
+        downstream code (rendering, edit API) works identically.
+    """
+    start = time.time()
+    runs = []
+
+    # Compute total sqft from the layout for the brief.
+    total_sqm = sum(
+        room.width * room.depth
+        for floor in layout.floors
+        for room in floor.rooms
+    )
+    total_sqft = total_sqm / 0.0929
+    floors_count = len(layout.floors)
+
+    # Build a synthetic prompt for the Brief Agent.
+    program_seed = sorted({room.name.split()[0].lower() for f in layout.floors for room in f.rooms})
+    prompt_parts = [f"A {floors_count}-floor building, approximately {total_sqft:.0f} sqft."]
+    if style_hint:
+        prompt_parts.append(f"Style: {style_hint}.")
+    if location:
+        prompt_parts.append(f"Location: {location}.")
+    prompt_parts.append(f"The layout is fixed and contains: {', '.join(program_seed)}.")
+    prompt_parts.append(
+        "Produce a Brief that classifies the typology, picks an architectural style "
+        "and palette appropriate to it. Do NOT redesign the layout — it's already set."
+    )
+    synthetic_prompt = " ".join(prompt_parts)
+
+    logger.info("Step 1/3: Brief agent (style + palette only, layout pre-supplied)...")
+    brief, brief_run = run_brief_agent(synthetic_prompt)
+    runs.append(brief_run)
+    # Override fields the agent might have guessed wrong, since we have ground truth.
+    brief.name = name
+    brief.floors_count = floors_count
+    brief.total_sqft = total_sqft
+    brief.front_elevation = front_elevation
+    if location:
+        brief.location = location
+    logger.info("  → typology=%s style=%r palette keys: %s",
+                getattr(brief, "typology_key", "(none)"),
+                brief.architectural_style, list(brief.style_palette.keys()))
+
+    # Steps 2 + 3: Facade + MEP in parallel against the supplied layout.
+    if parallel_specialists:
+        logger.info("Step 2+3/3: Facade + MEP agents running in parallel...")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            facade_future = pool.submit(run_facade_agent, brief, layout)
+            mep_future = pool.submit(run_mep_agent, brief, layout)
+            facade, facade_run = facade_future.result()
+            mep, mep_run = mep_future.result()
+    else:
+        logger.info("Step 2/3: Facade agent composing exterior features...")
+        facade, facade_run = run_facade_agent(brief, layout)
+        logger.info("Step 3/3: MEP agent picking HVAC strategy...")
+        mep, mep_run = run_mep_agent(brief, layout)
+
+    runs.extend([facade_run, mep_run])
+    logger.info("  → %d exterior features, hvac=%s",
+                len(facade.exterior_features), mep.hvac_type)
+
+    spec = merge_to_spec(brief, layout, facade, mep)
+    total = time.time() - start
+    logger.info("Layout-first pipeline done in %.2fs (%d agent calls)", total, len(runs))
+
+    return PipelineResult(
+        spec=spec,
+        brief=brief,
+        layout=layout,
+        facade=facade,
+        mep=mep,
+        runs=runs,
+        total_duration_s=round(total, 2),
+    )
