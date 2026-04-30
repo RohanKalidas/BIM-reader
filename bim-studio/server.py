@@ -39,6 +39,8 @@ try:
     )
     from bim_multi_agent.orchestrator import merge_to_spec as ma_merge_to_spec
     from bim_multi_agent.schemas import PipelineResult as _MA_PipelineResult
+    from bim_multi_agent.orchestrator import generate_building_from_layout
+    from bim_multi_agent.schemas import Layout as _MA_Layout
     _MULTI_AGENT_AVAILABLE = True
     print("[multi_agent] pipeline loaded successfully")
 except Exception as _ma_err:
