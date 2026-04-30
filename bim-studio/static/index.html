@@ -1701,6 +1701,150 @@ document.getElementById('gen-input').addEventListener('keydown',function(e){if(e
 document.getElementById('gen-input').addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,160)+'px';});
 document.querySelectorAll('.gen-suggestion').forEach(function(s){s.onclick=function(){document.getElementById('gen-input').value=s.textContent;sendGenMessage();};});
 
+// ── Layout-first upload tab ─────────────────────────────────────────────
+var layoutFileContent=null;
+ 
+document.getElementById('layout-file-input').onchange=function(){
+  var file=this.files[0];
+  if(!file){return;}
+  document.getElementById('layout-filename').textContent=file.name;
+  var reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      layoutFileContent=JSON.parse(e.target.result);
+      // Sanity-check shape
+      if(!layoutFileContent.floors||!Array.isArray(layoutFileContent.floors)){
+        toast('Invalid layout: missing "floors" array');
+        layoutFileContent=null;
+        document.getElementById('layout-generate-btn').disabled=true;
+        return;
+      }
+      document.getElementById('layout-generate-btn').disabled=false;
+      toast('Layout loaded: '+file.name);
+    }catch(err){
+      toast('JSON parse error: '+err.message);
+      layoutFileContent=null;
+      document.getElementById('layout-generate-btn').disabled=true;
+    }
+  };
+  reader.readAsText(file);
+};
+ 
+document.getElementById('layout-generate-btn').onclick=async function(){
+  if(!layoutFileContent){toast('Choose a layout JSON file first');return;}
+  if(genStreaming){toast('Already generating');return;}
+ 
+  var styleHint=document.getElementById('layout-style-hint').value.trim();
+  var name=document.getElementById('layout-style-hint').value.trim()
+            ? (document.getElementById('layout-name').value.trim() || 'Building')
+            : (document.getElementById('layout-name').value.trim() || 'Generated Building');
+  var frontEl=document.getElementById('layout-front').value;
+  var location=document.getElementById('layout-location').value.trim()||null;
+ 
+  // Echo summary into the chat area for this tab
+  var area=document.getElementById('page-from-layout').querySelector('#gen-chat-area');
+  var nRooms=layoutFileContent.floors.reduce(function(a,f){return a+(f.rooms||[]).length;},0);
+  var summary='Generating from layout: '+layoutFileContent.floors.length+' floor(s), '+nRooms+' room(s)';
+  if(styleHint){summary+=', style hint "'+styleHint+'"';}
+ 
+  var userMsg=document.createElement('div');userMsg.className='gen-msg user';
+  userMsg.innerHTML='<span class="gen-msg-role">You</span><div class="gen-msg-bubble">'+summary+'</div>';
+  area.appendChild(userMsg);
+  area.scrollTop=area.scrollHeight;
+ 
+  // Reuse the existing genStreaming guard + steps card so the rest of the
+  // flow (autoGenerateAndView, viewer load, etc.) works identically.
+  genStreaming=true;
+  this.disabled=true;
+  this.textContent='Generating...';
+ 
+  // Show steps card the same way the main generate flow does.
+  // Insert into THIS page's chat area.
+  var oldCard=document.getElementById('gen-steps-card');
+  if(oldCard)oldCard.remove();
+  var card=document.createElement('div');card.id='gen-steps-card';card.className='active';
+  // Layout-first has 3 steps (no library / no separate brief step needed).
+  var STEPS=[
+    {id:'think',   label:'Reading layout'},
+    {id:'brief',   label:'Brief agent (style + palette)'},
+    {id:'spec',    label:'Facade + MEP agents'},
+    {id:'ifc',     label:'Creating IFC file'},
+  ];
+  STEPS.forEach(function(s){
+    var row=document.createElement('div');row.className='gen-step';row.id='gen-step-'+s.id;
+    row.innerHTML='<div class="gen-step-dot"></div><div class="gen-step-label">'+s.label+'</div><div class="gen-step-detail"></div>';
+    card.appendChild(row);
+  });
+  area.appendChild(card);
+  area.scrollTop=area.scrollHeight;
+  genStepsEl=card;
+  setStep('think','active');
+ 
+  var fullText='',aiMsg=null;
+  try{
+    var res=await fetch('/api/generate/from_layout',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        layout: layoutFileContent,
+        style_hint: styleHint,
+        name: name,
+        front_elevation: frontEl,
+        location: location,
+      })
+    });
+    var reader=res.body.getReader(),decoder=new TextDecoder();var buffer='';
+    while(true){
+      var chunk=await reader.read();if(chunk.done)break;
+      buffer+=decoder.decode(chunk.value,{stream:true});
+      var lines=buffer.split('\n');buffer=lines.pop();
+      for(var i=0;i<lines.length;i++){
+        var line=lines[i];if(!line.startsWith('data:'))continue;
+        try{
+          var data=JSON.parse(line.slice(5));
+          if(data.type==='text'){
+            if(!aiMsg){
+              setStep('think','done');
+              setStep('brief','active','Writing...');
+              aiMsg=document.createElement('div');aiMsg.className='gen-msg assistant';
+              aiMsg.innerHTML='<span class="gen-msg-role">AI Architect</span><div class="gen-msg-bubble"></div>';
+              area.appendChild(aiMsg);
+            }
+            fullText+=data.text;
+            aiMsg.querySelector('.gen-msg-bubble').innerHTML=formatSpecText(fullText);
+            area.scrollTop=area.scrollHeight;
+          }else if(data.type==='spec'&&data.spec){
+            setStep('brief','done');
+            setStep('spec','done');
+            setStep('ifc','active','Building...');
+            genSpec=data.spec;
+            updatePlanSidebar(genSpec);
+            if(aiMsg){
+              var badge=document.createElement('div');
+              badge.id='gen-ready-badge';badge.className='spec-ready-badge';
+              badge.style.opacity='0.4';badge.style.cursor='default';
+              badge.innerHTML='&#9702; &nbsp;Generating 3D model\u2026';
+              aiMsg.querySelector('.gen-msg-bubble').appendChild(badge);
+            }
+            // Reuse the existing IFC-render-and-load function. It writes
+            // genIfcFilename and calls initGenViewer().
+            autoGenerateAndView();
+          }else if(data.type==='done'){
+            // Nothing more to do — autoGenerateAndView handles the viewer.
+          }
+        }catch(e){console.warn('SSE parse error:',e);}
+      }
+    }
+  }catch(err){
+    console.error(err);
+    toast('Generation failed: '+(err.message||err));
+    setStep('ifc','error','Failed');
+  }
+  genStreaming=false;
+  this.disabled=false;
+  this.textContent='Generate Building';
+};
+  
 // ── Library resize ──────────────────────────────────────────────────────────
 (function(){
   var handle=document.getElementById('lib-resize-handle');
