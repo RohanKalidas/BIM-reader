@@ -1847,9 +1847,13 @@ document.getElementById('layout-generate-btn').onclick=async function(){
     toast('Generation failed: '+(err.message||err));
     setStep('ifc','error','Failed');
   }
+  // genStreaming/button may already be reset on 'spec' event; that's fine.
   genStreaming=false;
-  this.disabled=false;
-  this.textContent='Generate Building';
+  var btn=document.getElementById('layout-generate-btn');
+  if(btn){
+    btn.disabled=false;
+    btn.textContent='Generate Building';
+  }
 };
   
 // ── Library resize ──────────────────────────────────────────────────────────
