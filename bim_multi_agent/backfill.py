@@ -147,10 +147,11 @@ def _classify_and_persist(row: dict) -> tuple[int, bool, str]:
 # ── Main backfill loop ────────────────────────────────────────────────────
 
 def run_backfill(limit: int | None = None,
-                 library_only: bool = False,
-                 workers: int = 8,
-                 batch_size: int = 200,
-                 reclassify: bool = False) -> dict:
+                     library_only: bool = False,
+                     workers: int = 8,
+                     batch_size: int = 200,
+                     reclassify: bool = False,
+                     target_fixtures: bool = True) -> dict:
     """
     Classify all unclassified components.
 
@@ -293,8 +294,8 @@ def main():
                    help="Parallel classification workers (default 8)")
     p.add_argument("--batch-size", type=int, default=200,
                    help="DB fetch batch size (default 200)")
-    p.add_argument("--reclassify", action="store_true",
-                   help="Redo already-classified rows (rare)")
+    p.add_argument("--all-categories", action="store_true",
+                   help="Classify ALL components, not just fixtures (wasteful)")
     p.add_argument("--stats", action="store_true",
                    help="Just print classification stats, don't classify")
     p.add_argument("-v", "--verbose", action="store_true")
@@ -316,6 +317,7 @@ def main():
         workers=args.workers,
         batch_size=args.batch_size,
         reclassify=args.reclassify,
+        target_fixtures=not args.all_categories,
     )
     if result.get("errors", 0) > 0:
         return 1
