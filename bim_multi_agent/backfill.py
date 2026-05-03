@@ -40,6 +40,60 @@ from database.db import get_db_connection  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
+# ── Categories worth classifying ──────────────────────────────────────────
+# These are component types that actually function as discrete fixtures
+# the AI would request when generating a building. Walls, slabs, beams,
+# proxies, etc. are structural/shell — no canonical name applies.
+ 
+TARGET_CATEGORIES = (
+    # Furniture
+    "IfcFurniture",
+    "IfcFurnishingElement",
+    # Plumbing fixtures
+    "IfcSanitaryTerminal",
+    # Appliances
+    "IfcElectricAppliance",
+    # Lighting
+    "IfcLightFixture",
+    # Openings
+    "IfcDoor",
+    "IfcWindow",
+    # Electrical
+    "IfcOutlet",
+    "IfcSwitchingDevice",
+    "IfcCableSegment",
+    "IfcCableCarrierSegment",
+    "IfcElectricDistributionBoard",
+    "IfcElectricFlowStorageDevice",
+    # HVAC terminals + equipment
+    "IfcAirTerminal",
+    "IfcAirTerminalBox",
+    "IfcDuctSegment",
+    "IfcDuctFitting",
+    "IfcUnitaryEquipment",
+    "IfcBoiler",
+    "IfcChiller",
+    "IfcFan",
+    # Plumbing distribution
+    "IfcPipeSegment",
+    "IfcPipeFitting",
+    "IfcPump",
+    "IfcValve",
+    "IfcFlowMeter",
+    "IfcTank",
+    # Fire
+    "IfcFireSuppressionTerminal",
+    "IfcAlarm",
+    # Medical
+    "IfcMedicalDevice",
+    # Circulation
+    "IfcStair",
+    "IfcStairFlight",
+    "IfcRailing",
+    # Finishes
+    "IfcCovering",
+    "IfcCurtainWall",
+)
 
 # ── Single-row classification + write ─────────────────────────────────────
 
@@ -114,11 +168,14 @@ def run_backfill(limit: int | None = None,
                c.width_mm, c.height_mm, c.length_mm
         FROM components c
     """
-    where_clauses = []
+     where_clauses = []
     if library_only:
         base_query += " JOIN library l ON l.component_id = c.id "
     if not reclassify:
         where_clauses.append("c.classified_at IS NULL")
+    if target_fixtures:
+        cat_list = ",".join(f"'{c}'" for c in TARGET_CATEGORIES)
+        where_clauses.append(f"c.category IN ({cat_list})")
     if where_clauses:
         base_query += " WHERE " + " AND ".join(where_clauses)
     base_query += " ORDER BY c.id"
