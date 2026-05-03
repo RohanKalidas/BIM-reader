@@ -1819,6 +1819,13 @@ document.getElementById('layout-generate-btn').onclick=async function(){
             setStep('ifc','active','Building...');
             genSpec=data.spec;
             updatePlanSidebar(genSpec);
+            // Re-enable the generate button as soon as the spec arrives —
+            // IFC rendering happens async via autoGenerateAndView() and the
+            // user shouldn't be locked out of starting a new generation.
+            var btn=document.getElementById('layout-generate-btn');
+            btn.disabled=false;
+            btn.textContent='Generate Building';
+            genStreaming=false;
             if(aiMsg){
               var badge=document.createElement('div');
               badge.id='gen-ready-badge';badge.className='spec-ready-badge';
