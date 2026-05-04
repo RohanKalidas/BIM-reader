@@ -294,6 +294,8 @@ def main():
                    help="Parallel classification workers (default 8)")
     p.add_argument("--batch-size", type=int, default=200,
                    help="DB fetch batch size (default 200)")
+    p.add_argument("--reclassify", action="store_true",
+                   help="Redo already-classified rows (rare)")
     p.add_argument("--all-categories", action="store_true",
                    help="Classify ALL components, not just fixtures (wasteful)")
     p.add_argument("--stats", action="store_true",
