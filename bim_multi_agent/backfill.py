@@ -169,7 +169,7 @@ def run_backfill(limit: int | None = None,
                c.width_mm, c.height_mm, c.length_mm
         FROM components c
     """
-     where_clauses = []
+    where_clauses = []
     if library_only:
         base_query += " JOIN library l ON l.component_id = c.id "
     if not reclassify:
