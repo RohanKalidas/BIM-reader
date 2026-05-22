@@ -195,7 +195,7 @@ class MEPStrategy(BaseModel):
     ventilation: Literal["natural", "mechanical_exhaust", "hrv", "erv"] = Field(...)
 
     # Where the equipment goes
-    equipment_location: Literal["basement", "garage", "utility_room", "mechanical_closet", "roof", "attic"] = Field(
+    equipment_location: str = "utility_room" = Field(
         ...,
         description="Which room houses the main air handler / water heater / panel.",
     )
