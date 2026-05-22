@@ -178,32 +178,39 @@ class Facade(BaseModel):
 class MEPStrategy(BaseModel):
     """Output of MEPAgent."""
 
-    hvac_type: Literal[
-        "central_forced_air",
-        "heat_pump_central",
-        "heat_pump_ductless",
-        "radiant_hydronic",
-        "baseboard_electric",
-        "none",
-    ] = Field(..., description="Primary HVAC approach.")
+    hvac_type: str = Field(
+        ...,
+        description="Primary HVAC approach (e.g. heat_pump_central, vav_with_chilled_water, packaged_rtu).",
+    )
 
-    heating_fuel: Literal["electric", "gas", "heat_pump", "hybrid", "none"] = Field(...)
-    cooling: Literal["central_ac", "heat_pump", "mini_split", "none"] = Field(...)
+    heating_fuel: str = Field("electric", description="electric | gas | heat_pump | hybrid | district | none")
+    cooling: str = Field("heat_pump", description="central_ac | heat_pump | mini_split | chilled_water | none")
 
-    hot_water: Literal["tank_electric", "tank_gas", "tankless_gas", "heat_pump", "solar"] = Field(...)
+    hot_water: str = Field(
+        "tank_electric",
+        description="tank_electric | tank_gas | tankless_gas | tankless_electric | heat_pump | central_heat_pump | solar",
+    )
 
-    ventilation: Literal["natural", "mechanical_exhaust", "hrv", "erv"] = Field(...)
+    ventilation: str = Field(
+        "mechanical_exhaust",
+        description="natural | mechanical_exhaust | hrv | erv | balanced_with_erv | balanced_with_hrv | 100pct_outside_air | demand_controlled",
+    )
 
     # Where the equipment goes
     equipment_location: str = Field("utility_room", description="Which room houses the main air handler / water heater / panel.")
 
     # Rough counts — mep_systems.py will scale from these
-    hvac_zones: int = Field(1, ge=1, le=8)
+    hvac_zones: int = Field(1, ge=1, le=200)
     electrical_panel_amps: int = Field(200, description="Main service size in amps.")
+    secondary_panels: int = Field(0, ge=0, description="Number of secondary distribution panels.")
 
     # Fire suppression
     sprinklers: bool = Field(False, description="True for commercial or code-required residential.")
     smoke_detectors: bool = Field(True)
+    standpipes: bool = Field(False, description="Required when building height > ~23m.")
+    fire_pump: bool = Field(False, description="Required whenever standpipes are required.")
+
+    fresh_air_cfm_per_person: float = Field(7.5, description="Ventilation rate per occupant.")
 
     rationale: str = Field(
         ...,
