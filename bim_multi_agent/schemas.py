@@ -195,10 +195,7 @@ class MEPStrategy(BaseModel):
     ventilation: Literal["natural", "mechanical_exhaust", "hrv", "erv"] = Field(...)
 
     # Where the equipment goes
-    equipment_location: str = "utility_room" = Field(
-        ...,
-        description="Which room houses the main air handler / water heater / panel.",
-    )
+    equipment_location: str = Field("utility_room", description="Which room houses the main air handler / water heater / panel.")
 
     # Rough counts — mep_systems.py will scale from these
     hvac_zones: int = Field(1, ge=1, le=8)
